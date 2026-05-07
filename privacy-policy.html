@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - PD Companion</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=Source+Sans+3:wght@300;400;500&display=swap');
+
+    :root {
+      --ink: #1a1a2e;
+      --ink-light: #4a4a6a;
+      --ink-faint: #8888aa;
+      --accent: #4a7c59;
+      --accent-light: #e8f2ec;
+      --border: #e0e0ee;
+      --bg: #fafaf8;
+      --white: #ffffff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Source Sans 3', sans-serif;
+      font-weight: 300;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.8;
+      font-size: 17px;
+    }
+
+    header {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 2.5rem 2rem;
+      text-align: center;
+    }
+
+    .app-label {
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+
+    header h1 {
+      font-family: 'Lora', serif;
+      font-size: 2rem;
+      font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .meta {
+      font-size: 0.85rem;
+      color: var(--ink-faint);
+      font-weight: 400;
+    }
+
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 3rem 2rem 5rem;
+    }
+
+    .intro-box {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.75rem 2rem;
+      margin-bottom: 3rem;
+      font-family: 'Lora', serif;
+      font-style: italic;
+      font-size: 1.05rem;
+      color: var(--ink-light);
+      line-height: 1.9;
+    }
+
+    .intro-box span {
+      font-style: normal;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    section {
+      margin-bottom: 2.5rem;
+      padding-bottom: 2.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    section:last-of-type {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    h2 {
+      font-family: 'Lora', serif;
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--ink);
+      margin-bottom: 1rem;
+    }
+
+    p { color: var(--ink-light); margin-bottom: 1rem; }
+    p:last-child { margin-bottom: 0; }
+
+    ul { list-style: none; padding: 0; margin: 0.75rem 0; }
+    ul li {
+      color: var(--ink-light);
+      padding: 0.35rem 0 0.35rem 1.5rem;
+      position: relative;
+    }
+    ul li::before {
+      content: '→';
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-size: 0.85rem;
+    }
+
+    .callout {
+      background: var(--accent-light);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 6px 6px 0;
+      padding: 1rem 1.25rem;
+      margin: 1rem 0;
+    }
+    .callout p { margin: 0; color: var(--ink); font-weight: 400; }
+
+    strong { font-weight: 500; color: var(--ink); }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+      transition: border-color 0.2s;
+    }
+    a:hover { border-bottom-color: var(--accent); }
+
+    footer {
+      text-align: center;
+      padding: 2rem;
+      font-size: 0.8rem;
+      color: var(--ink-faint);
+      border-top: 1px solid var(--border);
+      background: var(--white);
+    }
+
+    @media (max-width: 600px) {
+      header h1 { font-size: 1.5rem; }
+      .container { padding: 2rem 1.25rem 4rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="app-label">iOS &amp; watchOS · Personal Use Application</div>
+  <h1>Privacy Policy</h1>
+  <p class="meta">PD Companion &nbsp;·&nbsp; Last updated: May 2026</p>
+</header>
+
+<div class="container">
+
+  <div class="intro-box">
+    My name is <span>Bhav Bhasin</span>. I was diagnosed with Parkinson's disease in 2022. Since then, I've been looking for a tool that does one thing well: track my symptoms and correlate them with daily events - sleep, exercise, diet, medication - so I can start to understand what makes my days better or worse. I couldn't find what I needed, so I built it myself. This app is, for now, a personal tool. This policy explains exactly what it does with the data it collects - which is, simply put, keep it on my device and use it only to help me.
+  </div>
+
+  <section>
+    <h2>What this app is</h2>
+    <p>PD Companion is a personal iOS and watchOS application built and used solely by me, Bhav Bhasin. It is not a commercial product, does not have user accounts, and is not available to the public in its current form. There is one user: me.</p>
+    <p>This privacy policy exists because the app uses Apple's Movement Disorder API and HealthKit - both of which require a published privacy policy. It describes, accurately, how the app handles health data.</p>
+  </section>
+
+  <section>
+    <h2>What data the app collects</h2>
+    <p>The app collects the following data about me, from my own devices:</p>
+
+    <p><strong>Movement and symptom data</strong></p>
+    <ul>
+      <li>Tremor probability scores from my Apple Watch, via Apple's CoreMotion Movement Disorder API</li>
+      <li>Dyskinesia probability scores from my Apple Watch, via Apple's CoreMotion Movement Disorder API</li>
+    </ul>
+
+    <p><strong>Health and lifestyle data (from Apple HealthKit, with my permission)</strong></p>
+    <ul>
+      <li>Sleep duration and quality</li>
+      <li>Heart rate and heart rate variability (HRV)</li>
+      <li>Exercise sessions - type, duration, intensity</li>
+      <li>Mindfulness and meditation sessions</li>
+      <li>Step count and daily activity levels</li>
+    </ul>
+
+    <p><strong>Context I choose to add</strong></p>
+    <ul>
+      <li>Voice notes I record (transcribed on-device, audio not retained)</li>
+      <li>Photos I take to capture context such as meals or activities (stored locally only)</li>
+      <li>Manual annotations such as medication timing or notable events</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Where the data lives</h2>
+    <div class="callout">
+      <p>All data stays on my iPhone and Apple Watch, and within my personal Apple HealthKit store. There are no external servers. No data is transmitted anywhere.</p>
+    </div>
+    <p>The app has no backend. It uses no analytics tools, crash reporting services, or third-party SDKs that transmit data. Everything is processed and stored locally on my own devices.</p>
+    <p>If the app is deleted, all locally stored data is permanently removed. HealthKit data persists in the Apple Health app unless manually deleted there.</p>
+  </section>
+
+  <section>
+    <h2>How the data is used</h2>
+    <p>The data is used for one purpose: to help me understand and manage my Parkinson's symptoms. Specifically:</p>
+    <ul>
+      <li>To display tremor and dyskinesia patterns over time</li>
+      <li>To surface correlations between symptom severity and lifestyle factors like sleep, exercise, and diet</li>
+      <li>To identify conditions that tend to precede high-tremor or high-dyskinesia periods</li>
+      <li>To provide early signals when conditions resemble patterns associated with upcoming episodes</li>
+    </ul>
+    <p>All analysis is performed on-device. No data is sent anywhere for processing.</p>
+  </section>
+
+  <section>
+    <h2>Data sharing</h2>
+    <div class="callout">
+      <p>No data is shared with anyone - not sold, not transmitted, not accessible from any external system. The data exists only on my personal devices.</p>
+    </div>
+    <p>If this app evolves into a product available to other people, this policy will be replaced entirely - written for that context, with explicit consent flows built in before any data is shared with anyone.</p>
+  </section>
+
+  <section>
+    <h2>Apple HealthKit</h2>
+    <p>The app reads HealthKit data only with explicit permission granted through iOS Settings. In line with Apple's HealthKit guidelines, this data is never used for advertising and is never shared with data brokers or third parties. It is used solely for the personal symptom management features described above.</p>
+    <p>HealthKit permissions can be reviewed or revoked at any time via iOS Settings > Privacy &amp; Security > Health > PD Companion.</p>
+  </section>
+
+  <section>
+    <h2>Apple's Movement Disorder API</h2>
+    <p>The app uses Apple's CoreMotion Movement Disorder API to passively monitor tremor and dyskinesia in the background using Apple Watch motion sensors - an API developed by Apple specifically for Parkinson's symptom monitoring.</p>
+    <p>The API delivers tremor and dyskinesia measurements in 7-day rolling windows. The app queries this data regularly and stores it locally on-device for long-term analysis. Over time, this builds a personal longitudinal dataset essential for identifying patterns and correlations. All data remains on my devices.</p>
+    <p>For accurate readings, the Apple Watch must be worn on the most affected arm - the arm where Parkinson's symptoms are more pronounced. This is configured during initial app setup and can be updated at any time in Settings.</p>
+  </section>
+
+  <section>
+    <h2>Regulatory and safety</h2>
+    <p><strong>PD Companion is not a medical device.</strong> It is not intended for, and should not be used for, the diagnosis, treatment, cure, or prevention of any disease or medical condition, including Parkinson's disease. It is a personal tool for self-tracking and pattern awareness only.</p>
+    <p>Nothing in this app constitutes medical advice. Any insights or patterns surfaced by the app should be discussed with a qualified neurologist or healthcare provider before acting on them. Medication decisions in particular should always be made in consultation with a doctor.</p>
+    <p>This app is built for personal use by an adult who has received a clinical diagnosis of Parkinson's disease from a qualified medical professional.</p>
+  </section>
+
+  <section>
+    <h2>Age and children's privacy</h2>
+    <p>This app is intended for adults only. It is not directed at, designed for, or intended to be used by anyone under the age of 13. I do not knowingly collect data from children under 13. As a personal single-user app, no account creation or data submission of any kind is involved.</p>
+  </section>
+
+  <section>
+    <h2>If this app becomes public</h2>
+    <p>If PD Companion is ever made available to other people, this privacy policy will be updated before that happens to reflect the new context. Any data sharing features - for example, optional anonymised contributions to Parkinson's research - will be strictly opt-in, clearly explained, and subject to explicit consent. This page will be updated and users notified before any such change takes effect.</p>
+  </section>
+
+  <section>
+    <h2>Contact</h2>
+    <p>Questions about this policy can be directed to:</p>
+    <p>
+      <strong>Bhav Bhasin</strong><br>
+      <a href="mailto:bhavdeep.bhasin@gmail.com">bhavdeep.bhasin@gmail.com</a>
+    </p>
+  </section>
+
+</div>
+
+<footer>
+  <p>PD Companion &nbsp;·&nbsp; A personal Parkinson's symptom tracking app</p>
+  <p style="margin-top: 0.4rem;">Built by a Parkinson's patient, for a Parkinson's patient.</p>
+</footer>
+
+</body>
+</html>
