@@ -118,7 +118,7 @@ When Phase 3 is proven on Bhav's own data:
 
 ### AI-Assisted Development Tools
 - **Cursor** - daily Swift editing with inline AI assistance (primary IDE alongside Xcode)
-- **Claude Code** - complex multi-file architectural tasks, HealthKit + CoreMotion wiring (upgrading soon)
+- **Claude Code** - complex multi-file architectural tasks, HealthKit + CoreMotion wiring (set up and active)
 - **Claude Pro (claude.ai)** - product thinking, architecture decisions, documentation
 - **Model guidance**: Use Sonnet for day-to-day work; switch to Opus for hard architectural problems, complex debugging, and Phase 2/3 ML design
 
@@ -133,9 +133,9 @@ Design the Phase 1 data model with Phase 3 in mind. Schema for tremor readings, 
 - [x] Apple Developer account created (Individual/Sole Proprietor, under bhavdeep.bhasin@gmail.com)
 - [x] Privacy policy written and finalised
 - [x] GitHub account created (github.com/bhavbhasin)
-- [ ] Privacy policy hosted on GitHub Pages (repo: pd-companion, in progress)
+- [x] Privacy policy hosted on GitHub Pages (repo: pd-companion)
 - [ ] App ID registered in Developer portal (Watch Extension App ID)
-- [ ] Entitlement request submitted
+- [x] Entitlement request submitted (May 6, 2026)
 
 ### Privacy Policy
 - **File**: privacy-policy.html
@@ -214,8 +214,8 @@ Design the Phase 1 data model with Phase 3 in mind. Schema for tremor readings, 
 | Apple ID | bhavdeep.bhasin@gmail.com | Active |
 | Apple Developer Program | Individual/Sole Proprietor | Active ($99/yr paid) |
 | GitHub | github.com/bhavbhasin | Active |
-| GitHub repo | pd-companion | Created, privacy policy upload in progress |
-| GitHub Pages | https://bhavbhasin.github.io/pd-companion/ | Pending activation |
+| GitHub repo | pd-companion | Active, SSH auth configured, local at ~/Documents/ParkinsonsProject |
+| GitHub Pages | https://bhavbhasin.github.io/pd-companion/ | Active |
 
 ---
 
@@ -279,6 +279,24 @@ Design the Phase 1 data model with Phase 3 in mind. Schema for tremor readings, 
 
 **Updating**: After any significant product or technical decision, update the relevant section and add a note to the Session Log.
 
+### Session 2 - May 7, 2026
+**Topics covered**: Claude Code setup and configuration, Google Drive mounted locally (`/Users/bhav/Library/CloudStorage/GoogleDrive-bhavdeep.bhasin@gmail.com/`), git initialized with SSH authentication to GitHub, Xcode project created with iOS + watchOS targets, capabilities configured.
+
+**Capabilities configured**:
+- iOS: HealthKit, Motion & Fitness, Background Modes (background fetch, background processing)
+- watchOS: HealthKit, Background Modes (workout processing, session type: physical therapy)
+
+**Environment established**:
+- Xcode 26.4.1 active
+- Git global config set (Bhav Bhasin, bhavdeep.bhasin@gmail.com)
+- SSH key (ed25519) added to GitHub for passwordless push/pull
+- CLAUDE.md updated with Google Drive path and communication preferences
+
+**Next actions**:
+1. Awaiting Movement Disorder API entitlement approval from Apple
+2. Begin coding Phase 1 foundation once entitlement is approved
+3. Change Mac password (exposed in chat during sudo attempt)
+
 ---
 
-*Last updated: May 2026 - Session 1 complete*
+*Last updated: May 7, 2026 - Session 2 complete*
