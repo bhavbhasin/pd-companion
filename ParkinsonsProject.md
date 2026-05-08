@@ -136,6 +136,7 @@ Design the Phase 1 data model with Phase 3 in mind. Schema for tremor readings, 
 - [x] Privacy policy hosted on GitHub Pages (repo: pd-companion)
 - [ ] App ID registered in Developer portal (Watch Extension App ID)
 - [x] Entitlement request submitted (May 6, 2026)
+- [x] Entitlement APPROVED by Apple (May 8, 2026)
 
 ### Privacy Policy
 - **File**: privacy-policy.html
@@ -293,10 +294,38 @@ Design the Phase 1 data model with Phase 3 in mind. Schema for tremor readings, 
 - CLAUDE.md updated with Google Drive path and communication preferences
 
 **Next actions**:
-1. Awaiting Movement Disorder API entitlement approval from Apple
-2. Begin coding Phase 1 foundation once entitlement is approved
-3. Change Mac password (exposed in chat during sudo attempt)
+1. ~~Awaiting Movement Disorder API entitlement approval from Apple~~ — APPROVED May 8
+2. ~~Begin coding Phase 1 foundation once entitlement is approved~~ — DONE in Session 3
+3. Change Mac password (exposed in chat during sudo attempt) — STILL PENDING
+
+### Session 3 - May 8, 2026
+**Topics covered**: Movement Disorder API entitlement approved by Apple. Phase 1 foundation fully built, builds clean on iOS and watchOS simulators, committed to GitHub.
+
+**What was built (commit d8e4dd3)**:
+- **Watch app**: `MovementDisorderManager` (CMMovementDisorderManager wrapper with simulator-safe handling), `WatchConnectivityManager` (sends data to iPhone), `WatchDashboardView` (latest reading + today's averages)
+- **iPhone app**: `HealthKitManager` (sleep, HRV, RHR, exercise, mindfulness, steps), `PhoneConnectivityManager` (receives Watch data, persists to SwiftData), `DashboardView` with `TremorChartView` and `HealthSummaryView`
+- **Shared models**: `SymptomData.swift` with `TremorSample` and `HealthSample` Codable structs
+- **iPhone SwiftData models**: `TremorReading`, `HealthSnapshot`
+- **Build settings**: HealthKit + Motion usage descriptions properly configured via INFOPLIST_KEY_* in project.pbxproj (Xcode 16 GENERATE_INFOPLIST_FILE pattern)
+
+**Critical implementation details to remember**:
+- `CMMovementDisorderManager` crashes in simulator due to entitlement check — code uses `#if targetEnvironment(simulator)` to bail out gracefully. Real Apple Watch (Series 4+) required for actual data.
+- Apple's API typically requires ~24 hours of wear before producing tremor results.
+- Switched from Sonnet 4.6 to Opus 4.7 mid-session due to API hallucinations (wrong CoreMotion method names). Opus should be the default for Swift work.
+
+**Next session starts here — deploy to physical devices**:
+1. Connect iPhone to Mac via USB cable, trust the computer
+2. Enable Developer Mode on iPhone (Settings → Privacy & Security → Developer Mode → On)
+3. Enable Developer Mode on Apple Watch (Settings → Privacy & Security → Developer Mode)
+4. Verify iPhone is paired with Apple Watch (in Watch app on iPhone)
+5. Verify both devices have a passcode (required for HealthKit)
+6. In Xcode: select PD Companion scheme + iPhone as destination, press ⌘R
+7. Grant HealthKit + Motion permissions on first launch
+8. Watch app should auto-install (or install via Watch app → Available Apps)
+9. Begin actual tremor monitoring (data takes ~24h to start appearing)
+
+**Still pending from Session 2**: Change Mac password (was exposed during sudo command in chat).
 
 ---
 
-*Last updated: May 7, 2026 - Session 2 complete*
+*Last updated: May 8, 2026 - Session 3 complete; Phase 1 built and committed*
