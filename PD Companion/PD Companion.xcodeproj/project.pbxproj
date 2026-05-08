@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		6B0D12CC2FADAED500534677 /* PD Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 6B0D12AC2FADAED400534677 /* PD Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		6B0D130C2FADC9B100534677 /* SymptomData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B0D130A2FADC9B100534677 /* SymptomData.swift */; };
+		6B0D130D2FADC9B100534677 /* SymptomData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B0D130A2FADC9B100534677 /* SymptomData.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,31 +71,12 @@
 		6B0D12AC2FADAED400534677 /* PD Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "PD Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6B0D12B82FADAED500534677 /* PD Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "PD Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6B0D12C22FADAED500534677 /* PD Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "PD Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		6B0D130A2FADC9B100534677 /* SymptomData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymptomData.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
-
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		6B0D12D92FADB25500534677 /* Exceptions for "PD Companion" folder in "PD Companion" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"PD-Companion-Info.plist",
-			);
-			target = 6B0D12202FADA91C00534677 /* PD Companion */;
-		};
-		6B0D12DB2FADB2F800534677 /* Exceptions for "PD Watch App" folder in "PD Watch App" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"PD-Watch-App-Info.plist",
-			);
-			target = 6B0D12AB2FADAED400534677 /* PD Watch App */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		6B0D12232FADA91C00534677 /* PD Companion */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				6B0D12D92FADB25500534677 /* Exceptions for "PD Companion" folder in "PD Companion" target */,
-			);
 			path = "PD Companion";
 			sourceTree = "<group>";
 		};
@@ -109,9 +92,6 @@
 		};
 		6B0D12AD2FADAED400534677 /* PD Watch App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				6B0D12DB2FADB2F800534677 /* Exceptions for "PD Watch App" folder in "PD Watch App" target */,
-			);
 			path = "PD Watch App";
 			sourceTree = "<group>";
 		};
@@ -176,6 +156,7 @@
 		6B0D12182FADA91C00534677 = {
 			isa = PBXGroup;
 			children = (
+				6B0D130B2FADC9B100534677 /* Shared */,
 				6B0D12232FADA91C00534677 /* PD Companion */,
 				6B0D12312FADA91D00534677 /* PD CompanionTests */,
 				6B0D123B2FADA91D00534677 /* PD CompanionUITests */,
@@ -197,6 +178,14 @@
 				6B0D12C22FADAED500534677 /* PD Watch AppUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		6B0D130B2FADC9B100534677 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				6B0D130A2FADC9B100534677 /* SymptomData.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -448,6 +437,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6B0D130C2FADC9B100534677 /* SymptomData.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -469,6 +459,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6B0D130D2FADC9B100534677 /* SymptomData.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -650,7 +641,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "PD-Companion-Info.plist";
-				INFOPLIST_KEY_NSMotionUsageDescription = "";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "PD Companion reads your health data (sleep, heart rate, HRV, exercise, mindfulness) to find patterns that correlate with your Parkinson's symptoms.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "PD Companion stores symptom tracking data in HealthKit to keep your health information in one place.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "PD Companion uses motion data to track tremor and movement patterns related to Parkinson's disease.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -685,7 +678,9 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "PD-Companion-Info.plist";
-				INFOPLIST_KEY_NSMotionUsageDescription = "";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "PD Companion reads your health data (sleep, heart rate, HRV, exercise, mindfulness) to find patterns that correlate with your Parkinson's symptoms.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "PD Companion stores symptom tracking data in HealthKit to keep your health information in one place.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "PD Companion uses motion data to track tremor and movement patterns related to Parkinson's disease.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -805,6 +800,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "PD-Watch-App-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = PD;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "PD Companion reads your health data to find patterns that correlate with your Parkinson's symptoms.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "PD Companion stores symptom tracking data in HealthKit.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "PD Companion monitors tremor and dyskinesia patterns using your Apple Watch sensors.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "com.bhavbhasin.PD-Companion";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -840,6 +838,9 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "PD-Watch-App-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = PD;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "PD Companion reads your health data to find patterns that correlate with your Parkinson's symptoms.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "PD Companion stores symptom tracking data in HealthKit.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "PD Companion monitors tremor and dyskinesia patterns using your Apple Watch sensors.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "com.bhavbhasin.PD-Companion";
 				LD_RUNPATH_SEARCH_PATHS = (
