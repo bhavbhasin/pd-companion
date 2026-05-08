@@ -1,17 +1,24 @@
-//
-//  PDApp.swift
-//  PD Watch App
-//
-//  Created by Bhav Bhasin on 5/7/26.
-//
-
 import SwiftUI
 
 @main
 struct PD_Watch_AppApp: App {
+    @StateObject private var movementManager = MovementDisorderManager()
+    @StateObject private var connectivityManager = WatchConnectivityManager.shared
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            WatchDashboardView()
+                .environmentObject(movementManager)
+                .environmentObject(connectivityManager)
+                .task {
+                    movementManager.checkAvailability()
+                    movementManager.startMonitoring()
+                    movementManager.queryRecentResults()
+                    connectivityManager.activate()
+                }
+                .onChange(of: movementManager.recentTremorSamples) {
+                    connectivityManager.sendTremorSamples(movementManager.recentTremorSamples)
+                }
         }
     }
 }

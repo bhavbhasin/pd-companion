@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSHealthShareUsageDescription</key>
+	<string>PD Companion reads your health data (sleep, heart rate, HRV, exercise, mindfulness) to find patterns that correlate with your Parkinson's symptoms.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>PD Companion stores symptom tracking data in HealthKit to keep your health information in one place.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>PD Companion uses motion data to track tremor and movement patterns related to Parkinson's disease.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
