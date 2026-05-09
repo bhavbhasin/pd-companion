@@ -148,7 +148,7 @@ Design the Phase 1 data model with Phase 3 in mind. Schema for tremor readings, 
 - Will need to be fully replaced (not updated) when app goes public in Phase 4
 
 ### What's Needed for Submission
-- Entitlement key: `com.apple.developer.CoreMotion.movement-disorder`
+- Entitlement key: `com.apple.developer.health-movement-disorder` (NOT `com.apple.developer.CoreMotion.movement-disorder` — that earlier-documented key was a Sonnet hallucination and Xcode rejects it as invalid)
 - Must be requested by Account Holder in Apple Developer portal
 - Path: Certificates, Identifiers & Profiles → Identifiers → Watch Extension App ID → Capability Requests tab
 
@@ -169,9 +169,9 @@ Design the Phase 1 data model with Phase 3 in mind. Schema for tremor readings, 
 "I am a Parkinson's disease patient (diagnosed 2022) who has developed a working iOS/watchOS application to track tremor and dyskinesia symptoms. The app currently uses FFT analysis of raw accelerometer and gyroscope data, but is fundamentally limited to foreground operation only - making continuous, real-world monitoring impractical for daily use. The CMMovementDisorderManager API would enable passive background monitoring throughout the day, which is essential for capturing real symptom patterns in normal life, not just during deliberate tracking sessions. All data will remain on-device and in my personal HealthKit store - no server, no data sharing, no third-party access. I intend to eventually make this tool available free or at low cost to other Parkinson's patients."
 
 ### After Approval
-- [ ] Add entitlement key to Watch Extension `.entitlements` file:
+- [x] Add entitlement key to Watch Extension `.entitlements` file:
   ```xml
-  <key>com.apple.developer.CoreMotion.movement-disorder</key>
+  <key>com.apple.developer.health-movement-disorder</key>
   <true/>
   ```
 - [ ] Enable capability in Xcode under Watch Extension target → Signing & Capabilities
@@ -326,6 +326,35 @@ Design the Phase 1 data model with Phase 3 in mind. Schema for tremor readings, 
 
 **Still pending from Session 2**: Change Mac password (was exposed during sudo command in chat).
 
+### Session 4 - May 8, 2026 (evening)
+**Topics covered**: Resolved physical device deployment blockers. Phase 1 now installed and running on real iPhone Air + Apple Watch Series 11. Movement Disorder monitoring is active on the Watch.
+
+**Problems found and fixed**:
+1. **Bundle ID mismatch** — Xcode auto-generated `com.bhavbhasin.PD-Companion` (space → hyphen, mixed case) but manually-created App IDs in the developer portal were lowercase `com.bhavbhasin.pdcompanion`. The Movement Disorder entitlement was approved against the manual App ID, so Xcode's auto-generated one couldn't claim it. Fix: changed project bundle IDs to `com.bhavbhasin.pdcompanion` (iPhone) and `com.bhavbhasin.pdcompanion.watchkitextension` (Watch) in `project.pbxproj`. Updated `WKCompanionAppBundleIdentifier` to match.
+2. **Wrong entitlement key** — earlier sessions documented and used `com.apple.developer.CoreMotion.movement-disorder` which Apple's catalog doesn't recognize. Correct key is `com.apple.developer.health-movement-disorder` (matches Apple's portal label "Health Movement Disorder"). The CoreMotion-prefixed key was a Sonnet hallucination. Fixed in Watch entitlements file.
+3. **Wrong destination during initial Watch deployment** — accidentally deployed to watchOS simulator instead of physical paired Watch. Solved by selecting physical Watch under iPhone Air in Xcode's destination dropdown.
+
+**Cleaned up in Apple Developer portal**:
+- Deleted XC-prefixed auto-generated App IDs that were no longer needed
+- Kept `com.bhavbhasin.pdcompanion` and `com.bhavbhasin.pdcompanion.watchkitextension` (canonical)
+- Left `XC Wildcard` (`*`) alone — Xcode uses it for SwiftUI Previews
+
+**Verified on physical devices**:
+- iPhone app launches ✓
+- Watch app launches ✓
+- Watch shows "Monitoring active. Tremor data will appear as it becomes available." ✓ (`CMMovementDisorderManager` correctly initialized)
+- HealthKit + Motion permissions granted
+
+**Loose ends to address later**:
+- Watch app Display Name shows as "PD" — should be "PD Watch" or similar (cosmetic, in target General tab)
+- `Info.plist contained no UIScene configuration` warning at build time — non-blocking, modern SwiftUI lifecycle works without it
+- Mac password change — STILL PENDING from Session 2 (exposed in chat during sudo attempt)
+
+**Lessons captured for future sessions** (now in auto-memory):
+- Take user instinct seriously — Bhav suspected the space in "PD Companion" would cause issues; should have flagged at naming time, not after hours of debugging
+- Movement Disorder entitlement key is `com.apple.developer.health-movement-disorder` — never use the CoreMotion variant
+- Default to Opus for Swift work on this project (Sonnet keeps hallucinating Apple API surface)
+
 ---
 
-*Last updated: May 8, 2026 - Session 3 complete; Phase 1 built and committed*
+*Last updated: May 8, 2026 - Session 4 complete; Phase 1 deployed to physical devices and monitoring active*
