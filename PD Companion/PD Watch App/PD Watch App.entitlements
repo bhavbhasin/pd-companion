@@ -4,7 +4,7 @@
 <dict>
 	<key>com.apple.developer.healthkit</key>
 	<true/>
-	<key>com.apple.developer.CoreMotion.movement-disorder</key>
+	<key>com.apple.developer.health-movement-disorder</key>
 	<true/>
 </dict>
 </plist>
