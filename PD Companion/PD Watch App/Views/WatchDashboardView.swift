@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WatchDashboardView: View {
     @EnvironmentObject var movementManager: MovementDisorderManager
+    @StateObject private var focusSession = FocusSessionManager.shared
 
     var body: some View {
         ScrollView {
@@ -27,10 +28,49 @@ struct WatchDashboardView: View {
                     latestReadingView
                     todaySummaryView
                 }
+                focusSessionView
             }
             .padding()
         }
         .navigationTitle("PD Companion")
+    }
+
+    private var focusSessionView: some View {
+        VStack(spacing: 6) {
+            Divider()
+            if focusSession.isActive {
+                if focusSession.willExpireSoon {
+                    Text("Session ending soon")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+                Button(role: .destructive) {
+                    focusSession.stop()
+                } label: {
+                    HStack {
+                        Image(systemName: "stop.circle.fill")
+                        Text("End Focus")
+                    }
+                }
+                if let started = focusSession.startedAt {
+                    Text("Live since \(started.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Button {
+                    focusSession.start()
+                } label: {
+                    HStack {
+                        Image(systemName: "play.circle.fill")
+                        Text("Start Focus")
+                    }
+                }
+                Text("Live monitoring up to ~1 hour")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var latestReadingView: some View {

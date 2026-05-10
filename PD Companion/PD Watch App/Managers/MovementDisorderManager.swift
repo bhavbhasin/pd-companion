@@ -3,7 +3,9 @@ import Foundation
 import Combine
 
 @MainActor
-class MovementDisorderManager: ObservableObject {
+final class MovementDisorderManager: ObservableObject {
+    static let shared = MovementDisorderManager()
+
     private var manager: CMMovementDisorderManager?
 
     @Published var isAvailable = false
@@ -11,6 +13,8 @@ class MovementDisorderManager: ObservableObject {
     @Published var lastQueryDate: Date?
     @Published var recentTremorSamples: [TremorSample] = []
     @Published var error: String?
+
+    init() {}
 
     func checkAvailability() {
 #if targetEnvironment(simulator)
@@ -34,19 +38,26 @@ class MovementDisorderManager: ObservableObject {
         isMonitoring = true
     }
 
-    func queryRecentResults() {
-        guard isAvailable, let manager else { return }
+    func queryRecentResults(completion: (@Sendable () -> Void)? = nil) {
+        guard isAvailable, let manager else {
+            completion?()
+            return
+        }
 
         let now = Date()
-        let queryStart = lastQueryDate ?? Calendar.current.date(byAdding: .day, value: -7, to: now)!
+        let queryStart = Calendar.current.date(byAdding: .day, value: -7, to: now)!
 
         manager.queryTremor(from: queryStart, to: now) { [weak self] tremorResults, tremorError in
-            guard let self, let manager = self.manager else { return }
+            guard let self, let manager = self.manager else {
+                completion?()
+                return
+            }
 
             manager.queryDyskineticSymptom(from: queryStart, to: now) { dyskinesiaResults, dyskinesiaError in
                 Task { @MainActor in
                     if let tremorError {
                         self.error = tremorError.localizedDescription
+                        completion?()
                         return
                     }
 
@@ -80,6 +91,7 @@ class MovementDisorderManager: ObservableObject {
 
                     self.recentTremorSamples = samples
                     self.lastQueryDate = now
+                    completion?()
                 }
             }
         }

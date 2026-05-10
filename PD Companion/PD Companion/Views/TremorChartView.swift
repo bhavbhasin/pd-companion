@@ -25,15 +25,6 @@ struct TremorChartView: View {
                         .foregroundStyle(.blue)
                         .interpolationMethod(.catmullRom)
                     }
-
-                    ForEach(readings, id: \.timestamp) { reading in
-                        LineMark(
-                            x: .value("Time", reading.timestamp),
-                            y: .value("Dyskinesia", reading.dyskinesiaScore)
-                        )
-                        .foregroundStyle(.purple)
-                        .interpolationMethod(.catmullRom)
-                    }
                 }
                 .chartYScale(domain: 0...4)
                 .chartYAxis {
@@ -47,10 +38,6 @@ struct TremorChartView: View {
                         }
                     }
                 }
-                .chartForegroundStyleScale([
-                    "Tremor": .blue,
-                    "Dyskinesia": .purple,
-                ])
                 .frame(height: 200)
             }
         }

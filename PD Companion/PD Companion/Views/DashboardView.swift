@@ -27,10 +27,11 @@ struct DashboardView: View {
     }
 
     private var connectionStatusView: some View {
-        HStack {
-            Image(systemName: connectivity.isWatchReachable ? "applewatch.radiowaves.left.and.right" : "applewatch.slash")
-                .foregroundStyle(connectivity.isWatchReachable ? .green : .secondary)
-            Text(connectivity.isWatchReachable ? "Watch connected" : "Watch not connected")
+        let status = watchStatus
+        return HStack {
+            Image(systemName: status.icon)
+                .foregroundStyle(status.color)
+            Text(status.label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
@@ -41,6 +42,19 @@ struct DashboardView: View {
             }
         }
         .padding(.horizontal, 4)
+    }
+
+    private var watchStatus: (icon: String, color: Color, label: String) {
+        if !connectivity.isWatchPaired {
+            return ("applewatch.slash", .secondary, "No Apple Watch paired")
+        }
+        if !connectivity.isWatchAppInstalled {
+            return ("applewatch.slash", .secondary, "Watch app not installed")
+        }
+        if connectivity.isWatchReachable {
+            return ("applewatch.radiowaves.left.and.right", .green, "Watch app active")
+        }
+        return ("applewatch", .secondary, "Watch paired (app inactive)")
     }
 
     private var tremorSummaryCard: some View {

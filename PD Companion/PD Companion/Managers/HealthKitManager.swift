@@ -8,6 +8,9 @@ class HealthKitManager: ObservableObject {
 
     @Published var isAuthorized = false
     @Published var todaySnapshot: HealthSample?
+    @Published var lastMedicationDoseDate: Date?
+    @Published var lastMedicationName: String?
+    @Published var todayWorkouts: [HKWorkout] = []
     @Published var error: String?
 
     private let readTypes: Set<HKObjectType> = {
@@ -18,6 +21,7 @@ class HealthKitManager: ObservableObject {
             HKObjectType.quantityType(forIdentifier: .appleExerciseTime)!,
             HKObjectType.categoryType(forIdentifier: .mindfulSession)!,
             HKObjectType.quantityType(forIdentifier: .stepCount)!,
+            HKObjectType.workoutType(),
         ]
         return Set(types)
     }()
@@ -33,6 +37,19 @@ class HealthKitManager: ObservableObject {
             isAuthorized = true
         } catch {
             self.error = "HealthKit authorization failed: \(error.localizedDescription)"
+        }
+
+        await requestMedicationAuthorization()
+    }
+
+    private func requestMedicationAuthorization() async {
+        await withCheckedContinuation { continuation in
+            store.requestPerObjectReadAuthorization(
+                for: HKObjectType.userAnnotatedMedicationType(),
+                predicate: nil
+            ) { _, _ in
+                continuation.resume()
+            }
         }
     }
 
@@ -56,6 +73,82 @@ class HealthKitManager: ObservableObject {
         snapshot.mindfulnessMinutes = await mindfulness
 
         todaySnapshot = snapshot
+
+        await fetchLatestMedicationDose()
+        await fetchTodayWorkouts(from: startOfDay, to: now)
+    }
+
+    private func fetchTodayWorkouts(from start: Date, to end: Date) async {
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        let sortDescriptor = NSSortDescriptor(
+            key: HKSampleSortIdentifierStartDate, ascending: false
+        )
+
+        await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: HKObjectType.workoutType(),
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [sortDescriptor]
+            ) { _, samples, _ in
+                Task { @MainActor in
+                    self.todayWorkouts = (samples as? [HKWorkout]) ?? []
+                    continuation.resume()
+                }
+            }
+            store.execute(query)
+        }
+    }
+
+    private func fetchLatestMedicationDose() async {
+        let medications = await fetchUserMedications()
+        var medMap: [HKHealthConceptIdentifier: HKUserAnnotatedMedication] = [:]
+        for med in medications {
+            medMap[med.medication.identifier] = med
+        }
+
+        let doseType = HKObjectType.medicationDoseEventType()
+        let sortDescriptor = NSSortDescriptor(
+            key: HKSampleSortIdentifierStartDate, ascending: false
+        )
+
+        await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: doseType,
+                predicate: nil,
+                limit: 1,
+                sortDescriptors: [sortDescriptor]
+            ) { _, samples, _ in
+                Task { @MainActor in
+                    if let dose = samples?.first as? HKMedicationDoseEvent {
+                        self.lastMedicationDoseDate = dose.startDate
+                        if let med = medMap[dose.medicationConceptIdentifier] {
+                            self.lastMedicationName = med.nickname ?? med.medication.displayText
+                        }
+                    }
+                    continuation.resume()
+                }
+            }
+            store.execute(query)
+        }
+    }
+
+    private func fetchUserMedications() async -> [HKUserAnnotatedMedication] {
+        await withCheckedContinuation { continuation in
+            var collected: [HKUserAnnotatedMedication] = []
+            let query = HKUserAnnotatedMedicationQuery(
+                predicate: nil,
+                limit: HKObjectQueryNoLimit
+            ) { _, medication, isFinished, _ in
+                if let medication {
+                    collected.append(medication)
+                }
+                if isFinished {
+                    continuation.resume(returning: collected)
+                }
+            }
+            store.execute(query)
+        }
     }
 
     private func fetchSleepHours(from start: Date, to end: Date) async -> Double? {

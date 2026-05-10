@@ -8,6 +8,8 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
     static let shared = PhoneConnectivityManager()
 
     @Published var latestTremorSamples: [TremorSample] = []
+    @Published var isWatchPaired = false
+    @Published var isWatchAppInstalled = false
     @Published var isWatchReachable = false
 
     var modelContext: ModelContext?
@@ -34,9 +36,24 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
 
     private func persistSamples(_ samples: [TremorSample]) {
         guard let context = modelContext else { return }
-        for sample in samples {
-            let reading = TremorReading(from: sample)
-            context.insert(reading)
+        let existing = (try? context.fetch(FetchDescriptor<TremorReading>())) ?? []
+        let existingTimestamps = Set(existing.map { $0.timestamp })
+        for sample in samples where !existingTimestamps.contains(sample.timestamp) {
+            context.insert(TremorReading(from: sample))
+        }
+        try? context.save()
+    }
+
+    func cleanupDuplicates() {
+        guard let context = modelContext else { return }
+        guard let all = try? context.fetch(FetchDescriptor<TremorReading>()) else { return }
+        var seen: Set<Date> = []
+        for reading in all {
+            if seen.contains(reading.timestamp) {
+                context.delete(reading)
+            } else {
+                seen.insert(reading.timestamp)
+            }
         }
         try? context.save()
     }
@@ -48,8 +65,13 @@ extension PhoneConnectivityManager: WCSessionDelegate {
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
     ) {
+        let paired = session.isPaired
+        let installed = session.isWatchAppInstalled
+        let reachable = session.isReachable
         Task { @MainActor in
-            self.isWatchReachable = session.isReachable
+            self.isWatchPaired = paired
+            self.isWatchAppInstalled = installed
+            self.isWatchReachable = reachable
         }
     }
 
@@ -59,8 +81,18 @@ extension PhoneConnectivityManager: WCSessionDelegate {
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
+        let reachable = session.isReachable
         Task { @MainActor in
-            self.isWatchReachable = session.isReachable
+            self.isWatchReachable = reachable
+        }
+    }
+
+    nonisolated func sessionWatchStateDidChange(_ session: WCSession) {
+        let paired = session.isPaired
+        let installed = session.isWatchAppInstalled
+        Task { @MainActor in
+            self.isWatchPaired = paired
+            self.isWatchAppInstalled = installed
         }
     }
 
