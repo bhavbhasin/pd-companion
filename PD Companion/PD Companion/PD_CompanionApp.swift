@@ -6,22 +6,29 @@ struct PD_CompanionApp: App {
     @StateObject private var healthKit = HealthKitManager()
     @StateObject private var connectivity = PhoneConnectivityManager.shared
 
+    let modelContainer: ModelContainer
+
+    init() {
+        do {
+            modelContainer = try ModelContainer(for: TremorReading.self, HealthSnapshot.self)
+        } catch {
+            fatalError("Failed to create ModelContainer: \(error)")
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             DashboardView()
                 .environmentObject(healthKit)
                 .environmentObject(connectivity)
-                .modelContainer(for: [TremorReading.self, HealthSnapshot.self])
                 .task {
+                    connectivity.modelContext = modelContainer.mainContext
+                    connectivity.cleanupDuplicates()
                     await healthKit.requestAuthorization()
                     await healthKit.fetchTodaySnapshot()
                     connectivity.activate()
                 }
-                .onAppear {
-                    if let container = try? ModelContainer(for: TremorReading.self, HealthSnapshot.self) {
-                        connectivity.modelContext = container.mainContext
-                    }
-                }
         }
+        .modelContainer(modelContainer)
     }
 }
