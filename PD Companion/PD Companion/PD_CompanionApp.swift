@@ -18,7 +18,7 @@ struct PD_CompanionApp: App {
 
     var body: some Scene {
         WindowGroup {
-            DashboardView()
+            DayInReviewView()
                 .environmentObject(healthKit)
                 .environmentObject(connectivity)
                 .task {
