@@ -51,6 +51,8 @@ This is the founding principle. Every design decision runs through this filter:
 
 ## Product Roadmap
 
+> Strategic phases below describe what we're building and why. For the live tactical queue (status, priorities, implementation notes per feature), see [BACKLOG.md](BACKLOG.md).
+
 ### Phase 1 - Foundation & Telemetry (Current Focus)
 **Goal**: Replace FFT accelerometer approach with Apple's Movement Disorder API for true background monitoring
 
@@ -62,6 +64,8 @@ This is the founding principle. Every design decision runs through this filter:
 - [ ] Replace current FFT foreground-only tracking with background-capable API
 
 **Success metric**: Passively capturing real continuous tremor/dyskinesia data throughout the day without the app needing to be open
+
+**Live backlog:** [BACKLOG.md → Phase 1](BACKLOG.md#phase-1--foundation--telemetry)
 
 ### Phase 2 - Correlation Engine
 **Goal**: Surface meaningful patterns between symptoms and lifestyle events
@@ -76,6 +80,8 @@ This is the founding principle. Every design decision runs through this filter:
 
 **Success metric**: Bhav discovers at least one actionable correlation that changes how he manages his day
 
+**Live backlog:** [BACKLOG.md → Phase 2](BACKLOG.md#phase-2--correlation-engine)
+
 ### Phase 3 - Predictive / Preemptive
 **Goal**: Anticipate tremor/dyskinesia episodes before they happen and suggest interventions
 
@@ -86,6 +92,8 @@ This is the founding principle. Every design decision runs through this filter:
 - [ ] Wrist haptics on Apple Watch for subtle, non-stigmatising alerts
 
 **Success metric**: Bhav successfully anticipates and moderates an episode using the app's guidance
+
+**Live backlog:** [BACKLOG.md → Phase 3](BACKLOG.md#phase-3--predictive--preemptive)
 
 ### Phase 4 - Scaled Patient App (Future)
 When Phase 3 is proven on Bhav's own data:
@@ -98,6 +106,8 @@ When Phase 3 is proven on Bhav's own data:
 - Consider partnership with organisations like Michael J. Fox Foundation
 - Potential FDA 510(k) clearance (StrivePD proved this pathway is navigable)
 - Update privacy policy to reflect multi-user, data-sharing context before any public launch
+
+**Live backlog:** [BACKLOG.md → Phase 4](BACKLOG.md#phase-4--scaled-patient-app)
 
 ---
 
