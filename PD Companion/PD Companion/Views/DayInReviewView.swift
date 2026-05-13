@@ -11,6 +11,7 @@ struct DayInReviewView: View {
         for: Date().addingTimeInterval(-86400)
     )
     @State private var showingWatchStatus = false
+    @State private var lastUpdated: Date?
 
     var body: some View {
         NavigationStack {
@@ -57,9 +58,11 @@ struct DayInReviewView: View {
             }
             .task(id: selectedDate) {
                 await healthKit.fetchDayInReview(for: selectedDate)
+                lastUpdated = Date()
             }
             .refreshable {
                 await healthKit.fetchDayInReview(for: selectedDate)
+                lastUpdated = Date()
             }
         }
     }
@@ -100,11 +103,13 @@ struct DayInReviewView: View {
             Spacer()
 
             VStack(spacing: 2) {
-                Text(headerTitle)
-                    .font(.headline)
                 Text(selectedDate.formatted(.dateTime.weekday(.wide).month().day()))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.headline)
+                if let lastUpdated {
+                    Text("Updated \(lastUpdated.formatted(.relative(presentation: .named)))")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()
@@ -120,15 +125,6 @@ struct DayInReviewView: View {
             .disabled(isAtToday)
             .opacity(isAtToday ? 0.3 : 1)
         }
-    }
-
-    private var headerTitle: String {
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        let yesterday = cal.date(byAdding: .day, value: -1, to: today) ?? today
-        if cal.isDate(selectedDate, inSameDayAs: today) { return "Today" }
-        if cal.isDate(selectedDate, inSameDayAs: yesterday) { return "Yesterday" }
-        return selectedDate.formatted(.relative(presentation: .named))
     }
 
     private var isAtToday: Bool {
@@ -346,12 +342,12 @@ private struct TremorTimelinePanel: View {
                 emptyState("No tremor data captured for this day.")
             } else {
                 Chart {
-                    ForEach(events) { event in
+                    ForEach(chartEvents) { event in
                         RuleMark(x: .value("Event time", event.time))
                             .foregroundStyle(.gray.opacity(0.25))
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     }
-                    ForEach(events) { event in
+                    ForEach(chartEvents) { event in
                         PointMark(
                             x: .value("Event time", event.time),
                             y: .value("Event lane", 4.3)
@@ -396,11 +392,11 @@ private struct TremorTimelinePanel: View {
                 }
                 .frame(height: 200)
 
-                if !events.isEmpty {
+                if !chartEvents.isEmpty {
                     HStack(spacing: 12) {
                         legendItem(systemImage: "pill.fill", palette: (.red, .yellow), label: "Medication")
                         legendItem(systemImage: "figure.run", solid: .green, label: "Workout")
-                        legendItem(systemImage: "brain.head.profile", solid: .cyan, label: "Mindfulness")
+                        legendItem(systemImage: "fork.knife", solid: .brown, label: "Food")
                     }
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -452,6 +448,13 @@ private struct TremorTimelinePanel: View {
     private struct HourBucket {
         let hour: Date
         let value: Double
+    }
+
+    private var chartEvents: [DayEvent] {
+        events.filter { event in
+            if case .mindfulness = event { return false }
+            return true
+        }
     }
 
     private var hourlyBuckets: [HourBucket] {

@@ -36,7 +36,9 @@ struct PD_Watch_AppApp: App {
     private func queryAndSync() {
         movementManager.queryRecentResults {
             Task { @MainActor in
+                let cutoff = Date().addingTimeInterval(-48 * 3600)
                 let samples = MovementDisorderManager.shared.recentTremorSamples
+                    .filter { $0.timestamp >= cutoff }
                 WatchConnectivityManager.shared.sendTremorSamples(samples)
             }
         }
