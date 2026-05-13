@@ -30,7 +30,9 @@ final class BackgroundRefreshCoordinator {
 
         manager.queryRecentResults {
             Task { @MainActor in
+                let cutoff = Date().addingTimeInterval(-48 * 3600)
                 let samples = MovementDisorderManager.shared.recentTremorSamples
+                    .filter { $0.timestamp >= cutoff }
                 WatchConnectivityManager.shared.sendTremorSamples(samples)
                 BackgroundRefreshCoordinator.shared.scheduleNextRefresh()
                 task.setTaskCompletedWithSnapshot(false)

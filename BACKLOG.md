@@ -119,7 +119,94 @@ When the Today tab was killed (May 11), three Health Today tiles were dropped fr
 
 If/when these become correlation-relevant or user-requested, the right home is **per-tile detail modals** (already a separate backlog entry) rather than re-expanding the glance card. The detail modal pattern was designed to surface deeper context per metric without crowding the dashboard.
 
-### Voice input for medication logging via App Intents — Next up
+### Food & beverage logging (manual-first) — Next up (build after May 14 quota reset)
+
+Capture food and beverage as event data for correlation with tremor. Manual-first, voice-later. **Design locked May 12; build deferred ~36 hours to the May 14 weekly quota reset.**
+
+**Real-world motivation (May 12):** Bhav observed Sinemet at 11:30 AM → lunch → tremor subsided → coffee at ~2 PM → tremor returned within ~30 min. Caffeine and protein-levodopa interaction are the two highest-signal food correlations for PD. Without capturing food/beverage events as data, the correlation engine cannot surface either pattern. Reprioritized ahead of voice medication logging because data accumulation matters more than input modality polish right now.
+
+**Why manual-first, not voice-first:** Voice input has a locked design too, but manual entry starts producing correlation data on day one without depending on Siri recognition. Voice becomes a free upgrade later — the App Intent shell built in this entry extends to "Hey Siri, log coffee" with marginal extra work.
+
+**Locked design:**
+
+*Capture UX — one-tap chip logging:*
+- "+ Log" entry point on Review tab opens a sheet with category chips:
+  - ☕ Coffee · 🍵 Tea · 🍽 Meal · 🥤 Soda · 🍷 Alcohol · 🍪 Snack · ＋ Custom
+- Tap a chip → logs immediately at current time
+- Long-press or "Edit" → adjust time, add notes, edit tags
+- Time override: stepper for "X min ago" (5 / 15 / 30 / 60 / 90 / 120). Covers 95% of forgot-to-log cases.
+
+*Data model (SwiftData, app-local):*
+```swift
+FoodEvent {
+  id: UUID
+  timestamp: Date
+  category: Category    // .coffee, .tea, .meal, .snack, .alcohol, .soda, .custom
+  name: String?         // optional refinement
+  tags: Set<Tag>        // .caffeine, .protein, .alcohol, .sugar
+  notes: String?
+}
+```
+Tags auto-derive from category (coffee → caffeine, meal → protein candidate) and stay overrideable.
+
+*Storage — SwiftData vs HealthKit dietary types:* SwiftData for v1. HealthKit's dietary entries are quantity-based (grams of caffeine, grams of protein), forcing awkward portion estimation per entry. App-local schema fits the user's actual mental model and ships faster. Can write a secondary `HKQuantitySample` for caffeine later if Apple Health visibility is wanted.
+
+*Granularity — categories vs. specific foods:* v1 stays at category + tags. Don't try to capture "chicken sandwich, no fries" in this pass — that's voice/camera territory. Categories + tags are enough to surface the coffee→tremor and protein→levodopa patterns the engine actually needs.
+
+**Build order (~3–4h total):**
+1. SwiftData `FoodEvent` model + persistence (~30 min)
+2. Log sheet UI: chips + time stepper (~1.5 h)
+3. Events lane icon on tremor timeline (~30 min)
+4. Glance card food count or events tile (~30 min)
+5. `LogFoodIntent` App Intent shell — callable from Siri later for free (~30 min)
+
+**What v1 does NOT capture:**
+- Portion sizes
+- Calorie / macro estimation
+- Photo input (camera path — see below)
+- Per-food-item identification
+
+**Camera path (deferred, Phase 4-ish):** Photo of meal → multimodal model identifies food + estimates portions (Cal AI–style). **Reality check:** general food identification at that accuracy requires hosted multimodal models (GPT-4V, Claude, Gemini Vision). Apple's on-device vision is not capable enough for arbitrary meal recognition. Sending food photos to a hosted API violates the privacy-first principle without explicit per-photo consent. Cost ~$0.01–0.05 per photo if hosted. Defer until either Apple ships a capable on-device food-recognition model or we deliberately introduce a consent + cloud architecture.
+
+**Interim data capture (May 12 → May 14 while quota resets):**
+- Coffee / caffeinated drinks: log in Apple Health → Browse → Nutrition → Caffeine → Add Data (preserves timestamp natively).
+- Other food/beverage events: timestamped lines in Notes app.
+- Backfill into the `FoodEvent` store once the log sheet ships.
+
+**Dependencies:** None blocking. Independent of correlation engine and of voice-input work. The App Intent shell built here is the foundation that voice medication logging (below) plugs into next.
+
+### In-app mindfulness session timer — Backlog (build after food logging)
+
+Start/stop mindfulness session logging directly in PD Companion. **~1 hour build. Small, targeted, no new UI paradigm.**
+
+**Why this exists:** Apple's built-in Mindfulness app caps out at ~5 minutes (Breathe/Reflect sessions) — not usable for Bhav's 45–60 min meditation-to-music sessions. Insight Timer would cover the duration but is a third-party app — violates the self-contained product principle (see memory: feedback-self-contained-product). No native Apple path covers free-form sessions of this length. Build it ourselves.
+
+**Why Apple Watch Workout app is not the answer:** Workout writes `HKWorkout` (physical activity), not `HKCategoryTypeIdentifier.mindfulSession` (mindfulness). Using a workout type to log meditation conflates the data types and corrupts the correlation engine's ability to distinguish physical exertion from mental stillness — two signals that affect tremor very differently.
+
+**Locked design:**
+
+Single interaction flow — tap "Start Mindfulness" → timer runs in the background while user meditates to music → tap "Stop" (or lock screen and stop later):
+- Writes `HKCategorySample(type: .mindfulSession, value: 0, start: startDate, end: endDate)` to HealthKit on stop
+- No configuration needed — duration is captured from actual elapsed time
+- Start time defaults to now; "Started X min ago" adjustment if user forgot to tap at the real start
+
+**Entry point:** Same "+ Log" sheet being built for food logging. Mindfulness gets a chip alongside the food categories:
+- 🧘 Mindfulness → tapping starts the timer (sheet closes, small status indicator shows session is running)
+- Persistent banner or lock screen widget shows elapsed time + "Stop" button
+
+**Interim data capture (May 12 → until this ships):** Use Insight Timer as a tactical bridge for Bhav's personal dogfooding only. Insight Timer writes to HealthKit so data will correlate correctly. Not acceptable as the long-term consumer path.
+
+**Build order (~1h total):**
+1. `MindfulnessSession` state in `HealthKitManager` (start time, isActive) (~15 min)
+2. "Start Mindfulness" chip in the "+ Log" sheet (~15 min)
+3. Running session indicator (banner or toolbar item) with elapsed time + Stop button (~20 min)
+4. Stop → write `HKCategorySample` to HealthKit (~10 min)
+
+**Dependencies:** "+ Log" entry point built during food logging. Build this in the same session or immediately after.
+
+### Voice input for medication logging via App Intents — Backlog (deprioritized May 12)
+
+**Status update (May 12):** Deprioritized behind manual food logging. Today's coffee→tremor observation made food/beverage data capture the higher-value next step — voice polish matters less than getting any food data flowing. Design below remains fully locked and ready. Build after food logging ships; the `LogFoodIntent` App Intent shell from that entry sets the pattern this work extends.
 
 Voice-driven Sinemet logging to bypass typing for tremor-affected hands. **Design locked May 11; ready to build (~2–3 hours).**
 
@@ -157,30 +244,7 @@ The non-Sinemet phrases give a fallback when Siri mishears the medication name.
 - Siri still misrecognizes things sometimes. We're improving the odds significantly via phrase registration, not eliminating recognition errors.
 - If Apple's built-in medication shortcut is also registered for similar phrases, Siri picks one — may be ours, may be Apple's. Test which wins; user can disable Apple's medication shortcut in Settings if needed.
 
-**Dependencies:** None blocking. Independent of engine + data accumulation. Foundation for voice-driven food logging (next backlog entry).
-
-### Food logging (voice and/or camera) — Backlog
-
-Capture meals as a new event type for correlation with tremor. Two input paths, each with real trade-offs:
-
-**Voice path (privacy-aligned, low-friction):**
-- "Logged lunch: chicken sandwich and salad" via Speech framework on-device
-- Parse into structured tags (protein type, carb type, etc.) using on-device NLP or simple keyword matching
-- No portion-size data, but categorical data is enough for most correlations
-- All on-device, zero API calls, private
-
-**Camera path (Cal AI–style, accuracy magic, real privacy/cost trade-off):**
-- Photo of meal → multimodal model identifies food + estimates portions
-- **Reality check:** general food identification at Cal AI's accuracy requires hosted multimodal models (GPT-4V, Claude, Gemini Vision). Apple's on-device vision models are not capable enough for arbitrary meal recognition.
-- Sending food photos to a hosted API **violates the privacy-first principle** as currently stated. Possible reframings:
-  - Get explicit per-photo opt-in consent
-  - Strip metadata, route through a privacy-preserving proxy
-  - Defer until Apple ships a capable on-device food-recognition model (may never)
-- Cost: ~$0.01–0.05 per photo if using a hosted API. At even modest usage, costs become real for a free/affordable patient app.
-
-**My recommendation for v1:** voice-only food logging. Cal AI–style camera logging is a separable Phase 4-ish discussion that requires either an architecture change (consent + cloud round-trip) or waiting on Apple's stack to mature.
-
-**Dependencies:** Voice input infrastructure (above). Builds cleanly on top.
+**Dependencies:** None blocking on its own; sequenced behind food logging so the App Intent shell pattern lands there first.
 
 ### Food → tremor correlation — Backlog (Blocked)
 
@@ -188,7 +252,7 @@ Once food events are captured, the engine includes them as correlation candidate
 
 **Why this is genuinely high-value:** Food-tremor correlation is a near-virgin data space. No existing PD app captures food well enough to correlate it. The protein-levodopa interaction is one of the most clinically actionable signals in PD management ("take Sinemet 30 min before meals, not with them") — but no app currently *measures* whether a given patient's effect window shrinks after high-protein meals. Bhav's setup could be the first.
 
-**Blocker:** Food logging entry above must ship first.
+**Blocker:** Food & beverage logging entry above must ship first.
 
 ### Per-tile detail modals (glance card drill-down) — Backlog
 
