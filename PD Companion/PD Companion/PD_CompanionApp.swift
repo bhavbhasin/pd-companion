@@ -10,7 +10,7 @@ struct PD_CompanionApp: App {
 
     init() {
         do {
-            modelContainer = try ModelContainer(for: TremorReading.self, HealthSnapshot.self)
+            modelContainer = try ModelContainer(for: TremorReading.self, HealthSnapshot.self, FoodEvent.self)
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }

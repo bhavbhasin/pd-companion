@@ -119,7 +119,7 @@ When the Today tab was killed (May 11), three Health Today tiles were dropped fr
 
 If/when these become correlation-relevant or user-requested, the right home is **per-tile detail modals** (already a separate backlog entry) rather than re-expanding the glance card. The detail modal pattern was designed to surface deeper context per metric without crowding the dashboard.
 
-### Food & beverage logging (manual-first) — Next up (build after May 14 quota reset)
+### Food & beverage logging (manual-first) — In Progress (May 14)
 
 Capture food and beverage as event data for correlation with tremor. Manual-first, voice-later. **Design locked May 12; build deferred ~36 hours to the May 14 weekly quota reset.**
 
@@ -127,51 +127,49 @@ Capture food and beverage as event data for correlation with tremor. Manual-firs
 
 **Why manual-first, not voice-first:** Voice input has a locked design too, but manual entry starts producing correlation data on day one without depending on Siri recognition. Voice becomes a free upgrade later — the App Intent shell built in this entry extends to "Hey Siri, log coffee" with marginal extra work.
 
-**Locked design:**
+**Locked design (relocked May 14):**
 
-*Capture UX — one-tap chip logging:*
-- "+ Log" entry point on Review tab opens a sheet with category chips:
-  - ☕ Coffee · 🍵 Tea · 🍽 Meal · 🥤 Soda · 🍷 Alcohol · 🍪 Snack · ＋ Custom
-- Tap a chip → logs immediately at current time
-- Long-press or "Edit" → adjust time, add notes, edit tags
-- Time override: stepper for "X min ago" (5 / 15 / 30 / 60 / 90 / 120). Covers 95% of forgot-to-log cases.
+*Entry point:* `+` button in top-right toolbar of Review tab opens a sheet.
+
+*Sheet layout:*
+1. **Type** (single-select chips): **Drink** | **Meal/Snack** — each has a distinct icon (cup for drink, fork+knife for meal/snack)
+2. **Attributes** (multi-select chips): **Caffeine · Protein · Sugar · Fiber · Fat**
+3. **When** (full date + time picker, defaults to now)
+4. **Log** button in sheet top-right (disabled until type selected) — saves and dismisses
+5. **Cancel** in sheet top-left
+
+*Post-log navigation:* After logging, Review tab navigates to the logged date so the event is immediately visible on the tremor timeline.
+
+*Timeline icons:* Drink events use `cup.and.saucer.fill` (teal); Meal/Snack events use `fork.knife` (brown). Separate icons so Drink vs. Meal is immediately distinguishable at a glance on the timeline.
 
 *Data model (SwiftData, app-local):*
 ```swift
 FoodEvent {
   id: UUID
   timestamp: Date
-  category: Category    // .coffee, .tea, .meal, .snack, .alcohol, .soda, .custom
-  name: String?         // optional refinement
-  tags: Set<Tag>        // .caffeine, .protein, .alcohol, .sugar
+  type: FoodType        // .drink, .mealSnack
+  attributes: [FoodAttribute]   // .caffeine, .protein, .sugar, .fiber, .fat (multi-select)
   notes: String?
 }
 ```
-Tags auto-derive from category (coffee → caffeine, meal → protein candidate) and stay overrideable.
+Two-tier design: broad type gives context; attributes are what the correlation engine actually needs. No 7-category taxonomy — simpler and less cognitively demanding to fill in.
 
-*Storage — SwiftData vs HealthKit dietary types:* SwiftData for v1. HealthKit's dietary entries are quantity-based (grams of caffeine, grams of protein), forcing awkward portion estimation per entry. App-local schema fits the user's actual mental model and ships faster. Can write a secondary `HKQuantitySample` for caffeine later if Apple Health visibility is wanted.
+*Storage:* SwiftData for v1. HealthKit's dietary entries are quantity-based (grams of caffeine, protein), forcing awkward portion estimates. App-local schema fits the user's mental model and ships faster. Can write a secondary `HKQuantitySample` for caffeine later if Apple Health visibility is wanted.
 
-*Granularity — categories vs. specific foods:* v1 stays at category + tags. Don't try to capture "chicken sandwich, no fries" in this pass — that's voice/camera territory. Categories + tags are enough to surface the coffee→tremor and protein→levodopa patterns the engine actually needs.
-
-**Build order (~3–4h total):**
-1. SwiftData `FoodEvent` model + persistence (~30 min)
-2. Log sheet UI: chips + time stepper (~1.5 h)
-3. Events lane icon on tremor timeline (~30 min)
-4. Glance card food count or events tile (~30 min)
-5. `LogFoodIntent` App Intent shell — callable from Siri later for free (~30 min)
+**Build order:**
+1. SwiftData `FoodEvent` model (`FoodType` + `FoodAttribute` enums)
+2. `LogEntrySheet` UI: type chips + attribute chips + date/time picker + Log button
+3. Wire `+` toolbar button and post-log date navigation in `DayInReviewView`
+4. Add `.food` case to `DayEvent`; separate Drink/Meal icons on tremor timeline
+5. Glance card food summary row (shown only when food events exist)
+6. `LogFoodIntent` App Intent shell — callable from Siri later for free
 
 **What v1 does NOT capture:**
-- Portion sizes
-- Calorie / macro estimation
-- Photo input (camera path — see below)
-- Per-food-item identification
+- Portion sizes or calorie/macro estimation
+- Photo input (camera path — deferred, Phase 4-ish)
+- Per-food-item identification (e.g., "chicken sandwich")
 
-**Camera path (deferred, Phase 4-ish):** Photo of meal → multimodal model identifies food + estimates portions (Cal AI–style). **Reality check:** general food identification at that accuracy requires hosted multimodal models (GPT-4V, Claude, Gemini Vision). Apple's on-device vision is not capable enough for arbitrary meal recognition. Sending food photos to a hosted API violates the privacy-first principle without explicit per-photo consent. Cost ~$0.01–0.05 per photo if hosted. Defer until either Apple ships a capable on-device food-recognition model or we deliberately introduce a consent + cloud architecture.
-
-**Interim data capture (May 12 → May 14 while quota resets):**
-- Coffee / caffeinated drinks: log in Apple Health → Browse → Nutrition → Caffeine → Add Data (preserves timestamp natively).
-- Other food/beverage events: timestamped lines in Notes app.
-- Backfill into the `FoodEvent` store once the log sheet ships.
+**Camera path (deferred, Phase 4-ish):** Photo of meal → multimodal model identifies food + estimates portions (Cal AI-style). Requires hosted multimodal models (GPT-4V, Claude Vision, Gemini Vision) — Apple on-device vision is not capable enough for arbitrary meal recognition. Sending food photos to a hosted API violates the privacy-first principle without explicit per-photo consent. Defer until Apple ships capable on-device food recognition or we deliberately introduce a consent + cloud architecture.
 
 **Dependencies:** None blocking. Independent of correlation engine and of voice-input work. The App Intent shell built here is the foundation that voice medication logging (below) plugs into next.
 

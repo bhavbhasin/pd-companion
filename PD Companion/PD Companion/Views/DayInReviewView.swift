@@ -7,10 +7,12 @@ struct DayInReviewView: View {
     @EnvironmentObject var healthKit: HealthKitManager
     @EnvironmentObject var connectivity: PhoneConnectivityManager
     @Query(sort: \TremorReading.timestamp, order: .forward) private var allReadings: [TremorReading]
+    @Query(sort: \FoodEvent.timestamp, order: .forward) private var allFoodEvents: [FoodEvent]
     @State private var selectedDate: Date = Calendar.current.startOfDay(
         for: Date().addingTimeInterval(-86400)
     )
     @State private var showingWatchStatus = false
+    @State private var showingLogSheet = false
     @State private var lastUpdated: Date?
 
     var body: some View {
@@ -20,14 +22,13 @@ struct DayInReviewView: View {
                     dateHeader
                     GlanceCard(
                         sleep: healthKit.daySleep,
-                        events: healthKit.dayEvents,
                         tremorReadings: dayReadings,
                         hrv: healthKit.dayHRV,
                         daylightMinutes: healthKit.dayDaylightMinutes
                     )
                     TremorTimelinePanel(
                         readings: dayReadings,
-                        events: healthKit.dayEvents,
+                        events: allDayEvents,
                         dayStart: dayStart,
                         dayEnd: dayEnd
                     )
@@ -42,12 +43,20 @@ struct DayInReviewView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showingWatchStatus = true
-                    } label: {
-                        Image(systemName: watchStatus.icon)
-                            .foregroundStyle(watchStatus.color)
-                            .accessibilityLabel(watchStatus.label)
+                    HStack(spacing: 16) {
+                        Button {
+                            showingWatchStatus = true
+                        } label: {
+                            Image(systemName: watchStatus.icon)
+                                .foregroundStyle(watchStatus.color)
+                                .accessibilityLabel(watchStatus.label)
+                        }
+                        Button {
+                            showingLogSheet = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .accessibilityLabel("Log food or drink")
+                        }
                     }
                 }
             }
@@ -55,6 +64,11 @@ struct DayInReviewView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(watchStatus.label)
+            }
+            .sheet(isPresented: $showingLogSheet) {
+                LogEntrySheet { loggedDate in
+                    selectedDate = Calendar.current.startOfDay(for: loggedDate)
+                }
             }
             .task(id: selectedDate) {
                 await healthKit.fetchDayInReview(for: selectedDate)
@@ -87,6 +101,17 @@ struct DayInReviewView: View {
 
     private var dayReadings: [TremorReading] {
         allReadings.filter { $0.timestamp >= dayStart && $0.timestamp < dayEnd }
+    }
+
+    private var dayFoodEvents: [FoodEvent] {
+        allFoodEvents.filter { $0.timestamp >= dayStart && $0.timestamp < dayEnd }
+    }
+
+    private var allDayEvents: [DayEvent] {
+        let food = dayFoodEvents.map {
+            DayEvent.food(id: $0.id, time: $0.timestamp, type: $0.type, attributes: $0.attributes)
+        }
+        return (healthKit.dayEvents + food).sorted { $0.time < $1.time }
     }
 
     private var dateHeader: some View {
@@ -141,7 +166,6 @@ struct DayInReviewView: View {
 
 private struct GlanceCard: View {
     let sleep: SleepBreakdown?
-    let events: [DayEvent]
     let tremorReadings: [TremorReading]
     let hrv: Double?
     let daylightMinutes: Double?
@@ -149,34 +173,16 @@ private struct GlanceCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 16) {
-                stat(
-                    icon: "bed.double.fill", color: .indigo,
-                    value: sleepValue, sub: "Total sleep"
-                )
-                stat(
-                    icon: "waveform.path.ecg", color: tremorColor,
-                    value: tremorValue, sub: tremorLabel
-                )
+                stat(icon: "bed.double.fill", color: .indigo,
+                     value: sleepValue, sub: "Total sleep")
+                stat(icon: "waveform.path.ecg", color: tremorColor,
+                     value: tremorValue, sub: tremorLabel)
             }
             HStack(spacing: 16) {
-                stat(
-                    icon: "pill.fill", color: .red, secondaryColor: .yellow,
-                    value: "\(medicationCount)", sub: medicationLabel
-                )
-                stat(
-                    icon: workoutIcon, color: .green,
-                    value: workoutValue, sub: workoutSub
-                )
-            }
-            HStack(spacing: 16) {
-                stat(
-                    icon: "bolt.heart.fill", color: .purple,
-                    value: hrvValue, sub: "HRV"
-                )
-                stat(
-                    icon: "sun.max.fill", color: .orange,
-                    value: daylightValue, sub: "In daylight"
-                )
+                stat(icon: "bolt.heart.fill", color: .purple,
+                     value: hrvValue, sub: "HRV")
+                stat(icon: "sun.max.fill", color: .orange,
+                     value: daylightValue, sub: "In daylight")
             }
         }
         .padding()
@@ -184,42 +190,15 @@ private struct GlanceCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    private var hrvValue: String {
-        guard let hrv else { return "—" }
-        return "\(Int(hrv)) ms"
-    }
-
-    private var daylightValue: String {
-        guard let mins = daylightMinutes, mins > 0 else { return "—" }
-        if mins < 60 { return "\(Int(mins))m" }
-        let h = Int(mins / 60)
-        let m = Int(mins) % 60
-        return m == 0 ? "\(h)h" : "\(h)h \(m)m"
-    }
-
-    private func stat(
-        icon: String, color: Color, secondaryColor: Color? = nil,
-        value: String, sub: String
-    ) -> some View {
+    private func stat(icon: String, color: Color, value: String, sub: String) -> some View {
         HStack(spacing: 10) {
-            Group {
-                if let secondaryColor {
-                    Image(systemName: icon)
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(color, secondaryColor)
-                } else {
-                    Image(systemName: icon)
-                        .foregroundStyle(color)
-                }
-            }
-            .font(.title3)
-            .frame(width: 28)
+            Image(systemName: icon)
+                .foregroundStyle(color)
+                .font(.title3)
+                .frame(width: 28)
             VStack(alignment: .leading, spacing: 1) {
-                Text(value)
-                    .font(.headline)
-                Text(sub)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                Text(value).font(.headline)
+                Text(sub).font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
         }
@@ -249,7 +228,7 @@ private struct GlanceCard: View {
         case ..<1.5: return "Tremor avg: Slight"
         case ..<2.5: return "Tremor avg: Mild"
         case ..<3.5: return "Tremor avg: Moderate"
-        default: return "Tremor avg: Strong"
+        default:     return "Tremor avg: Strong"
         }
     }
 
@@ -259,71 +238,20 @@ private struct GlanceCard: View {
         case ..<1: return .green
         case ..<2: return .yellow
         case ..<3: return .orange
-        default: return .red
+        default:   return .red
         }
     }
 
-    private var medicationCount: Int {
-        events.filter { if case .medication = $0 { return true } else { return false } }.count
+    private var hrvValue: String {
+        guard let hrv else { return "—" }
+        return "\(Int(hrv)) ms"
     }
 
-    private var medicationLabel: String {
-        let names: [String] = events.compactMap { event in
-            if case .medication(_, _, let name) = event { return name }
-            return nil
-        }
-        let unique = Set(names.filter { !$0.isEmpty })
-        if unique.count == 1, let only = unique.first {
-            return medicationCount == 1 ? "\(only) dose" : "\(only) doses"
-        }
-        return medicationCount == 1 ? "Dose" : "Doses"
-    }
-
-    private var workouts: [(label: String, duration: TimeInterval, type: HKWorkoutActivityType)] {
-        events.compactMap { event in
-            if case .workout(_, _, let dur, let type) = event {
-                return (type.displayName, dur, type)
-            }
-            return nil
-        }
-    }
-
-    private var workoutValue: String {
-        let ws = workouts
-        if ws.isEmpty { return "—" }
-        if ws.count == 1 { return formatDuration(ws[0].duration) }
-        let total = ws.reduce(0.0) { $0 + $1.duration }
-        return "\(ws.count) · \(formatDuration(total))"
-    }
-
-    private var workoutSub: String {
-        let ws = workouts
-        if ws.isEmpty { return "No workouts" }
-        if ws.count == 1 { return ws[0].label }
-        let names = ws.map { $0.label }
-        return names.joined(separator: ", ")
-    }
-
-    private var workoutIcon: String {
-        let ws = workouts
-        guard let first = ws.first else { return "figure.run" }
-        switch first.type {
-        case .taiChi, .yoga, .pilates, .mindAndBody, .flexibility:
-            return "figure.mind.and.body"
-        case .pickleball, .tennis, .tableTennis: return "figure.tennis"
-        case .running: return "figure.run"
-        case .walking, .hiking: return "figure.walk"
-        case .cycling: return "figure.outdoor.cycle"
-        case .swimming: return "figure.pool.swim"
-        default: return "figure.run"
-        }
-    }
-
-    private func formatDuration(_ seconds: TimeInterval) -> String {
-        let totalMin = Int(seconds / 60)
-        let h = totalMin / 60
-        let m = totalMin % 60
-        if h == 0 { return "\(m)m" }
+    private var daylightValue: String {
+        guard let mins = daylightMinutes, mins > 0 else { return "—" }
+        if mins < 60 { return "\(Int(mins))m" }
+        let h = Int(mins / 60)
+        let m = Int(mins) % 60
         return m == 0 ? "\(h)h" : "\(h)h \(m)m"
     }
 }
@@ -392,11 +320,20 @@ private struct TremorTimelinePanel: View {
                 }
                 .frame(height: 200)
 
-                if !chartEvents.isEmpty {
+                if hasMedEvents || hasWorkoutEvents || hasDrinkEvents || hasMealEvents {
                     HStack(spacing: 12) {
-                        legendItem(systemImage: "pill.fill", palette: (.red, .yellow), label: "Medication")
-                        legendItem(systemImage: "figure.run", solid: .green, label: "Workout")
-                        legendItem(systemImage: "fork.knife", solid: .brown, label: "Food")
+                        if hasMedEvents {
+                            legendItem(systemImage: "pill.fill", palette: (.red, .yellow), label: "Medication")
+                        }
+                        if hasWorkoutEvents {
+                            legendItem(systemImage: "figure.run", solid: .green, label: "Workout")
+                        }
+                        if hasDrinkEvents {
+                            legendItem(systemImage: "cup.and.saucer.fill", solid: .teal, label: "Drink")
+                        }
+                        if hasMealEvents {
+                            legendItem(systemImage: "fork.knife", solid: .brown, label: "Meal/Snack")
+                        }
                     }
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -424,11 +361,20 @@ private struct TremorTimelinePanel: View {
             Image(systemName: "brain.head.profile")
                 .foregroundStyle(.cyan)
                 .font(.system(size: 13))
+        case .food(_, _, let type, _):
+            Image(systemName: type.symbolName)
+                .foregroundStyle(type == .drink ? Color.teal : Color.brown)
+                .font(.system(size: 13))
         }
     }
 
     @ViewBuilder
-    private func legendItem(systemImage: String, palette: (Color, Color)? = nil, solid: Color? = nil, label: String) -> some View {
+    private func legendItem(
+        systemImage: String,
+        palette: (Color, Color)? = nil,
+        solid: Color? = nil,
+        label: String
+    ) -> some View {
         HStack(spacing: 4) {
             Group {
                 if let palette {
@@ -454,6 +400,23 @@ private struct TremorTimelinePanel: View {
         events.filter { event in
             if case .mindfulness = event { return false }
             return true
+        }
+    }
+
+    private var hasMedEvents: Bool {
+        chartEvents.contains { if case .medication = $0 { return true } else { return false } }
+    }
+    private var hasWorkoutEvents: Bool {
+        chartEvents.contains { if case .workout = $0 { return true } else { return false } }
+    }
+    private var hasDrinkEvents: Bool {
+        chartEvents.contains {
+            if case .food(_, _, .drink, _) = $0 { return true } else { return false }
+        }
+    }
+    private var hasMealEvents: Bool {
+        chartEvents.contains {
+            if case .food(_, _, .mealSnack, _) = $0 { return true } else { return false }
         }
     }
 
@@ -563,9 +526,9 @@ private struct SleepStagesPanel: View {
     private func color(for stage: SleepStage) -> Color {
         switch stage {
         case .awake: return .orange
-        case .rem: return .cyan
-        case .core: return .blue
-        case .deep: return .indigo
+        case .rem:   return .cyan
+        case .core:  return .blue
+        case .deep:  return .indigo
         }
     }
 
