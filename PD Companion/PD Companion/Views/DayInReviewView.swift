@@ -334,53 +334,12 @@ private struct TremorTimelinePanel: View {
                     }
                 }
                 .chartOverlay { proxy in
-                    GeometryReader { geometry in
-                        let plotFrame = geometry[proxy.plotFrame]
-                        // Only the top strip (where event icons sit) is hit-testable.
-                        // Everything below gets allowsHitTesting(false) so scroll passes through.
-                        VStack(spacing: 0) {
-                            Color.clear
-                                .frame(height: 36)
-                                .contentShape(Rectangle())
-                                .simultaneousGesture(
-                                    SpatialTapGesture().onEnded { value in
-                                        guard let tappedDate: Date = proxy.value(atX: value.location.x, as: Date.self),
-                                              let nearest = chartEvents.min(by: {
-                                                  abs($0.time.timeIntervalSince(tappedDate)) <
-                                                  abs($1.time.timeIntervalSince(tappedDate))
-                                              }),
-                                              abs(nearest.time.timeIntervalSince(tappedDate)) < 3600
-                                        else { return }
-                                        onEventTap(nearest)
-                                    }
-                                )
-                            Color.clear
-                                .frame(maxHeight: .infinity)
-                                .allowsHitTesting(false)
-                        }
-                        .frame(width: plotFrame.width)
-                        .offset(x: plotFrame.minX, y: plotFrame.minY)
-                    }
+                    tapOverlay(proxy: proxy)
                 }
                 .frame(height: 200)
 
                 if !chartEvents.isEmpty {
-                    HStack(spacing: 12) {
-                        if chartEvents.contains(where: { if case .medication = $0 { return true } else { return false } }) {
-                            legendItem(systemImage: "pill.fill", palette: (.red, .yellow), label: "Medication")
-                        }
-                        if chartEvents.contains(where: { if case .workout = $0 { return true } else { return false } }) {
-                            legendItem(systemImage: "figure.run", solid: .green, label: "Workout")
-                        }
-                        if chartEvents.contains(where: { if case .mindfulness = $0 { return true } else { return false } }) {
-                            legendItem(systemImage: "figure.mind.and.body", solid: .cyan, label: "Meditation")
-                        }
-                        if chartEvents.contains(where: { if case .food = $0 { return true } else { return false } }) {
-                            legendItem(systemImage: "fork.knife", solid: .brown, label: "Food")
-                        }
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    legendRow
                 }
             }
         }
@@ -410,6 +369,71 @@ private struct TremorTimelinePanel: View {
                 .foregroundStyle(Color.brown)
                 .font(.system(size: 12))
         }
+    }
+
+    private func tapOverlay(proxy: ChartProxy) -> some View {
+        GeometryReader { geometry in
+            if let anchor = proxy.plotFrame {
+                let plotFrame = geometry[anchor]
+                VStack(spacing: 0) {
+                    Color.clear
+                        .frame(height: 36)
+                        .contentShape(Rectangle())
+                        .simultaneousGesture(
+                            SpatialTapGesture().onEnded { value in
+                                handleTap(at: value.location.x, proxy: proxy)
+                            }
+                        )
+                    Color.clear
+                        .frame(maxHeight: .infinity)
+                        .allowsHitTesting(false)
+                }
+                .frame(width: plotFrame.width)
+                .offset(x: plotFrame.minX, y: plotFrame.minY)
+            }
+        }
+    }
+
+    private func handleTap(at x: CGFloat, proxy: ChartProxy) {
+        guard let tappedDate: Date = proxy.value(atX: x, as: Date.self) else { return }
+        let nearest = chartEvents.min { a, b in
+            abs(a.time.timeIntervalSince(tappedDate)) < abs(b.time.timeIntervalSince(tappedDate))
+        }
+        guard let nearest, abs(nearest.time.timeIntervalSince(tappedDate)) < 3600 else { return }
+        onEventTap(nearest)
+    }
+
+    private var hasMedEvents: Bool {
+        chartEvents.contains { if case .medication = $0 { return true } else { return false } }
+    }
+    private var hasWorkoutEvents: Bool {
+        chartEvents.contains { if case .workout = $0 { return true } else { return false } }
+    }
+    private var hasMindfulEvents: Bool {
+        chartEvents.contains { if case .mindfulness = $0 { return true } else { return false } }
+    }
+    private var hasFoodEvents: Bool {
+        chartEvents.contains { if case .food = $0 { return true } else { return false } }
+    }
+
+    @ViewBuilder
+    private var legendRow: some View {
+        HStack(spacing: 12) {
+            if hasMedEvents {
+                legendItem(systemImage: "pill.fill", palette: (.red, .yellow), label: "Medication")
+            }
+            if hasWorkoutEvents {
+                legendItem(systemImage: "figure.run", solid: .green, label: "Workout")
+            }
+            if hasMindfulEvents {
+                legendItem(systemImage: "figure.mind.and.body", solid: .cyan, label: "Meditation")
+            }
+            if hasFoodEvents {
+                legendItem(systemImage: "fork.knife", solid: .brown, label: "Food")
+            }
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
     }
 
     @ViewBuilder
