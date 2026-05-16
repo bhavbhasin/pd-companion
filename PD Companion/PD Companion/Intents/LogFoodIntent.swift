@@ -4,10 +4,7 @@ struct LogFoodIntent: AppIntent {
     static var title: LocalizedStringResource = "Log Food or Drink"
     static var description = IntentDescription("Log a food or beverage event in PD Companion.")
 
-    @Parameter(title: "Type") var type: FoodTypeIntentEnum
-
-    @Parameter(title: "Attributes")
-    var attributes: [FoodAttributeIntentEnum]
+    @Parameter(title: "Description") var description: String
 
     func perform() async throws -> some IntentResult {
         // Shell: wires into SwiftData when Siri integration ships.
