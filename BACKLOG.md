@@ -33,6 +33,32 @@ Replaced generic `appleExerciseTime` "Exercise: X min" with workout-type-aware t
 
 Watch app currently displays "PD" in the home screen / app list. Should be "PD Watch" or similar. Cosmetic, in target General tab in Xcode. Loose end from Session 4 (May 8).
 
+### CloudKit sync for SwiftData — Backlog (HIGH PRIORITY)
+
+`ModelContainer` in `PD_CompanionApp.swift:13` is local-only. `TremorReading` and `FoodEvent` rows live exclusively on this iPhone — phone replacement, app deletion, or restore-from-old-backup permanently destroys the longitudinal dataset. HealthKit-backed data (sleep, HRV, workouts, medications, mindfulness, daylight, steps) is safe; SwiftData is not.
+
+**Why this matters:** The whole Phase 2/3 correlation thesis depends on accumulating months/years of intersected tremor + event data. Every day without iCloud sync compounds the risk. As of May 14 we have ~7,500 tremor readings across 7 days that are one device-loss away from being gone forever.
+
+**Implementation:**
+1. Switch `ModelContainer` init to use `ModelConfiguration` with `cloudKitDatabase: .private(...)` for the app's iCloud container
+2. Audit `TremorReading`, `FoodEvent`, `HealthSnapshot` for CloudKit constraints — all stored properties must be optional or have defaults; relationships (none currently) need inverses
+3. Add CloudKit container ID to entitlements; verify Apple Developer portal has the container provisioned
+4. Test: delete app on iPhone, reinstall → verify history restores from iCloud
+5. Test: install on a second device → verify sync
+
+**Discussed Session 8 (May 14)** — pending implementation, picked back up for evening session.
+
+### Tremor chart — Done (May 15)
+
+Full history: shipped as `LineMark` (May 11) → switched to `BarMark` (May 14) to eliminate an apparent midnight gap (rightmost hourly bucket had no successor to draw a line segment to) → switched back to `LineMark` + `AreaMark` (May 15) because bar chart felt less clinical than a smooth curve.
+
+**May 15 final state:**
+- `AreaMark` (blue gradient fill, 35% → 5% opacity) + `LineMark` (solid blue, 2pt stroke), both using `.catmullRom` interpolation for smooth curves between hourly buckets
+- Midnight gap fixed via a synthetic `HourBucket` appended at `dayEnd` carrying the last known value, so the line always runs to the chart's right edge
+- Horizontal scroll fixed: removed `chartOverlay` blanket view (which intercepted all touch events). Replaced with a split layout — top 36pt of plot area is hit-testable via `simultaneousGesture(SpatialTapGesture())` (where event icons live); remaining area has `allowsHitTesting(false)` so scroll passes through untouched
+- Event icons (`PointMark` at y=4.3 + `RuleMark` dashed verticals) remain as visual decoration inside the chart; tapping near them in the top strip opens the event detail sheet
+- Legend below chart (Medication / Workout / Meditation / Food) filtered to only show categories with events on that day
+
 ### Layer 4 workout session — Conditional
 
 Fallback for guaranteed continuous background runtime via `HKWorkoutSession`, if Apple's discretionary `WKApplicationRefreshBackgroundTask` (Layer 1) proves too unreliable in real-world wear.
@@ -56,13 +82,42 @@ Strategic context: [ParkinsonsProject.md → Phase 2](ParkinsonsProject.md#phase
 
 ### Review tab — In Progress
 
-Originally scoped as "Insights tab," reframed as "Day in Review" on May 11, then shortened to "Review" the same day for tab-bar fit and to avoid overpromising interpretation. Will rename back to "Insights" once Phase 2 correlation logic actually delivers computed observations. Step 1 shipped May 11: daily-primary view (default to yesterday), date chevrons, glance card (sleep/tremor/doses/workouts/HRV/daylight), tremor line with event overlays (medication/workout/mindfulness icons + dotted RuleMarks, scrollable horizontally with 12-hour visible window, 3-hour major gridlines, 1-hour minor ticks), sleep stages chart (Apple-pattern: Awake/REM/Core/Deep horizontal bars over time), empty Observations placeholder for future correlation logic. App is now single-screen — Today tab killed May 11 because Review serves both "now" and retrospective use cases via date chevrons.
+Originally scoped as "Insights tab," reframed as "Day in Review" on May 11, then shortened to "Review" the same day for tab-bar fit. Will rename to "Insights" once Phase 2 correlation logic delivers computed observations.
 
-**Step 1.5 — Backlog (next):** Reproduce Apple Sleep Score (Duration 50 + Bedtime 30 + Interruptions 20 = 100) as a header above the sleep panel. Calibrate against Apple's own number on the same night. Defer the question of whether this score or raw fragmentation/stages better predicts tremor until we have a few days of correlated data.
+**Shipped (May 11):** daily-primary view (default to yesterday), date chevrons, glance card (sleep/tremor/HRV/daylight — 4 tiles), tremor chart with event overlays, sleep stages chart (Awake/REM/Core/Deep horizontal bars), Observations placeholder. App is now single-screen — Today tab killed May 11.
 
-**Step 2 onward:** Scatter plots with lag, lag analysis (e.g., "Tremor 0–30 min after Tai Chi vs 1–2 hours after"), correlation matrix / heatmap. Wearing-off and on-off patterns are fundamentally about lag — must be a first-class chart type.
+**Shipped (May 14–15):**
+- `+` button moved to top-left toolbar; Watch icon stays top-right
+- Log Entry sheet: menu (Food / Meditation) → individual sub-screens
+- Food logging: free-text description + native `DatePicker(.compact)` — design simplification, ML extracts attributes later (see food logging entry below)
+- Meditation logging: date/time + duration stepper + quick picks; writes `HKCategorySample(mindfulSession)` to HealthKit; appears on tremor timeline
+- All event types (medication, workout, meditation, food) show on tremor timeline with icons
+- Tapping event icons (top strip of chart) opens `EventDetailSheet`
+- `EventDetailSheet`: icon + category label + title + detail line; food entries show description + detected attribute chips
+- Edit/delete from detail sheet: food → full edit (pre-populated `EditFoodScreen`) + SwiftData delete; meditation → HealthKit sample delete; medication/workout → "Manage in Health app" note
+- Observations panel shipped (see separate entry below)
+
+**Backlog (next):** Apple Sleep Score reproduction (Duration 50 + Bedtime 30 + Interruptions 20 = 100) as a header above the sleep panel.
+
+**Step 2 onward:** Scatter plots with lag, lag analysis, correlation matrix / heatmap. Wearing-off and on-off patterns are fundamentally about lag — must be a first-class chart type.
 
 **Phase 3 only:** Predictive forecast UI based on Core ML model.
+
+### Day-scoped Observations panel — Done (May 15)
+
+Rule-based engine that generates plain-language observations from a single day's data — no historical baseline required. Lives in `ObservationsPanel.swift` (`ObservationEngine` + `ObservationsPanel` + `ObservationCard`). Feeds the "Observations" section of the Review tab.
+
+**Rules shipped:**
+1. **Post-dose tremor effect** — compares avg tremor 30 min before a dose vs. 30–90 min after (levodopa absorption window). Reports % change; positive if ≥15% reduction, negative if ≥15% rise.
+2. **Post-workout effect** — same window logic (30 min pre → 60–90 min post-workout end). Flags workout types by name.
+3. **Tremor trajectory** — splits day into morning/afternoon/evening; reports which period had lowest avg tremor if the spread is ≥0.3. Requires ≥3 readings per period.
+4. **Caffeine effect** — keyword match on food descriptions (coffee, espresso, matcha, cola, etc.) + `FoodAttribute.caffeine`. If tremor rises ≥20% in the 30–60 min window after, flags it.
+5. **Protein-dose proximity** — flags meals containing protein (keyword match + `FoodAttribute.protein`) that fall within 1 hour of a dose. Levodopa competes with dietary protein for absorption.
+6. **Sleep context** — flags short sleep (<6h) and low deep sleep (<30 min) with PD-relevant context.
+
+**Design decision:** Named `DayObservation` (not `Observation`) to avoid shadowing Apple's `Observation` framework, which `@Model` macro expansion depends on.
+
+**Next:** This engine is day-scoped and rule-based. The Continuous time-windowed correlation engine (below) is the longer-horizon successor that uses statistical validation across weeks/months of data.
 
 ### Continuous time-windowed correlation engine — Backlog
 
@@ -110,97 +165,55 @@ A separate tab from Review. **Review = "what's notable about THIS day."** Aggreg
 Dynamic per-substance UI in events lane and glance card. Treat supplements (Vitamin D, B12, creatine, ashwagandha, magnesium — all things Bhav has historically taken) as first-class correlation candidates. **Never pre-filter to "PD-relevant" medications** — the whole point of the correlation engine is to *discover* what affects symptoms, including things current PD literature hasn't connected.
 
 **Implementation:**
-- **Mechanical UI fix (~30–45 min):** dynamic legend in `EventsLanePanel` driven by actual substances taken (not hardcoded "Sinemet"); per-substance breakdown in glance card label ("3 Sinemet · 1 Vitamin D" instead of generic "4 Doses"); distinct icon tints per substance; all in `Views/DayInReviewView.swift`, no data layer changes — `DayEvent.medication` already carries the name string.
+- **Mechanical UI fix (~30–45 min):** dynamic legend in `TremorTimelinePanel` driven by actual substances taken (not hardcoded "Sinemet"); per-substance breakdown in glance card label ("3 Sinemet · 1 Vitamin D" instead of generic "4 Doses"); distinct icon tints per substance; all in `Views/DayInReviewView.swift`, no data layer changes — `DayEvent.medication` already carries the name string.
 - **Larger surface (own scope, defer until needed):** "Manage medications & supplements" settings screen for grouping ("PD prescription", "Supplement", "Other"). Critically, categorization is for grouping/display only, **never for filtering data out of correlation analysis.**
 
 ### Per-tile detail modals (consolidation casualties) — Backlog
 
-When the Today tab was killed (May 11), three Health Today tiles were dropped from the surface: Mindfulness minutes, Steps, and Resting Heart Rate. They didn't make the glance-card cut because we capped at 6 high-PD-signal cells. They're still queryable from HealthKit; no data is lost.
+When the Today tab was killed (May 11), three Health Today tiles were dropped from the surface: Mindfulness minutes, Steps, and Resting Heart Rate. They didn't make the glance-card cut (4 tiles: Sleep / Tremor / HRV / Daylight). They're still queryable from HealthKit; no data is lost.
 
 If/when these become correlation-relevant or user-requested, the right home is **per-tile detail modals** (already a separate backlog entry) rather than re-expanding the glance card. The detail modal pattern was designed to surface deeper context per metric without crowding the dashboard.
 
-### Food & beverage logging (manual-first) — In Progress (May 14)
+### Food & beverage logging — Done (May 15)
 
-Capture food and beverage as event data for correlation with tremor. Manual-first, voice-later. **Design locked May 12; build deferred ~36 hours to the May 14 weekly quota reset.**
+Captures food and beverage as event data for correlation with tremor.
 
-**Real-world motivation (May 12):** Bhav observed Sinemet at 11:30 AM → lunch → tremor subsided → coffee at ~2 PM → tremor returned within ~30 min. Caffeine and protein-levodopa interaction are the two highest-signal food correlations for PD. Without capturing food/beverage events as data, the correlation engine cannot surface either pattern. Reprioritized ahead of voice medication logging because data accumulation matters more than input modality polish right now.
+**Real-world motivation (May 12):** Bhav observed Sinemet at 11:30 AM → lunch → tremor subsided → coffee at ~2 PM → tremor returned within ~30 min. Caffeine and protein-levodopa interaction are the two highest-signal food correlations for PD.
 
-**Why manual-first, not voice-first:** Voice input has a locked design too, but manual entry starts producing correlation data on day one without depending on Siri recognition. Voice becomes a free upgrade later — the App Intent shell built in this entry extends to "Hey Siri, log coffee" with marginal extra work.
+**Shipped design (differs from original locked spec):** Original design had Drink/Meal type chips + Caffeine/Protein/Sugar/Fiber/Fat attribute chips for manual tagging. Shipped instead with free-text description only — reasoning: manual attribute tagging added cognitive load with false precision, and ML can extract attributes from natural language later. The two-tier `FoodType` + `FoodAttribute` schema is preserved in the data model for ML output; it's just not user-facing on entry.
 
-**Locked design (relocked May 14):**
+*Entry:* `+` button (top-left) → Log Entry sheet → **Food** → free-text `TextEditor` + `DatePicker(.compact)` → Save.
 
-*Entry point:* `+` button in top-right toolbar of Review tab opens a sheet.
-
-*Sheet layout:*
-1. **Type** (single-select chips): **Drink** | **Meal/Snack** — each has a distinct icon (cup for drink, fork+knife for meal/snack)
-2. **Attributes** (multi-select chips): **Caffeine · Protein · Sugar · Fiber · Fat**
-3. **When** (full date + time picker, defaults to now)
-4. **Log** button in sheet top-right (disabled until type selected) — saves and dismisses
-5. **Cancel** in sheet top-left
-
-*Post-log navigation:* After logging, Review tab navigates to the logged date so the event is immediately visible on the tremor timeline.
-
-*Timeline icons:* Drink events use `cup.and.saucer.fill` (teal); Meal/Snack events use `fork.knife` (brown). Separate icons so Drink vs. Meal is immediately distinguishable at a glance on the timeline.
-
-*Data model (SwiftData, app-local):*
+*Data model (SwiftData):*
 ```swift
 FoodEvent {
   id: UUID
   timestamp: Date
-  type: FoodType        // .drink, .mealSnack
-  attributes: [FoodAttribute]   // .caffeine, .protein, .sugar, .fiber, .fat (multi-select)
+  userDescription: String?   // free-text, ML extracts attributes later
+  attributes: [FoodAttribute]  // written by ML; empty until analysis runs
+  type: FoodType               // schema compat; always .mealSnack on new entries
   notes: String?
 }
 ```
-Two-tier design: broad type gives context; attributes are what the correlation engine actually needs. No 7-category taxonomy — simpler and less cognitively demanding to fill in.
 
-*Storage:* SwiftData for v1. HealthKit's dietary entries are quantity-based (grams of caffeine, protein), forcing awkward portion estimates. App-local schema fits the user's mental model and ships faster. Can write a secondary `HKQuantitySample` for caffeine later if Apple Health visibility is wanted.
+*Timeline:* `fork.knife` icon (brown) on tremor chart. Tapping opens detail sheet showing description + any detected attributes.
 
-**Build order:**
-1. SwiftData `FoodEvent` model (`FoodType` + `FoodAttribute` enums)
-2. `LogEntrySheet` UI: type chips + attribute chips + date/time picker + Log button
-3. Wire `+` toolbar button and post-log date navigation in `DayInReviewView`
-4. Add `.food` case to `DayEvent`; separate Drink/Meal icons on tremor timeline
-5. Glance card food summary row (shown only when food events exist)
-6. `LogFoodIntent` App Intent shell — callable from Siri later for free
+*Edit/delete:* Edit opens pre-populated form (`EditFoodScreen`); delete removes SwiftData record. Both accessible from event detail sheet.
 
-**What v1 does NOT capture:**
-- Portion sizes or calorie/macro estimation
-- Photo input (camera path — deferred, Phase 4-ish)
-- Per-food-item identification (e.g., "chicken sandwich")
+**What v1 does not capture:** portion sizes, photo input, per-item identification. Camera path (photo → multimodal model → food + portion estimate) deferred to Phase 4 — requires either on-device capable vision or a deliberate cloud + consent architecture.
 
-**Camera path (deferred, Phase 4-ish):** Photo of meal → multimodal model identifies food + estimates portions (Cal AI-style). Requires hosted multimodal models (GPT-4V, Claude Vision, Gemini Vision) — Apple on-device vision is not capable enough for arbitrary meal recognition. Sending food photos to a hosted API violates the privacy-first principle without explicit per-photo consent. Defer until Apple ships capable on-device food recognition or we deliberately introduce a consent + cloud architecture.
+**App Intent shell:** `LogFoodIntent` stubbed; extends to "Hey Siri, log coffee" with marginal extra work when voice input is prioritised.
 
-**Dependencies:** None blocking. Independent of correlation engine and of voice-input work. The App Intent shell built here is the foundation that voice medication logging (below) plugs into next.
+### Mindfulness session logging — Done (May 15, retroactive entry)
 
-### In-app mindfulness session timer — Backlog (build after food logging)
+Meditation is now loggable from `+` → **Meditation** → date/time picker + duration stepper + quick picks (5/10/15/20/30/45/60 min) → Save. Writes `HKCategorySample(type: .mindfulSession)` to HealthKit. Appears on tremor timeline (cyan `figure.mind.and.body` icon). Delete available from event detail sheet (removes HealthKit sample).
 
-Start/stop mindfulness session logging directly in PD Companion. **~1 hour build. Small, targeted, no new UI paradigm.**
+**Design shipped vs. original spec:** Original design was a live start/stop timer (tap Start → session runs in background → tap Stop, duration captured from elapsed time). Shipped instead as retroactive entry (log it after the fact with a duration picker). Trade-off: simpler to build and less likely to be accidentally left running; downside is slightly higher friction to remember to log. Live timer remains a Backlog item for v2 of this feature.
 
-**Why this exists:** Apple's built-in Mindfulness app caps out at ~5 minutes (Breathe/Reflect sessions) — not usable for Bhav's 45–60 min meditation-to-music sessions. Insight Timer would cover the duration but is a third-party app — violates the self-contained product principle (see memory: feedback-self-contained-product). No native Apple path covers free-form sessions of this length. Build it ourselves.
+**Live timer — Backlog:**
+Tap "Start" → background session runs → status indicator in toolbar → "Stop" writes the actual elapsed duration. Better UX for users who want to start logging before meditating. Build when the retroactive path has been used long enough to validate that the category is worth the extra engineering.
 
-**Why Apple Watch Workout app is not the answer:** Workout writes `HKWorkout` (physical activity), not `HKCategoryTypeIdentifier.mindfulSession` (mindfulness). Using a workout type to log meditation conflates the data types and corrupts the correlation engine's ability to distinguish physical exertion from mental stillness — two signals that affect tremor very differently.
-
-**Locked design:**
-
-Single interaction flow — tap "Start Mindfulness" → timer runs in the background while user meditates to music → tap "Stop" (or lock screen and stop later):
-- Writes `HKCategorySample(type: .mindfulSession, value: 0, start: startDate, end: endDate)` to HealthKit on stop
-- No configuration needed — duration is captured from actual elapsed time
-- Start time defaults to now; "Started X min ago" adjustment if user forgot to tap at the real start
-
-**Entry point:** Same "+ Log" sheet being built for food logging. Mindfulness gets a chip alongside the food categories:
-- 🧘 Mindfulness → tapping starts the timer (sheet closes, small status indicator shows session is running)
-- Persistent banner or lock screen widget shows elapsed time + "Stop" button
-
-**Interim data capture (May 12 → until this ships):** Use Insight Timer as a tactical bridge for Bhav's personal dogfooding only. Insight Timer writes to HealthKit so data will correlate correctly. Not acceptable as the long-term consumer path.
-
-**Build order (~1h total):**
-1. `MindfulnessSession` state in `HealthKitManager` (start time, isActive) (~15 min)
-2. "Start Mindfulness" chip in the "+ Log" sheet (~15 min)
-3. Running session indicator (banner or toolbar item) with elapsed time + Stop button (~20 min)
-4. Stop → write `HKCategorySample` to HealthKit (~10 min)
-
-**Dependencies:** "+ Log" entry point built during food logging. Build this in the same session or immediately after.
+**Why this exists:** Apple's built-in Mindfulness app caps at ~5 min. Insight Timer is a third-party dependency (violates self-contained product principle). No native Apple path covers free-form 45–60 min sessions of this length. Workout type would corrupt the correlation engine's ability to distinguish physical exertion from mental stillness.
 
 ### Voice input for medication logging via App Intents — Backlog (deprioritized May 12)
 
@@ -272,7 +285,7 @@ Tap any glance card stat → modal slides up with a deeper view of that metric f
 **Bottom-of-modal actions:** "Open in Apple Health" button preserves the previous tap-to-Health behavior (useful for adding meds, setting schedules). Possibly "View week trend" or similar for cross-modal navigation.
 
 **Dependencies:**
-- The `HealthMetricTile` referenced in earlier session notes no longer exists (deleted in single-screen consolidation, May 11). New trigger is glance card `stat()` cells in `DayInReviewView.swift`. Wiring is mechanical (~30 min) — replace the implicit non-action with a sheet presenter per stat.
+- Trigger is the 4 glance card stat cells in `DayInReviewView.swift` (`GlanceCard`). Wiring is mechanical (~30 min) — replace the implicit non-action with a sheet presenter per stat.
 - Section 3 substance requires the continuous time-windowed correlation engine. Modals can ship with sections 1+2 first, add section 3 as engine output becomes available.
 
 **Estimate:** ~2–3 hours per modal for sections 1+2 (today + comparison). Section 3 substance comes free once engine is producing output — modals just consume engine API.
@@ -281,9 +294,7 @@ Tap any glance card stat → modal slides up with a deeper view of that metric f
 
 **Blocker:** Waiting on dyskinesia signal to emerge from `CMMovementDisorderManager`. Apple's API requires levodopa logging to disambiguate dyskinesia from intentional movement. Bhav started logging Sinemet 2026-05-08; processing lag means signal may take a few more days.
 
-When unblocked: re-add dyskinesia line to the Today dashboard's Tremor Trend chart with a toggle ("Show dyskinesia"). Don't auto-show — give Bhav control over visual density. Note: dyskinesia uses a different value scale than tremor (`percentLikely / 25.0` in `MovementDisorderManager`) — may need a secondary y-axis or a separate stacked chart rather than overlaying on the tremor scale.
-
-The Day in Review tab already includes dyskinesia in its top panel from day 1 regardless, so emerging signal will surface there first.
+When unblocked: add dyskinesia overlay to the tremor chart in the Review tab with a toggle ("Show dyskinesia"). Don't auto-show — give Bhav control over visual density. Note: dyskinesia uses a different value scale than tremor (`percentLikely / 25.0` in `MovementDisorderManager`) — may need a secondary y-axis or a separate stacked chart rather than overlaying on the 0–4 tremor scale.
 
 ---
 
@@ -327,8 +338,8 @@ Strategic context: [ParkinsonsProject.md → Phase 4](ParkinsonsProject.md#phase
 
 **Trigger:** Only buildable if/when Apple documents URL scheme paths to specific Health sections (Medications, Sleep, Workouts, etc.).
 
-Today all six Health Today tiles open Apple Health to its home via `x-apple-health://`. Apple does NOT publicly document deep-link paths to specific sections. Some unofficial / reverse-engineered paths exist but break with iOS updates and aren't safe to ship.
+Apple does NOT publicly document deep-link paths to specific Health app sections. Some unofficial / reverse-engineered paths exist but break with iOS updates and aren't safe to ship.
 
-**Why it would matter:** Tapping "Last Sinemet" should ideally land directly on the Health app's medication detail page, not its home — saves a navigation step. For a PD patient with tremor, every removed tap matters.
+**Why it would matter:** Tapping a glance card stat or event detail "Open in Health" button ideally lands directly on the relevant Health app section, not its home — saves a navigation step. For a PD patient with tremor, every removed tap matters.
 
-**Implementation when unblocked:** `HealthMetricTile.action` parameter and the per-tile call sites in `HealthSummaryView` already isolate this change — each tile's `action` closure swaps in the section-specific URL. Worth periodically checking Apple's HealthKit documentation and WWDC release notes for new URL scheme additions.
+**Implementation when unblocked:** Event detail sheets already have an "Open in Health app" note for medication/workout events. The `x-apple-health://` URL scheme can be extended with section-specific paths once Apple documents them. Worth checking Apple's HealthKit documentation and WWDC release notes annually.

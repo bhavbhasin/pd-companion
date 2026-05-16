@@ -1,5 +1,6 @@
 import Foundation
 import HealthKit
+import SwiftUI
 
 struct SleepBreakdown: Equatable {
     var totalAsleepHours: Double
@@ -61,7 +62,7 @@ enum DayEvent: Identifiable {
     case medication(id: UUID, time: Date, name: String?)
     case workout(id: UUID, start: Date, duration: TimeInterval, type: HKWorkoutActivityType)
     case mindfulness(id: UUID, start: Date, duration: TimeInterval)
-    case food(id: UUID, time: Date, type: FoodType, attributes: [FoodAttribute])
+    case food(id: UUID, time: Date, userDescription: String, attributes: [FoodAttribute])
 
     var id: UUID {
         switch self {
@@ -74,18 +75,18 @@ enum DayEvent: Identifiable {
 
     var time: Date {
         switch self {
-        case .medication(_, let time, _):  return time
-        case .workout(_, let start, _, _): return start
+        case .medication(_, let time, _):   return time
+        case .workout(_, let start, _, _):  return start
         case .mindfulness(_, let start, _): return start
-        case .food(_, let time, _, _):     return time
+        case .food(_, let time, _, _):      return time
         }
     }
 
     var iconName: String {
         switch self {
         case .medication:                  return "pill.fill"
-        case .mindfulness:                 return "brain.head.profile"
-        case .food(_, _, let type, _):     return type.symbolName
+        case .mindfulness:                 return "figure.mind.and.body"
+        case .food:                        return "fork.knife"
         case .workout(_, _, _, let type):
             switch type {
             case .taiChi, .yoga, .pilates, .mindAndBody, .flexibility:
@@ -105,21 +106,29 @@ enum DayEvent: Identifiable {
         }
     }
 
-    var iconColor: String {
+    var iconColor: Color {
         switch self {
-        case .medication:              return "pink"
-        case .mindfulness:             return "cyan"
-        case .workout:                 return "green"
-        case .food(_, _, let type, _): return type.timelineColor
+        case .medication:  return .red
+        case .mindfulness: return .cyan
+        case .workout:     return .green
+        case .food:        return .brown
         }
     }
 
     var label: String {
         switch self {
-        case .medication(_, _, let name):     return name ?? "Dose"
-        case .workout(_, _, _, let type):     return type.displayName
-        case .mindfulness:                    return "Mindfulness"
-        case .food(_, _, let type, _):        return type.displayName
+        case .medication(_, _, let name):      return name ?? "Dose"
+        case .workout(_, _, _, let type):      return type.displayName
+        case .mindfulness:                     return "Meditation"
+        case .food(_, _, let desc, _):
+            return desc.isEmpty ? "Food" : String(desc.prefix(40))
         }
+    }
+}
+
+// Needed for .sheet(item:)
+extension DayEvent: Equatable {
+    static func == (lhs: DayEvent, rhs: DayEvent) -> Bool {
+        lhs.id == rhs.id
     }
 }

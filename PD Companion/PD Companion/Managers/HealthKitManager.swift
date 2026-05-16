@@ -21,6 +21,10 @@ class HealthKitManager: ObservableObject {
     @Published var dayHRV: Double?
     @Published var dayDaylightMinutes: Double?
 
+    private let writeTypes: Set<HKSampleType> = [
+        HKObjectType.categoryType(forIdentifier: .mindfulSession)!
+    ]
+
     private let readTypes: Set<HKObjectType> = {
         let types: [HKObjectType] = [
             HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
@@ -42,7 +46,7 @@ class HealthKitManager: ObservableObject {
         }
 
         do {
-            try await store.requestAuthorization(toShare: [], read: readTypes)
+            try await store.requestAuthorization(toShare: writeTypes, read: readTypes)
             isAuthorized = true
         } catch {
             self.error = "HealthKit authorization failed: \(error.localizedDescription)"
@@ -491,6 +495,26 @@ class HealthKitManager: ObservableObject {
                 continuation.resume(returning: mapped)
             }
             store.execute(query)
+        }
+    }
+
+    func writeMindfulSession(start: Date, duration: TimeInterval) async throws {
+        let type = HKObjectType.categoryType(forIdentifier: .mindfulSession)!
+        let sample = HKCategorySample(type: type, value: 0, start: start, end: start.addingTimeInterval(duration))
+        try await store.save(sample)
+    }
+
+    func deleteMindfulSession(start: Date, duration: TimeInterval) async throws {
+        let type = HKObjectType.categoryType(forIdentifier: .mindfulSession)!
+        let end = start.addingTimeInterval(duration)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [.strictStartDate, .strictEndDate])
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.categorySample(type: type, predicate: predicate)],
+            sortDescriptors: []
+        )
+        let samples = try await descriptor.result(for: store)
+        for sample in samples {
+            try await store.delete(sample)
         }
     }
 
