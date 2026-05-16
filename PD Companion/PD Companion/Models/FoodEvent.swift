@@ -78,13 +78,15 @@ enum FoodAttribute: String, Codable, CaseIterable {
                             "dal", "daal", "dahl", "dhal", "lentil", "bean", "shrimp", "prawn",
                             "cottage cheese", "tempeh", "seitan", "edamame", "whey", "chickpea",
                             "chole", "rajma", "mutton", "keema", "sardine", "mackerel", "cod",
-                            "halibut", "tilapia", "crab", "lobster", "scallop", "clam", "mussel"]
+                            "halibut", "tilapia", "crab", "lobster", "scallop", "clam", "mussel",
+                            "idli", "dosa", "sambar", "medu vada", "medu vadas"]
         if proteinWords.contains(where: { text.contains($0) }) { result.append(.protein) }
 
         let sugarWords = ["candy", "chocolate", "cake", "cookie", "brownie", "muffin", "donut",
                           "pastry", "juice", "soda", "lemonade", "sugar", "honey", "syrup",
                           "jam", "jelly", "ice cream", "gelato", "sorbet", "dessert", "pie",
-                          "waffle", "pancake", "sweet", "halwa", "ladoo", "mithai", "gulab"]
+                          "waffle", "pancake", "sweet", "halwa", "ladoo", "mithai", "gulab",
+                          "sambar"]
         if sugarWords.contains(where: { text.contains($0) }) { result.append(.sugar) }
 
         let fiberWords = ["broccoli", "spinach", "kale", "carrot", "celery", "lettuce", "cabbage",
@@ -92,12 +94,14 @@ enum FoodAttribute: String, Codable, CaseIterable {
                           "apple", "banana", "orange", "pear", "berry", "berries", "strawberry",
                           "blueberry", "raspberry", "oat", "oatmeal", "whole grain", "whole wheat",
                           "bran", "quinoa", "brown rice", "lentil", "bean", "pea", "chickpea",
-                          "vegetable", "salad", "saag", "palak", "methi", "bhindi", "gobi"]
+                          "vegetable", "salad", "saag", "palak", "methi", "bhindi", "gobi",
+                          "uttapam"]
         if fiberWords.contains(where: { text.contains($0) }) { result.append(.fiber) }
 
         let fatWords = ["butter", "olive oil", "avocado", "peanut", "almond", "cashew", "walnut",
                         "pecan", "pistachio", "cheese", "cream", "coconut", "bacon", "sausage",
-                        "mayo", "mayonnaise", "ghee", "fried", "tahini", "hummus", "nuts", "nut butter"]
+                        "mayo", "mayonnaise", "ghee", "fried", "tahini", "hummus", "nuts", "nut butter",
+                        "pinni", "pinnies", "dosa", "uttapam", "medu vada", "medu vadas"]
         if fatWords.contains(where: { text.contains($0) }) { result.append(.fat) }
 
         return result
