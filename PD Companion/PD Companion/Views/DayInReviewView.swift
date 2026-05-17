@@ -20,7 +20,6 @@ struct DayInReviewView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    dateHeader
                     GlanceCard(
                         sleep: healthKit.daySleep,
                         tremorReadings: dayReadings,
@@ -44,6 +43,12 @@ struct DayInReviewView: View {
                     )
                 }
                 .padding()
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                dateHeader
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(.bar)
             }
             .navigationTitle("Review")
             .navigationBarTitleDisplayMode(.inline)
