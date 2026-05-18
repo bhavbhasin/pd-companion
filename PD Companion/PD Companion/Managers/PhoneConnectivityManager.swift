@@ -24,6 +24,33 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         WCSession.default.activate()
     }
 
+    func requestFreshTremorData() {
+        guard WCSession.default.activationState == .activated else { return }
+
+        var payload: [String: Any] = ["requestTremorSync": true]
+        if let latest = latestStoredSampleTimestamp() {
+            payload["since"] = latest.timeIntervalSince1970
+        }
+
+        if WCSession.default.isReachable {
+            WCSession.default.sendMessage(payload, replyHandler: nil) { error in
+                print("requestFreshTremorData sendMessage failed: \(error.localizedDescription) — falling back to transferUserInfo")
+                WCSession.default.transferUserInfo(payload)
+            }
+        } else {
+            WCSession.default.transferUserInfo(payload)
+        }
+    }
+
+    private func latestStoredSampleTimestamp() -> Date? {
+        guard let context = modelContext else { return nil }
+        var descriptor = FetchDescriptor<TremorReading>(
+            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        return (try? context.fetch(descriptor))?.first?.timestamp
+    }
+
     private func processTremorData(_ data: Data) {
         do {
             let samples = try JSONDecoder().decode([TremorSample].self, from: data)
@@ -68,10 +95,14 @@ extension PhoneConnectivityManager: WCSessionDelegate {
         let paired = session.isPaired
         let installed = session.isWatchAppInstalled
         let reachable = session.isReachable
+        let didActivate = activationState == .activated
         Task { @MainActor in
             self.isWatchPaired = paired
             self.isWatchAppInstalled = installed
             self.isWatchReachable = reachable
+            if didActivate {
+                self.requestFreshTremorData()
+            }
         }
     }
 

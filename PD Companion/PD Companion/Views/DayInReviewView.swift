@@ -14,7 +14,6 @@ struct DayInReviewView: View {
     @State private var showingWatchStatus = false
     @State private var showingLogSheet = false
     @State private var selectedEvent: DayEvent?
-    @State private var lastUpdated: Date?
 
     var body: some View {
         NavigationStack {
@@ -67,14 +66,14 @@ struct DayInReviewView: View {
                     } label: {
                         Image(systemName: watchStatus.icon)
                             .foregroundStyle(watchStatus.color)
-                            .accessibilityLabel(watchStatus.label)
+                            .accessibilityLabel(watchStatus.title)
                     }
                 }
             }
-            .alert("Watch Status", isPresented: $showingWatchStatus) {
+            .alert(watchStatus.title, isPresented: $showingWatchStatus) {
                 Button("OK", role: .cancel) {}
             } message: {
-                Text(watchStatus.label)
+                Text(watchStatus.guidance)
             }
             .sheet(isPresented: $showingLogSheet) {
                 LogEntrySheet { loggedDate in
@@ -86,26 +85,52 @@ struct DayInReviewView: View {
             }
             .task(id: selectedDate) {
                 await healthKit.fetchDayInReview(for: selectedDate)
-                lastUpdated = Date()
             }
             .refreshable {
+                connectivity.requestFreshTremorData()
                 await healthKit.fetchDayInReview(for: selectedDate)
-                lastUpdated = Date()
             }
         }
     }
 
-    private var watchStatus: (icon: String, color: Color, label: String) {
+    private struct WatchStatus {
+        let icon: String
+        let color: Color
+        let title: String
+        let guidance: String
+    }
+
+    private var watchStatus: WatchStatus {
         if !connectivity.isWatchPaired {
-            return ("applewatch.slash", .secondary, "No Apple Watch paired")
+            return WatchStatus(
+                icon: "applewatch.slash",
+                color: .secondary,
+                title: "No Apple Watch paired",
+                guidance: "Pair an Apple Watch with this iPhone using the Watch app to start tracking tremor data."
+            )
         }
         if !connectivity.isWatchAppInstalled {
-            return ("applewatch.slash", .secondary, "Watch app not installed")
+            return WatchStatus(
+                icon: "applewatch.slash",
+                color: .secondary,
+                title: "Watch app not installed",
+                guidance: "Open the Watch app on iPhone → My Watch → find PD Companion → tap Install."
+            )
         }
         if connectivity.isWatchReachable {
-            return ("applewatch.radiowaves.left.and.right", .green, "Watch app active")
+            return WatchStatus(
+                icon: "applewatch.radiowaves.left.and.right",
+                color: .green,
+                title: "Watch connected",
+                guidance: "Tremor data syncs automatically when you open or refresh this app."
+            )
         }
-        return ("applewatch", .secondary, "Watch paired (app inactive)")
+        return WatchStatus(
+            icon: "applewatch",
+            color: .orange,
+            title: "Watch app not active",
+            guidance: "Open PD Companion on your Apple Watch for a few seconds, then return here and pull down to refresh."
+        )
     }
 
     private var dayStart: Date { Calendar.current.startOfDay(for: selectedDate) }
@@ -142,10 +167,8 @@ struct DayInReviewView: View {
             VStack(spacing: 2) {
                 Text(selectedDate.formatted(.dateTime.weekday(.wide).month().day()))
                     .font(.headline)
-                if let lastUpdated {
-                    Text("Updated \(lastUpdated.formatted(.relative(presentation: .named)))")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
+                Text(syncStatusText)
+                    .font(.caption2).foregroundStyle(syncStatusColor)
             }
 
             Spacer()
@@ -162,6 +185,26 @@ struct DayInReviewView: View {
 
     private var isAtToday: Bool {
         Calendar.current.isDate(selectedDate, inSameDayAs: Date())
+    }
+
+    private var syncStatusText: String {
+        guard let latest = allReadings.last?.timestamp else {
+            return "No tremor data yet"
+        }
+        let style: Date.FormatStyle = Calendar.current.isDateInToday(latest)
+            ? .dateTime.hour().minute()
+            : .dateTime.month().day().hour().minute()
+        return "Last reading \(latest.formatted(style))"
+    }
+
+    private var syncStatusColor: Color {
+        guard let latest = allReadings.last?.timestamp else { return .secondary }
+        let age = Date().timeIntervalSince(latest)
+        switch age {
+        case ..<3600:       return .secondary
+        case 3600..<10800:  return .orange
+        default:            return .red
+        }
     }
 
     private func shiftDay(by days: Int) {

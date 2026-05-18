@@ -5,6 +5,7 @@ import SwiftData
 struct PD_CompanionApp: App {
     @StateObject private var healthKit = HealthKitManager()
     @StateObject private var connectivity = PhoneConnectivityManager.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     let modelContainer: ModelContainer
 
@@ -27,6 +28,11 @@ struct PD_CompanionApp: App {
                     await healthKit.requestAuthorization()
                     await healthKit.fetchTodaySnapshot()
                     connectivity.activate()
+                }
+                .onChange(of: scenePhase) { _, newPhase in
+                    if newPhase == .active {
+                        connectivity.requestFreshTremorData()
+                    }
                 }
         }
         .modelContainer(modelContainer)
