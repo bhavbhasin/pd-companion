@@ -39,27 +39,7 @@ enum CSVBackupExporter {
                 to: folder.appendingPathComponent("food_events.csv")
             )
 
-            let snapshots = try context.fetch(
-                FetchDescriptor<HealthSnapshot>(sortBy: [SortDescriptor(\.date)])
-            )
-            try writeCSV(
-                header: [
-                    "date", "sleepHours", "hrvAverage", "restingHeartRate",
-                    "exerciseMinutes", "mindfulnessMinutes", "stepCount"
-                ],
-                rows: snapshots.map { [
-                    iso($0.date),
-                    formatOptional($0.sleepHours),
-                    formatOptional($0.hrvAverage),
-                    formatOptional($0.restingHeartRate),
-                    formatOptional($0.exerciseMinutes),
-                    formatOptional($0.mindfulnessMinutes),
-                    formatOptional($0.stepCount)
-                ] },
-                to: folder.appendingPathComponent("health_snapshots.csv")
-            )
-
-            print("CSV backup written to \(folder.path) — tremors=\(tremors.count) foods=\(foods.count) snapshots=\(snapshots.count)")
+            print("CSV backup written to \(folder.path) — tremors=\(tremors.count) foods=\(foods.count)")
             return folder
         } catch {
             print("CSV export failed: \(error)")

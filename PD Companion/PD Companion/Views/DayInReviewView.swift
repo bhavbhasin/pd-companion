@@ -69,8 +69,13 @@ struct DayInReviewView: View {
                             let files = (try? FileManager.default.contentsOfDirectory(
                                 at: folder, includingPropertiesForKeys: nil
                             )) ?? []
-                            guard !files.isEmpty else { return }
-                            ShareSheetPresenter.present(items: files)
+                            guard !files.isEmpty else {
+                                try? FileManager.default.removeItem(at: folder)
+                                return
+                            }
+                            ShareSheetPresenter.present(items: files) {
+                                try? FileManager.default.removeItem(at: folder)
+                            }
                         }
                     } label: {
                         Image(systemName: "square.and.arrow.up")
