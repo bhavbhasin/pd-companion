@@ -6,6 +6,7 @@ import HealthKit
 struct DayInReviewView: View {
     @EnvironmentObject var healthKit: HealthKitManager
     @EnvironmentObject var connectivity: PhoneConnectivityManager
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \TremorReading.timestamp, order: .forward) private var allReadings: [TremorReading]
     @Query(sort: \FoodEvent.timestamp, order: .forward) private var allFoodEvents: [FoodEvent]
     @State private var selectedDate: Date = Calendar.current.startOfDay(
@@ -58,6 +59,22 @@ struct DayInReviewView: View {
                     } label: {
                         Image(systemName: "plus")
                             .accessibilityLabel("Log entry")
+                    }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        Task {
+                            guard let folder = CSVBackupExporter.exportAll(context: modelContext) else { return }
+                            await healthKit.exportAllSamples(to: folder)
+                            let files = (try? FileManager.default.contentsOfDirectory(
+                                at: folder, includingPropertiesForKeys: nil
+                            )) ?? []
+                            guard !files.isEmpty else { return }
+                            ShareSheetPresenter.present(items: files)
+                        }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .accessibilityLabel("Export data backup")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {

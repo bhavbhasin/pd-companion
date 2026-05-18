@@ -26,7 +26,7 @@ class HealthKitManager: ObservableObject {
     ]
 
     private let readTypes: Set<HKObjectType> = {
-        let types: [HKObjectType] = [
+        var types: [HKObjectType] = [
             HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
             HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!,
             HKObjectType.quantityType(forIdentifier: .restingHeartRate)!,
@@ -35,6 +35,15 @@ class HealthKitManager: ObservableObject {
             HKObjectType.quantityType(forIdentifier: .stepCount)!,
             HKObjectType.quantityType(forIdentifier: .timeInDaylight)!,
             HKObjectType.workoutType(),
+            HKObjectType.quantityType(forIdentifier: .heartRate)!,
+            HKObjectType.quantityType(forIdentifier: .respiratoryRate)!,
+            HKObjectType.quantityType(forIdentifier: .oxygenSaturation)!,
+            HKObjectType.quantityType(forIdentifier: .walkingSpeed)!,
+            HKObjectType.quantityType(forIdentifier: .walkingAsymmetryPercentage)!,
+            HKObjectType.quantityType(forIdentifier: .walkingDoubleSupportPercentage)!,
+            HKObjectType.quantityType(forIdentifier: .walkingStepLength)!,
+            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
+            HKObjectType.quantityType(forIdentifier: .basalEnergyBurned)!,
         ]
         return Set(types)
     }()
@@ -53,6 +62,10 @@ class HealthKitManager: ObservableObject {
         }
 
         await requestMedicationAuthorization()
+    }
+
+    func exportAllSamples(to folder: URL) async {
+        await HealthKitExporter.exportAll(to: folder, store: store)
     }
 
     private func requestMedicationAuthorization() async {
