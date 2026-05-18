@@ -122,14 +122,14 @@ struct DayInReviewView: View {
                 icon: "applewatch.radiowaves.left.and.right",
                 color: .green,
                 title: "Watch connected",
-                guidance: "Tremor data syncs automatically when you open or refresh this app."
+                guidance: "Tremor data syncs automatically in the background. No action needed."
             )
         }
         return WatchStatus(
             icon: "applewatch",
             color: .orange,
-            title: "Watch app not active",
-            guidance: "Open PD Companion on your Apple Watch for a few seconds, then return here and pull down to refresh."
+            title: "Watch not currently reachable",
+            guidance: "Your Watch is paired but not actively connected. Data will resume syncing on its own once the connection restores — usually within an hour."
         )
     }
 
@@ -194,16 +194,16 @@ struct DayInReviewView: View {
         let style: Date.FormatStyle = Calendar.current.isDateInToday(latest)
             ? .dateTime.hour().minute()
             : .dateTime.month().day().hour().minute()
-        return "Last reading \(latest.formatted(style))"
+        return "Updated \(latest.formatted(style))"
     }
 
     private var syncStatusColor: Color {
         guard let latest = allReadings.last?.timestamp else { return .secondary }
         let age = Date().timeIntervalSince(latest)
         switch age {
-        case ..<3600:       return .secondary
-        case 3600..<10800:  return .orange
-        default:            return .red
+        case ..<(6 * 3600):      return .secondary
+        case ..<(24 * 3600):     return .orange
+        default:                 return .red
         }
     }
 

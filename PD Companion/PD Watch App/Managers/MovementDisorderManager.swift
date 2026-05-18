@@ -91,6 +91,7 @@ final class MovementDisorderManager: ObservableObject {
 
                     self.recentTremorSamples = samples
                     self.lastQueryDate = now
+                    WatchConnectivityManager.shared.pushLatestContext(samples)
                     completion?()
                 }
             }

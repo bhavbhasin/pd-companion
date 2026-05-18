@@ -16,6 +16,21 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
         WCSession.default.activate()
     }
 
+    func pushLatestContext(_ samples: [TremorSample]) {
+        guard WCSession.default.activationState == .activated else { return }
+
+        let cutoff = Date().addingTimeInterval(-48 * 3600)
+        let recent = samples.filter { $0.timestamp > cutoff }
+        guard !recent.isEmpty else { return }
+
+        do {
+            let data = try JSONEncoder().encode(recent)
+            try WCSession.default.updateApplicationContext(["tremorSamples": data])
+        } catch {
+            print("updateApplicationContext failed (\(recent.count) samples): \(error)")
+        }
+    }
+
     func sendTremorSamples(_ samples: [TremorSample]) {
         guard WCSession.default.activationState == .activated else {
             print("WCSession not activated — skipping tremor sync (\(samples.count) samples)")
@@ -51,6 +66,7 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
         guard payload["requestTremorSync"] as? Bool == true else { return }
         let since = (payload["since"] as? TimeInterval).map { Date(timeIntervalSince1970: $0) }
         Task { @MainActor in
+            BackgroundRefreshCoordinator.shared.scheduleNextRefresh()
             MovementDisorderManager.shared.queryRecentResults {
                 Task { @MainActor in
                     let baselineCutoff = Date().addingTimeInterval(-48 * 3600)

@@ -145,4 +145,12 @@ extension PhoneConnectivityManager: WCSessionDelegate {
             }
         }
     }
+
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        if let data = userInfo["tremorSamples"] as? Data {
+            Task { @MainActor in
+                self.processTremorData(data)
+            }
+        }
+    }
 }

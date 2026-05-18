@@ -642,6 +642,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "PD-Companion-Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "PD Companion reads your health data (sleep, heart rate, HRV, exercise, mindfulness) to find patterns that correlate with your Parkinson's symptoms.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "PD Companion stores symptom tracking data in HealthKit to keep your health information in one place.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "PD Companion uses motion data to track tremor and movement patterns related to Parkinson's disease.";
@@ -681,6 +682,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "PD-Companion-Info.plist";
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "PD Companion reads your health data (sleep, heart rate, HRV, exercise, mindfulness) to find patterns that correlate with your Parkinson's symptoms.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "PD Companion stores symptom tracking data in HealthKit to keep your health information in one place.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "PD Companion uses motion data to track tremor and movement patterns related to Parkinson's disease.";
