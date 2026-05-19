@@ -12,7 +12,11 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
     @Published var isWatchAppInstalled = false
     @Published var isWatchReachable = false
 
-    var modelContext: ModelContext?
+    // Hold the container, not a context. A persistent ModelContext from the SwiftUI
+    // environment is unreliable on background-launched WCSession callbacks
+    // (Apple Developer Forums thread 736305). Construct a fresh ModelContext per
+    // delegate invocation instead.
+    var modelContainer: ModelContainer?
 
     private override init() {
         super.init()
@@ -32,9 +36,11 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
             payload["since"] = latest.timeIntervalSince1970
         }
 
+        print("[sync] requestFreshTremorData since=\(payload["since"] as? TimeInterval ?? -1) reachable=\(WCSession.default.isReachable)")
+
         if WCSession.default.isReachable {
             WCSession.default.sendMessage(payload, replyHandler: nil) { error in
-                print("requestFreshTremorData sendMessage failed: \(error.localizedDescription) — falling back to transferUserInfo")
+                print("[sync] requestFreshTremorData sendMessage failed: \(error.localizedDescription) — falling back to transferUserInfo")
                 WCSession.default.transferUserInfo(payload)
             }
         } else {
@@ -42,8 +48,13 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         }
     }
 
+    private func makeContext() -> ModelContext? {
+        guard let container = modelContainer else { return nil }
+        return ModelContext(container)
+    }
+
     private func latestStoredSampleTimestamp() -> Date? {
-        guard let context = modelContext else { return nil }
+        guard let context = makeContext() else { return nil }
         var descriptor = FetchDescriptor<TremorReading>(
             sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
         )
@@ -55,24 +66,29 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         do {
             let samples = try JSONDecoder().decode([TremorSample].self, from: data)
             self.latestTremorSamples = samples
-            persistSamples(samples)
+            let inserted = persistSamples(samples)
+            print("[sync] processTremorData received=\(samples.count) inserted=\(inserted)")
         } catch {
-            print("Failed to decode tremor data: \(error)")
+            print("[sync] Failed to decode tremor data: \(error)")
         }
     }
 
-    private func persistSamples(_ samples: [TremorSample]) {
-        guard let context = modelContext else { return }
+    @discardableResult
+    private func persistSamples(_ samples: [TremorSample]) -> Int {
+        guard let context = makeContext() else { return 0 }
         let existing = (try? context.fetch(FetchDescriptor<TremorReading>())) ?? []
         let existingTimestamps = Set(existing.map { $0.timestamp })
+        var inserted = 0
         for sample in samples where !existingTimestamps.contains(sample.timestamp) {
             context.insert(TremorReading(from: sample))
+            inserted += 1
         }
         try? context.save()
+        return inserted
     }
 
     func cleanupDuplicates() {
-        guard let context = modelContext else { return }
+        guard let context = makeContext() else { return }
         guard let all = try? context.fetch(FetchDescriptor<TremorReading>()) else { return }
         var seen: Set<Date> = []
         for reading in all {
@@ -100,6 +116,7 @@ extension PhoneConnectivityManager: WCSessionDelegate {
             self.isWatchPaired = paired
             self.isWatchAppInstalled = installed
             self.isWatchReachable = reachable
+            print("[sync] WCSession activated didActivate=\(didActivate) paired=\(paired) installed=\(installed)")
             if didActivate {
                 self.requestFreshTremorData()
             }
@@ -135,6 +152,9 @@ extension PhoneConnectivityManager: WCSessionDelegate {
         }
     }
 
+    // Ambient backbone receiver. Watch publishes its latest-known samples here;
+    // iOS delivers them on the next activation regardless of whether either app
+    // was open in between. Pairs with the on-demand message/userInfo handlers.
     nonisolated func session(
         _ session: WCSession,
         didReceiveApplicationContext applicationContext: [String: Any]

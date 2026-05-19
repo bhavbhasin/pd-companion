@@ -27,12 +27,14 @@ final class BackgroundRefreshCoordinator {
             manager.checkAvailability()
             manager.startMonitoring()
         }
+        print("[sync] BG refresh task fired available=\(manager.isAvailable)")
 
         manager.queryRecentResults {
             Task { @MainActor in
                 let cutoff = Date().addingTimeInterval(-48 * 3600)
                 let samples = MovementDisorderManager.shared.recentTremorSamples
                     .filter { $0.timestamp >= cutoff }
+                print("[sync] BG refresh sending \(samples.count) samples")
                 WatchConnectivityManager.shared.sendTremorSamples(samples)
                 BackgroundRefreshCoordinator.shared.scheduleNextRefresh()
                 task.setTaskCompletedWithSnapshot(false)

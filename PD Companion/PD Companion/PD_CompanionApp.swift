@@ -1,24 +1,47 @@
 import SwiftUI
 import SwiftData
 import BackgroundTasks
+import UIKit
+
+/// Shared container reference so both the SwiftUI App and the AppDelegate
+/// resolve to the same SwiftData store. Background-launched WCSession callbacks
+/// arrive before any SwiftUI scene activates, so the container must be accessible
+/// from the AppDelegate path — not only from a view's `.task` modifier.
+enum AppContainer {
+    static let shared: ModelContainer = {
+        do {
+            return try ModelContainer(for: TremorReading.self, FoodEvent.self)
+        } catch {
+            fatalError("Failed to create ModelContainer: \(error)")
+        }
+    }()
+}
+
+final class PhoneAppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        // Wire ModelContainer and activate WCSession *before* any delegate callback
+        // can fire. SwiftUI's `.task` modifier is not guaranteed to run on
+        // background launches, so connectivity setup cannot live there.
+        PhoneConnectivityManager.shared.modelContainer = AppContainer.shared
+        PhoneConnectivityManager.shared.activate()
+        print("[sync] PhoneAppDelegate launched — WCSession activated, container attached")
+        return true
+    }
+}
 
 @main
 struct PD_CompanionApp: App {
     static let tremorSyncTaskID = "com.bhavbhasin.pdcompanion.tremor-sync"
 
+    @UIApplicationDelegateAdaptor(PhoneAppDelegate.self) private var appDelegate
     @StateObject private var healthKit = HealthKitManager()
     @StateObject private var connectivity = PhoneConnectivityManager.shared
     @Environment(\.scenePhase) private var scenePhase
 
-    let modelContainer: ModelContainer
-
     init() {
-        do {
-            modelContainer = try ModelContainer(for: TremorReading.self, FoodEvent.self)
-        } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
-        }
-
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.tremorSyncTaskID,
             using: nil
@@ -33,11 +56,9 @@ struct PD_CompanionApp: App {
                 .environmentObject(healthKit)
                 .environmentObject(connectivity)
                 .task {
-                    connectivity.modelContext = modelContainer.mainContext
                     connectivity.cleanupDuplicates()
                     await healthKit.requestAuthorization()
                     await healthKit.fetchTodaySnapshot()
-                    connectivity.activate()
                     Self.scheduleTremorSync()
                 }
                 .onChange(of: scenePhase) { _, newPhase in
@@ -51,7 +72,7 @@ struct PD_CompanionApp: App {
                     }
                 }
         }
-        .modelContainer(modelContainer)
+        .modelContainer(AppContainer.shared)
     }
 
     static func scheduleTremorSync() {

@@ -16,29 +16,32 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
         WCSession.default.activate()
     }
 
+    // Ambient backbone: publish latest-known samples as application context.
+    // iOS retains the last value and delivers it on the next iPhone-side
+    // activation, even if neither app was open in between. Pairs with the
+    // on-demand sendMessage/transferUserInfo path — never trust a single chain.
     func pushLatestContext(_ samples: [TremorSample]) {
         guard WCSession.default.activationState == .activated else { return }
-
         let cutoff = Date().addingTimeInterval(-48 * 3600)
         let recent = samples.filter { $0.timestamp > cutoff }
         guard !recent.isEmpty else { return }
-
         do {
             let data = try JSONEncoder().encode(recent)
             try WCSession.default.updateApplicationContext(["tremorSamples": data])
+            print("[sync] applicationContext updated: \(recent.count) samples")
         } catch {
-            print("updateApplicationContext failed (\(recent.count) samples): \(error)")
+            print("[sync] updateApplicationContext failed (\(recent.count) samples): \(error.localizedDescription)")
         }
     }
 
     func sendTremorSamples(_ samples: [TremorSample]) {
         guard WCSession.default.activationState == .activated else {
-            print("WCSession not activated — skipping tremor sync (\(samples.count) samples)")
+            print("[sync] WCSession not activated — skipping tremor sync (\(samples.count) samples)")
             return
         }
 
         guard !samples.isEmpty else {
-            print("No new tremor samples to sync")
+            print("[sync] No new tremor samples to send")
             return
         }
 
@@ -50,15 +53,16 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
 
             if WCSession.default.isReachable && payloadKB < sendMessageLimitKB {
                 WCSession.default.sendMessage(message, replyHandler: nil) { error in
-                    print("sendMessage failed (\(payloadKB)KB, \(samples.count) samples): \(error) — falling back to transferUserInfo")
+                    print("[sync] sendMessage failed (\(payloadKB)KB, \(samples.count) samples): \(error.localizedDescription) — falling back to transferUserInfo")
                     WCSession.default.transferUserInfo(message)
                 }
+                print("[sync] sendMessage dispatched: \(payloadKB)KB, \(samples.count) samples")
             } else {
                 WCSession.default.transferUserInfo(message)
-                print("transferUserInfo queued: \(payloadKB)KB, \(samples.count) samples")
+                print("[sync] transferUserInfo queued: \(payloadKB)KB, \(samples.count) samples")
             }
         } catch {
-            print("Failed to send tremor data (\(samples.count) samples): \(error)")
+            print("[sync] Failed to encode tremor data (\(samples.count) samples): \(error)")
         }
     }
 
@@ -67,12 +71,22 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
         let since = (payload["since"] as? TimeInterval).map { Date(timeIntervalSince1970: $0) }
         Task { @MainActor in
             BackgroundRefreshCoordinator.shared.scheduleNextRefresh()
-            MovementDisorderManager.shared.queryRecentResults {
+            // Background-launched delegate callbacks may arrive before the SwiftUI scene
+            // has ever activated. Re-init MovementDisorderManager defensively — without
+            // this, queryRecentResults bails on a nil internal manager and returns no data.
+            let movement = MovementDisorderManager.shared
+            if !movement.isAvailable {
+                movement.checkAvailability()
+                movement.startMonitoring()
+            }
+            print("[sync] handleIncoming requestTremorSync since=\(since?.description ?? "nil") available=\(movement.isAvailable)")
+            movement.queryRecentResults {
                 Task { @MainActor in
                     let baselineCutoff = Date().addingTimeInterval(-48 * 3600)
                     let cutoff = max(since ?? baselineCutoff, baselineCutoff)
                     let samples = MovementDisorderManager.shared.recentTremorSamples
                         .filter { $0.timestamp > cutoff }
+                    print("[sync] handleIncoming sending \(samples.count) samples")
                     WatchConnectivityManager.shared.sendTremorSamples(samples)
                 }
             }

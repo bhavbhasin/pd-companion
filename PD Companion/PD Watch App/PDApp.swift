@@ -13,12 +13,9 @@ struct PD_Watch_AppApp: App {
                 .environmentObject(movementManager)
                 .environmentObject(connectivityManager)
                 .task {
-                    movementManager.checkAvailability()
-                    movementManager.startMonitoring()
-                    connectivityManager.activate()
-                    BackgroundRefreshCoordinator.shared.scheduleNextRefresh()
+                    // Foreground-only refresh loop. Init lives in WatchAppDelegate so it
+                    // runs on background launches too.
                     queryAndSync()
-
                     while !Task.isCancelled {
                         try? await Task.sleep(for: .seconds(120))
                         queryAndSync()
