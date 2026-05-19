@@ -533,12 +533,7 @@ private struct TremorTimelinePanel: View {
     private var chartEvents: [DayEvent] { events }
 
     private var chartBuckets: [HourBucket] {
-        var buckets = hourlyBuckets
-        // Only extend to midnight for completed days — today's chart ends at the last real reading
-        if let last = buckets.last, last.hour < dayEnd, dayEnd <= .now {
-            buckets.append(HourBucket(hour: dayEnd, value: last.value))
-        }
-        return buckets
+        hourlyBuckets
     }
 
     private var hourlyBuckets: [HourBucket] {
@@ -546,13 +541,23 @@ private struct TremorTimelinePanel: View {
         let cal = Calendar.current
         var sums: [Date: (sum: Double, count: Int)] = [:]
         for r in readings {
-            let comps = cal.dateComponents([.year, .month, .day, .hour], from: r.timestamp)
-            guard let bucket = cal.date(from: comps) else { continue }
+            let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: r.timestamp)
+            var bucketComps = comps
+            bucketComps.minute = (comps.minute ?? 0) >= 30 ? 30 : 0
+            bucketComps.second = 0
+            guard let bucket = cal.date(from: bucketComps) else { continue }
             let cur = sums[bucket] ?? (0, 0)
             sums[bucket] = (cur.sum + r.tremorScore, cur.count + 1)
         }
-        return sums.map { HourBucket(hour: $0.key, value: $0.value.sum / Double($0.value.count)) }
+        var result = sums.map { HourBucket(hour: $0.key, value: $0.value.sum / Double($0.value.count)) }
             .sorted { $0.hour < $1.hour }
+        // If the last bucket covers the day's final half-hour, anchor the curve
+        // to dayEnd so it sits flush against the next-day boundary instead of
+        // terminating ~15min early. Honest extension — same value, full coverage.
+        if let last = result.last, last.hour >= dayEnd.addingTimeInterval(-30 * 60) {
+            result.append(HourBucket(hour: dayEnd, value: last.value))
+        }
+        return result
     }
 
     private func yLabel(for level: Int) -> String {
