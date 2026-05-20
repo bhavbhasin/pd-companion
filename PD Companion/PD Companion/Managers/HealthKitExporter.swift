@@ -51,7 +51,7 @@ enum HealthKitExporter {
         writeCSV(
             header: ["startDate", "endDate", "value", "source", "device"],
             rows: rows,
-            to: folder.appendingPathComponent("\(name).csv")
+            to: folder.appendingPathComponent(filename(name, range: dateRange(quantity.map(\.startDate))))
         )
         print("HK exported \(name): \(rows.count) samples")
     }
@@ -76,7 +76,7 @@ enum HealthKitExporter {
         writeCSV(
             header: ["startDate", "endDate", "stage", "source", "device"],
             rows: rows,
-            to: folder.appendingPathComponent("sleep_stages.csv")
+            to: folder.appendingPathComponent(filename("sleep_stages", range: dateRange(category.map(\.startDate))))
         )
         print("HK exported sleep_stages: \(rows.count) segments")
     }
@@ -116,7 +116,7 @@ enum HealthKitExporter {
         writeCSV(
             header: ["startDate", "endDate", "durationMinutes", "source"],
             rows: rows,
-            to: folder.appendingPathComponent("mindfulness_sessions.csv")
+            to: folder.appendingPathComponent(filename("mindfulness_sessions", range: dateRange(category.map(\.startDate))))
         )
         print("HK exported mindfulness_sessions: \(rows.count) sessions")
     }
@@ -146,7 +146,7 @@ enum HealthKitExporter {
         writeCSV(
             header: ["startDate", "endDate", "durationMinutes", "activityType", "activeEnergyKcal", "distanceMeters", "source"],
             rows: rows,
-            to: folder.appendingPathComponent("workouts.csv")
+            to: folder.appendingPathComponent(filename("workouts", range: dateRange(workouts.map(\.startDate))))
         )
         print("HK exported workouts: \(rows.count) workouts")
     }
@@ -262,7 +262,7 @@ enum HealthKitExporter {
         writeCSV(
             header: ["startDate", "endDate", "status", "medicationName", "conceptIdentifier", "source"],
             rows: rows,
-            to: folder.appendingPathComponent("medication_doses.csv")
+            to: folder.appendingPathComponent(filename("medication_doses", range: dateRange(doses.map(\.startDate))))
         )
         print("HK exported medication_doses: \(rows.count) events")
     }
@@ -336,5 +336,23 @@ enum HealthKitExporter {
 
     private static func iso(_ date: Date) -> String {
         isoFormatter.string(from: date)
+    }
+
+    private static let filenameDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private static func dateRange(_ dates: [Date]) -> (first: Date, last: Date)? {
+        guard let first = dates.min(), let last = dates.max() else { return nil }
+        return (first, last)
+    }
+
+    private static func filename(_ base: String, range: (first: Date, last: Date)?) -> String {
+        guard let range else { return "\(base).csv" }
+        let from = filenameDateFormatter.string(from: range.first)
+        let to = filenameDateFormatter.string(from: range.last)
+        return from == to ? "\(base)_\(from).csv" : "\(base)_\(from)_to_\(to).csv"
     }
 }

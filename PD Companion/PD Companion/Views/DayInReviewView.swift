@@ -15,6 +15,7 @@ struct DayInReviewView: View {
     @State private var showingWatchStatus = false
     @State private var showingLogSheet = false
     @State private var selectedEvent: DayEvent?
+    @State private var isExporting = false
 
     var body: some View {
         NavigationStack {
@@ -63,8 +64,13 @@ struct DayInReviewView: View {
                 }
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
+                        guard !isExporting else { return }
+                        isExporting = true
                         Task {
-                            guard let folder = CSVBackupExporter.exportAll(context: modelContext) else { return }
+                            defer { Task { @MainActor in isExporting = false } }
+                            guard let folder = await CSVBackupExporter.exportAll(
+                                container: AppContainer.shared
+                            ) else { return }
                             await healthKit.exportAllSamples(to: folder)
                             let files = (try? FileManager.default.contentsOfDirectory(
                                 at: folder, includingPropertiesForKeys: nil
@@ -73,14 +79,23 @@ struct DayInReviewView: View {
                                 try? FileManager.default.removeItem(at: folder)
                                 return
                             }
-                            ShareSheetPresenter.present(items: files) {
-                                try? FileManager.default.removeItem(at: folder)
+                            await MainActor.run {
+                                ShareSheetPresenter.present(items: files) {
+                                    try? FileManager.default.removeItem(at: folder)
+                                }
                             }
                         }
                     } label: {
-                        Image(systemName: "square.and.arrow.up")
-                            .accessibilityLabel("Export data backup")
+                        if isExporting {
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityLabel("Preparing data export")
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                                .accessibilityLabel("Export data backup")
+                        }
                     }
+                    .disabled(isExporting)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {

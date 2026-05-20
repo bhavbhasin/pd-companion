@@ -1,9 +1,13 @@
 import Foundation
 import SwiftData
 
-@MainActor
 enum CSVBackupExporter {
-    static func exportAll(context: ModelContext) -> URL? {
+    // Async + non-MainActor so the SwiftData fetch and CSV serialization run on
+    // the cooperative thread pool, not blocking the UI. Take a ModelContainer
+    // and build a fresh ModelContext inside; the UI's main-actor context is
+    // not safe to use off the main thread.
+    static func exportAll(container: ModelContainer) async -> URL? {
+        let context = ModelContext(container)
         let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let folder = base.appendingPathComponent("Backup-\(folderTimestamp())", isDirectory: true)
 
@@ -13,6 +17,7 @@ enum CSVBackupExporter {
             let tremors = try context.fetch(
                 FetchDescriptor<TremorReading>(sortBy: [SortDescriptor(\.timestamp)])
             )
+            let tremorRange = dateRange(tremors.map(\.timestamp))
             try writeCSV(
                 header: ["timestamp", "tremorScore", "dyskinesiaScore"],
                 rows: tremors.map { [
@@ -20,12 +25,13 @@ enum CSVBackupExporter {
                     String($0.tremorScore),
                     String($0.dyskinesiaScore)
                 ] },
-                to: folder.appendingPathComponent("tremor_readings.csv")
+                to: folder.appendingPathComponent(filename("tremor_readings", range: tremorRange))
             )
 
             let foods = try context.fetch(
                 FetchDescriptor<FoodEvent>(sortBy: [SortDescriptor(\.timestamp)])
             )
+            let foodRange = dateRange(foods.map(\.timestamp))
             try writeCSV(
                 header: ["id", "timestamp", "userDescription", "type", "attributes", "notes"],
                 rows: foods.map { [
@@ -36,7 +42,7 @@ enum CSVBackupExporter {
                     $0.attributes.map(\.rawValue).joined(separator: "|"),
                     $0.notes ?? ""
                 ] },
-                to: folder.appendingPathComponent("food_events.csv")
+                to: folder.appendingPathComponent(filename("food_events", range: foodRange))
             )
 
             print("CSV backup written to \(folder.path) — tremors=\(tremors.count) foods=\(foods.count)")
@@ -81,5 +87,23 @@ enum CSVBackupExporter {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd-HHmmss"
         return f.string(from: Date())
+    }
+
+    private static let filenameDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private static func dateRange(_ dates: [Date]) -> (first: Date, last: Date)? {
+        guard let first = dates.min(), let last = dates.max() else { return nil }
+        return (first, last)
+    }
+
+    private static func filename(_ base: String, range: (first: Date, last: Date)?) -> String {
+        guard let range else { return "\(base).csv" }
+        let from = filenameDateFormatter.string(from: range.first)
+        let to = filenameDateFormatter.string(from: range.last)
+        return from == to ? "\(base)_\(from).csv" : "\(base)_\(from)_to_\(to).csv"
     }
 }
