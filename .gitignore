@@ -5,3 +5,13 @@ DerivedData/
 *.xcscmblueprint
 *.xccheckout
 build/
+
+# Local-only strategic working notes — kept out of public repo by design
+PD_Companion_Competitive_Analysis_Roadmap.md
+**/PD_Companion_Competitive_Analysis_Roadmap.md
+
+# Local AI assistant state (Claude Code session state, hooks, memory)
+.claude/
+
+# Local data backups outside the source tree
+PD Companion/PD Companion Backups/
