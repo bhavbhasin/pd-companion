@@ -9,6 +9,10 @@ build/
 # Local-only strategic working notes — kept out of public repo by design
 PD_Companion_Competitive_Analysis_Roadmap.md
 **/PD_Companion_Competitive_Analysis_Roadmap.md
+ParkinsonsProject.md
+BACKLOG.md
+privacy-policy.html
+EP5499_Movement_Disorder_APIs_Addendum.pdf
 
 # Local AI assistant state (Claude Code session state, hooks, memory)
 .claude/
