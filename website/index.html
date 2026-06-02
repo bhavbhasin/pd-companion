@@ -286,10 +286,33 @@
             letter-spacing: 0.015em;
         }
 
+        /* App icon display */
+        .app-icon-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 28px;
+        }
+        .app-icon-wrap img {
+            width: 96px;
+            height: 96px;
+            border-radius: 22px;
+            box-shadow: 0 8px 32px rgba(74,140,214,0.3), 0 2px 8px rgba(0,0,0,0.4);
+        }
+        .app-icon-platforms {
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: 0.08em;
+            color: var(--text-3);
+            text-transform: uppercase;
+        }
+
         /* Phone frame */
         .phone-wrap {
             display: flex;
-            justify-content: center;
+            flex-direction: column;
+            align-items: center;
             position: relative;
         }
         .phone {
@@ -389,7 +412,7 @@
         }
         .screens-grid {
             display: grid;
-            grid-template-columns: 1.3fr 1fr 1fr;
+            grid-template-columns: repeat(3, 1fr);
             gap: 28px;
             align-items: end;
         }
@@ -402,13 +425,6 @@
         .screen-item .phone {
             width: 100%;
             max-width: 240px;
-        }
-        .screen-item.lead .phone {
-            max-width: 270px;
-            box-shadow:
-                0 0 0 1px rgba(255,255,255,0.07),
-                0 56px 100px rgba(0,0,0,0.88),
-                0 0 60px rgba(75,158,255,0.1);
         }
         .screen-caption { text-align: center; }
         .screen-caption strong { display: block; font-size: 14px; font-weight: 600; margin-bottom: 3px; }
@@ -625,7 +641,6 @@
             .phone-wrap { order: -1; }
             .cap-grid { grid-template-columns: repeat(2, 1fr); }
             .screens-grid { grid-template-columns: 1fr 1fr; }
-            .screen-item.lead { grid-column: 1 / -1; align-items: center; }
             .story-grid { grid-template-columns: 1fr; gap: 40px; }
             .section-wrap, .contact-wrap { padding-left: 32px; padding-right: 32px; }
             .screens-box { padding: 40px 28px; }
@@ -662,7 +677,7 @@
     <div class="nav-links">
         <a href="#how-it-works" class="nav-link">How it works</a>
         <a href="#story" class="nav-link">Story</a>
-        <a href="mailto:info@kampavata.com" class="nav-cta">Get in touch</a>
+        <a href="mailto:info@kampa.health" class="nav-cta">Get in touch</a>
     </div>
 </nav>
 
@@ -675,9 +690,6 @@
         </div>
         <h1>Notice what your body already knows.</h1>
         <p class="hero-sub">Kampa passively monitors tremor through your Apple Watch, correlates every dose, meal, workout, and night of sleep - and surfaces the patterns that matter. No manual logging. No daily check-ins.</p>
-        <div class="cta-row">
-            <a href="mailto:info@kampavata.com" class="btn-primary">Get in touch</a>
-        </div>
         <div class="chips">
             <span class="chip">watchOS</span>
             <span class="chip">Apple Health - 6 domains</span>
@@ -687,6 +699,10 @@
         </div>
     </div>
     <div class="phone-wrap">
+        <div class="app-icon-wrap">
+            <img src="assets/kampa-app-icon.svg" alt="Kampa app icon">
+            <span class="app-icon-platforms">iOS · watchOS</span>
+        </div>
         <div class="phone">
             <img src="images/screenshot-observations.jpeg" alt="Kampa Observations screen showing AI-surfaced insights">
         </div>
@@ -759,13 +775,13 @@
         <p class="eyebrow" style="margin-bottom: 8px;">The app</p>
         <h2 class="section-h" style="margin-bottom: 44px;">Real data. Real patterns.</h2>
         <div class="screens-grid">
-            <div class="screen-item lead">
+            <div class="screen-item">
                 <div class="phone">
                     <img src="images/screenshot-daily.jpeg" alt="Daily overview — sleep, tremor, HRV, daylight">
                 </div>
                 <div class="screen-caption">
                     <strong>Daily review</strong>
-                    <span>Sleep, tremor, HRV, and daylight — one scroll</span>
+                    <span>Sleep, tremor, HRV, and daylight - one scroll</span>
                 </div>
             </div>
             <div class="screen-item">
@@ -841,7 +857,7 @@
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z"/><circle cx="4" cy="4" r="2"/></svg>
                         LinkedIn
                     </a>
-                    <a href="mailto:info@kampavata.com" class="pill-link">
+                    <a href="mailto:info@kampa.health" class="pill-link">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
                         Email
                     </a>
@@ -895,9 +911,9 @@
     <div class="contact-inner">
         <h2 class="contact-h">Interested in Kampa?</h2>
         <p class="contact-p">Early access, research collaboration, clinical feedback, or just want to follow what's being built. Reach out directly.</p>
-        <a href="mailto:info@kampavata.com" class="email-btn">
+        <a href="mailto:info@kampa.health" class="email-btn">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
-            info@kampavata.com
+            info@kampa.health
         </a>
     </div>
 </div>
