@@ -198,6 +198,15 @@
             padding: 128px 56px 80px;
         }
 
+        .hero-pre {
+            font-size: 13.5px;
+            font-weight: 400;
+            color: var(--text-3);
+            letter-spacing: 0.01em;
+            margin-bottom: 18px;
+            font-style: italic;
+        }
+
         .badge {
             display: inline-flex;
             align-items: center;
@@ -272,7 +281,7 @@
 
         .chips {
             display: flex;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
             gap: 7px;
         }
         .chip {
@@ -652,6 +661,7 @@
             .nav-links { gap: 0; }
             .nav-link { display: none; }
             .hero { padding: 96px 20px 48px; }
+            .chips { flex-wrap: wrap; }
             .section-wrap, .contact-wrap { padding-left: 20px; padding-right: 20px; }
             .cap-grid { grid-template-columns: 1fr; }
             .screens-grid { grid-template-columns: 1fr; }
@@ -684,6 +694,7 @@
 <!-- ── Hero ── -->
 <div class="hero">
     <div>
+        <p class="hero-pre">Your Parkinson's is unlike anyone else's. Understanding yours is what changes things.</p>
         <div class="badge">
             <span class="badge-dot"></span>
             Apple Movement Disorder API
@@ -692,7 +703,7 @@
         <p class="hero-sub">Kampa passively monitors tremor through your Apple Watch, correlates every dose, meal, workout, and night of sleep - and surfaces the patterns that matter. No manual logging. No daily check-ins.</p>
         <div class="chips">
             <span class="chip">watchOS</span>
-            <span class="chip">Apple Health - 6 domains</span>
+            <span class="chip">Apple Health</span>
             <span class="chip">Movement Disorder API</span>
             <span class="chip">SwiftUI</span>
             <span class="chip">On-device</span>
@@ -927,10 +938,10 @@
                 <circle cx="232" cy="78" r="5" fill="currentColor"/>
             </svg>
             <span style="font-family:var(--font-geist); font-weight:500; font-size:15px; letter-spacing:-0.02em; color:var(--text-2);">k<span style="color:var(--blue);">ā</span>mpa</span>
-            <span style="color:var(--text-3);font-size:12px;margin-left:4px;">· kampavata.com · kampa.health</span>
+            <span style="color:var(--text-3);font-size:12px;margin-left:4px;">· kampa.health</span>
         </div>
         <div class="footer-meta">
-            Built in San Francisco Bay Area · Built with Claude Code
+            Built with Claude Code
         </div>
     </footer>
 </div>
