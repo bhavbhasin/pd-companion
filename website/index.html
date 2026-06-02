@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kampa — Movement Intelligence for Parkinson's</title>
+    <meta name="description" content="Kampa passively monitors tremor via Apple Watch, correlates medication, food, sleep, and exercise, and surfaces the patterns that matter. No manual logging required.">
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-08KTDP6KRR"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-08KTDP6KRR');
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Noto+Serif+Devanagari:wght@400;600&family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;1,14..32,400&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #0a0a0a;
+            --surface-1: #111113;
+            --surface-2: #1c1c1e;
+            --border: #2c2c2e;
+            --blue: #4A8CD6;
+            --blue-deep: #2F5D99;
+            --blue-dim: rgba(74, 140, 214, 0.12);
+            --blue-border: rgba(74, 140, 214, 0.30);
+            --orange: #FF9F0A;
+            --text-1: #ffffff;
+            --text-2: rgba(235, 235, 245, 0.76);
+            --text-3: rgba(235, 235, 245, 0.36);
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-geist: 'Geist', 'Inter', sans-serif;
+            --font-dev: 'Noto Serif Devanagari', serif;
+            --max-w: 1200px;
+        }
+
+        /* SVG wordmark text classes (matches logo SVG class names) */
+        .wm, .wmLk {
+            font-family: var(--font-geist);
+            font-size: 72px;
+            font-weight: 500;
+        }
+
+        /* Etymology block */
+        .etym-wrap {
+            max-width: var(--max-w);
+            margin: 0 auto;
+            padding: 40px 56px 0;
+        }
+        .etym-inner {
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 28px 32px;
+            background: var(--surface-1);
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 24px 40px;
+            align-items: center;
+        }
+        .etym-name {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            white-space: nowrap;
+        }
+        .etym-word {
+            font-family: var(--font-geist);
+            font-size: 28px;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+            color: var(--text-1);
+        }
+        .etym-word .a-blue { color: var(--blue); }
+        .etym-pron {
+            font-size: 13px;
+            color: var(--text-3);
+            letter-spacing: 0.02em;
+        }
+        .etym-lang {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--blue);
+        }
+        .etym-def {
+            font-size: 14px;
+            line-height: 1.7;
+            color: var(--text-2);
+            border-left: 2px solid var(--border);
+            padding-left: 24px;
+        }
+        .etym-def em { color: var(--text-1); font-style: italic; }
+        @media (max-width: 768px) {
+            .etym-inner { grid-template-columns: 1fr; gap: 16px; }
+            .etym-def { border-left: none; padding-left: 0; border-top: 1px solid var(--border); padding-top: 16px; }
+            .etym-wrap { padding: 32px 32px 0; }
+        }
+
+        /* HealthKit domains strip */
+        .hk-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 20px;
+        }
+        .hk-chip {
+            background: rgba(74,140,214,0.08);
+            border: 1px solid rgba(74,140,214,0.2);
+            color: var(--blue);
+            padding: 4px 12px;
+            border-radius: 100px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        /* Wave divider */
+        .wave-divider {
+            display: flex;
+            justify-content: center;
+            padding: 0 56px;
+            max-width: var(--max-w);
+            margin: 0 auto;
+            opacity: 0.18;
+        }
+        .wave-divider svg { width: 100%; max-width: 640px; color: var(--blue); }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            background: var(--bg);
+            color: var(--text-1);
+            font-family: var(--font);
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+        }
+
+        /* ── Nav ── */
+        nav {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 18px 56px;
+            background: rgba(10, 10, 10, 0.72);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .wordmark {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            text-decoration: none;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 28px;
+        }
+        .nav-link {
+            color: var(--text-2);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 400;
+            transition: color 0.18s;
+        }
+        .nav-link:hover { color: var(--text-1); }
+        .nav-cta {
+            background: var(--blue);
+            color: #000;
+            padding: 8px 18px;
+            border-radius: 100px;
+            font-size: 13.5px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: opacity 0.18s;
+        }
+        .nav-cta:hover { opacity: 0.84; }
+
+        /* ── Hero ── */
+        .hero {
+            min-height: 100vh;
+            max-width: var(--max-w);
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            align-items: center;
+            gap: 72px;
+            padding: 128px 56px 80px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--blue-dim);
+            border: 1px solid var(--blue-border);
+            color: var(--blue);
+            padding: 5px 13px;
+            border-radius: 100px;
+            font-size: 12.5px;
+            font-weight: 500;
+            margin-bottom: 26px;
+        }
+        .badge-dot {
+            width: 6px; height: 6px;
+            background: var(--blue);
+            border-radius: 50%;
+            animation: blink 2.4s ease-in-out infinite;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.35; }
+        }
+
+        h1 {
+            font-size: clamp(34px, 4.2vw, 54px);
+            font-weight: 720;
+            line-height: 1.08;
+            letter-spacing: -0.035em;
+            margin-bottom: 22px;
+        }
+
+        .hero-sub {
+            font-size: 17px;
+            line-height: 1.65;
+            color: var(--text-2);
+            max-width: 430px;
+            margin-bottom: 36px;
+            font-weight: 380;
+        }
+
+        .cta-row {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 44px;
+            flex-wrap: wrap;
+        }
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--blue);
+            color: #000;
+            padding: 13px 26px;
+            border-radius: 100px;
+            font-size: 15px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: opacity 0.18s, transform 0.12s;
+        }
+        .btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+
+        .btn-ghost {
+            color: var(--text-2);
+            font-size: 14px;
+            font-weight: 400;
+            text-decoration: none;
+            transition: color 0.18s;
+        }
+        .btn-ghost:hover { color: var(--text-1); }
+
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+        }
+        .chip {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text-3);
+            padding: 4px 11px;
+            border-radius: 100px;
+            font-size: 11.5px;
+            font-weight: 500;
+            letter-spacing: 0.015em;
+        }
+
+        /* Phone frame */
+        .phone-wrap {
+            display: flex;
+            justify-content: center;
+            position: relative;
+        }
+        .phone {
+            width: 285px;
+            border-radius: 50px;
+            background: #000;
+            border: 7px solid #222224;
+            box-shadow:
+                0 0 0 1px rgba(255,255,255,0.07),
+                0 48px 100px rgba(0,0,0,0.88),
+                0 0 90px rgba(75,158,255,0.07);
+            overflow: hidden;
+        }
+        .phone img { width: 100%; display: block; }
+        .phone-glow {
+            position: absolute;
+            bottom: -30px; left: 50%;
+            transform: translateX(-50%);
+            width: 180px; height: 60px;
+            background: radial-gradient(ellipse, rgba(75,158,255,0.25) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        /* ── Shared section wrapper ── */
+        .section-wrap {
+            max-width: var(--max-w);
+            margin: 0 auto;
+            padding: 88px 56px;
+        }
+
+        .eyebrow {
+            font-size: 11.5px;
+            font-weight: 650;
+            letter-spacing: 0.11em;
+            text-transform: uppercase;
+            color: var(--blue);
+            margin-bottom: 14px;
+        }
+        .section-h {
+            font-size: clamp(26px, 3.4vw, 40px);
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            margin-bottom: 14px;
+        }
+        .section-p {
+            font-size: 17px;
+            color: var(--text-2);
+            line-height: 1.65;
+            max-width: 480px;
+            margin-bottom: 60px;
+            font-weight: 380;
+        }
+
+        /* ── Capabilities ── */
+        .cap-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+        .cap-card {
+            background: var(--surface-1);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 26px 24px;
+            transition: border-color 0.2s;
+        }
+        .cap-card:hover { border-color: var(--blue-border); }
+        .cap-icon {
+            width: 42px; height: 42px;
+            background: var(--blue-dim);
+            border-radius: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            margin-bottom: 16px;
+        }
+        .cap-title {
+            font-size: 15px;
+            font-weight: 600;
+            line-height: 1.3;
+            margin-bottom: 8px;
+        }
+        .cap-desc {
+            font-size: 13.5px;
+            color: var(--text-2);
+            line-height: 1.6;
+        }
+
+        /* ── Screenshots ── */
+        .screens-box {
+            background: var(--surface-1);
+            border: 1px solid var(--border);
+            border-radius: 28px;
+            padding: 64px 56px;
+        }
+        .screens-grid {
+            display: grid;
+            grid-template-columns: 1.3fr 1fr 1fr;
+            gap: 28px;
+            align-items: end;
+        }
+        .screen-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 18px;
+        }
+        .screen-item .phone {
+            width: 100%;
+            max-width: 240px;
+        }
+        .screen-item.lead .phone {
+            max-width: 270px;
+            box-shadow:
+                0 0 0 1px rgba(255,255,255,0.07),
+                0 56px 100px rgba(0,0,0,0.88),
+                0 0 60px rgba(75,158,255,0.1);
+        }
+        .screen-caption { text-align: center; }
+        .screen-caption strong { display: block; font-size: 14px; font-weight: 600; margin-bottom: 3px; }
+        .screen-caption span { font-size: 12.5px; color: var(--text-3); }
+
+        /* Tremor callout */
+        .tremor-callout {
+            margin-top: 44px;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            background: var(--surface-2);
+        }
+        .tremor-header {
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .tremor-header strong { font-size: 13.5px; font-weight: 600; }
+        .tremor-header span { font-size: 12px; color: var(--text-3); }
+        .tremor-callout img { width: 100%; display: block; }
+        .tremor-legend {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            border-top: 1px solid var(--border);
+        }
+        .legend-item {
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            border-right: 1px solid var(--border);
+        }
+        .legend-item:last-child { border-right: none; }
+        .legend-item span { font-size: 17px; }
+        .legend-item strong { display: block; font-size: 12.5px; font-weight: 600; }
+        .legend-item p { font-size: 11.5px; color: var(--text-3); }
+
+        /* ── Story ── */
+        .story-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 80px;
+            align-items: center;
+        }
+        blockquote {
+            font-size: clamp(18px, 2.2vw, 25px);
+            font-weight: 380;
+            font-style: italic;
+            line-height: 1.55;
+            letter-spacing: -0.01em;
+            padding-left: 26px;
+            border-left: 3px solid var(--blue);
+            color: var(--text-1);
+        }
+
+        .builder-card {
+            background: var(--surface-1);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 28px;
+        }
+        .builder-head {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 16px;
+        }
+        .builder-avatar {
+            width: 52px; height: 52px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #4B9EFF, #a855f7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 700;
+            color: #fff;
+            flex-shrink: 0;
+        }
+        .builder-name { font-size: 17px; font-weight: 650; margin-bottom: 2px; }
+        .builder-title { font-size: 12.5px; color: var(--text-3); line-height: 1.45; }
+        .builder-bio {
+            font-size: 13.5px;
+            color: var(--text-2);
+            line-height: 1.65;
+            margin-bottom: 20px;
+        }
+        .builder-links { display: flex; gap: 10px; }
+        .pill-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text-2);
+            padding: 7px 15px;
+            border-radius: 100px;
+            font-size: 12.5px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.18s;
+        }
+        .pill-link:hover { color: var(--text-1); border-color: rgba(255,255,255,0.18); }
+
+        /* ── Roadmap ── */
+        .roadmap-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+        }
+        .roadmap-item {
+            background: var(--surface-1);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 22px 22px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .roadmap-label {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--blue);
+            opacity: 0.7;
+            margin-bottom: 2px;
+        }
+        .roadmap-title {
+            font-size: 14.5px;
+            font-weight: 600;
+            line-height: 1.3;
+        }
+        .roadmap-desc {
+            font-size: 13px;
+            color: var(--text-3);
+            line-height: 1.55;
+        }
+        @media (max-width: 1024px) { .roadmap-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 640px) { .roadmap-grid { grid-template-columns: 1fr; } }
+
+        /* ── Contact ── */
+        .contact-wrap {
+            max-width: var(--max-w);
+            margin: 0 auto;
+            padding: 40px 56px 100px;
+            text-align: center;
+        }
+        .contact-inner {
+            max-width: 560px;
+            margin: 0 auto;
+        }
+        .contact-h {
+            font-size: clamp(26px, 3.4vw, 40px);
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            margin-bottom: 14px;
+        }
+        .contact-p {
+            font-size: 17px;
+            color: var(--text-2);
+            line-height: 1.6;
+            margin-bottom: 32px;
+            font-weight: 380;
+        }
+        .email-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--surface-1);
+            border: 1px solid var(--border);
+            color: var(--blue);
+            padding: 15px 32px;
+            border-radius: 100px;
+            font-size: 17px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .email-btn:hover {
+            background: var(--blue-dim);
+            border-color: var(--blue-border);
+        }
+
+        /* ── Footer ── */
+        .footer-wrap {
+            border-top: 1px solid var(--border);
+        }
+        footer {
+            max-width: var(--max-w);
+            margin: 0 auto;
+            padding: 36px 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .footer-meta {
+            font-size: 12px;
+            color: var(--text-3);
+            text-align: right;
+            line-height: 1.65;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 1024px) {
+            nav { padding: 16px 28px; }
+            .hero { grid-template-columns: 1fr; padding: 110px 32px 64px; text-align: center; gap: 56px; }
+            .hero-sub { margin: 0 auto 36px; }
+            .cta-row { justify-content: center; }
+            .chips { justify-content: center; }
+            .phone-wrap { order: -1; }
+            .cap-grid { grid-template-columns: repeat(2, 1fr); }
+            .screens-grid { grid-template-columns: 1fr 1fr; }
+            .screen-item.lead { grid-column: 1 / -1; align-items: center; }
+            .story-grid { grid-template-columns: 1fr; gap: 40px; }
+            .section-wrap, .contact-wrap { padding-left: 32px; padding-right: 32px; }
+            .screens-box { padding: 40px 28px; }
+            .tremor-legend { grid-template-columns: repeat(2, 1fr); }
+            footer { padding: 28px 32px; }
+        }
+        @media (max-width: 640px) {
+            nav { padding: 14px 20px; }
+            .nav-links { gap: 0; }
+            .nav-link { display: none; }
+            .hero { padding: 96px 20px 48px; }
+            .section-wrap, .contact-wrap { padding-left: 20px; padding-right: 20px; }
+            .cap-grid { grid-template-columns: 1fr; }
+            .screens-grid { grid-template-columns: 1fr; }
+            .screens-box { padding: 28px 20px; }
+            footer { flex-direction: column; gap: 12px; text-align: center; }
+            .footer-meta { text-align: center; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ── Navigation ── -->
+<nav>
+    <a href="#" class="wordmark" aria-label="Kampa home">
+        <!-- Wave mark, white on dark nav -->
+        <svg width="48" height="29" viewBox="0 0 240 144" fill="none" xmlns="http://www.w3.org/2000/svg" style="color:#fff; flex-shrink:0;">
+            <path d="M8 90 C 28 90, 30 30, 56 30 C 78 30, 80 110, 104 95 C 124 82, 126 60, 150 60 C 168 60, 172 78, 192 78 L 232 78" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="232" cy="78" r="5" fill="currentColor"/>
+        </svg>
+        <!-- kāmpa wordmark in Geist, ā in brand blue -->
+        <span style="font-family:var(--font-geist); font-weight:500; font-size:18px; letter-spacing:-0.02em; color:#fff;">k<span style="color:var(--blue);">ā</span>mpa</span>
+    </a>
+    <div class="nav-links">
+        <a href="#how-it-works" class="nav-link">How it works</a>
+        <a href="#story" class="nav-link">Story</a>
+        <a href="mailto:info@kampavata.com" class="nav-cta">Get in touch</a>
+    </div>
+</nav>
+
+<!-- ── Hero ── -->
+<div class="hero">
+    <div>
+        <div class="badge">
+            <span class="badge-dot"></span>
+            Apple Movement Disorder API
+        </div>
+        <h1>Notice what your body already knows.</h1>
+        <p class="hero-sub">Kampa passively monitors tremor through your Apple Watch, correlates every dose, meal, workout, and night of sleep - and surfaces the patterns that matter. No manual logging. No daily check-ins.</p>
+        <div class="cta-row">
+            <a href="mailto:info@kampavata.com" class="btn-primary">Get in touch</a>
+        </div>
+        <div class="chips">
+            <span class="chip">watchOS</span>
+            <span class="chip">Apple Health - 6 domains</span>
+            <span class="chip">Movement Disorder API</span>
+            <span class="chip">SwiftUI</span>
+            <span class="chip">On-device</span>
+        </div>
+    </div>
+    <div class="phone-wrap">
+        <div class="phone">
+            <img src="images/screenshot-observations.jpeg" alt="Kampa Observations screen showing AI-surfaced insights">
+        </div>
+        <div class="phone-glow"></div>
+    </div>
+</div>
+
+<!-- ── Etymology ── -->
+<div class="etym-wrap">
+    <div class="etym-inner">
+        <div class="etym-name">
+            <span class="etym-word">k<span class="a-blue">ā</span>mpa</span>
+            <span class="etym-pron">kuhm-pah</span>
+            <span class="etym-lang">Sanskrit · कम्प</span>
+        </div>
+        <p class="etym-def">
+            The Sanskrit word for "tremor." From <em>Kampavata</em> (कम्पवात) - the Ayurvedic term for what modern medicine calls Parkinson's disease. Physicians of the <em>Charaka Samhita</em> documented the resting tremor, rigidity, and postural instability of this condition centuries before James Parkinson named it in his 1817 <em>Essay on the Shaking Palsy</em>. The name isn't a metaphor. It is the oldest clinical term for the condition this app was built to understand.
+        </p>
+    </div>
+</div>
+
+<!-- ── Wave divider ── -->
+<div class="wave-divider">
+    <svg viewBox="0 0 240 144" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M8 90 C 28 90, 30 30, 56 30 C 78 30, 80 110, 104 95 C 124 82, 126 60, 150 60 C 168 60, 172 78, 192 78 L 232 78" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="232" cy="78" r="5" fill="currentColor"/>
+    </svg>
+</div>
+
+<!-- ── Capabilities ── -->
+<div class="section-wrap" id="how-it-works">
+    <p class="eyebrow">What Kampa watches</p>
+    <h2 class="section-h">Built around your Apple Watch.<br>Correlated against everything.</h2>
+    <p class="section-p">Most health apps ask you to do the work. Kampa does the watching - continuously, quietly, without interruption.</p>
+    <div class="cap-grid">
+        <div class="cap-card">
+            <div class="cap-icon">📈</div>
+            <h3 class="cap-title">Continuous tremor monitoring</h3>
+            <p class="cap-desc">Apple's Movement Disorder API reads tremor via Apple Watch all day. Ambient observation - no tapping, no check-ins, nothing to remember.</p>
+        </div>
+        <div class="cap-card">
+            <div class="cap-icon">💊</div>
+            <h3 class="cap-title">Medication correlation</h3>
+            <p class="cap-desc">Tracks what happens to your tremor in the 30-90 minutes after every dose. Wearing-off timing, effectiveness, and duration - surfaced automatically.</p>
+        </div>
+        <div class="cap-card">
+            <div class="cap-icon">🍎</div>
+            <h3 class="cap-title">Deep Apple Health integration</h3>
+            <p class="cap-desc">Reads six Apple Health domains in real time - sleep stages (REM, Core, Deep), heart rate variability, workouts, medications, and daylight exposure - cross-correlated against continuous tremor data.</p>
+            <div class="hk-strip">
+                <span class="hk-chip">Sleep stages</span>
+                <span class="hk-chip">HRV</span>
+                <span class="hk-chip">Workouts</span>
+                <span class="hk-chip">Medications</span>
+                <span class="hk-chip">Daylight</span>
+                <span class="hk-chip">Nutrition</span>
+            </div>
+        </div>
+        <div class="cap-card">
+            <div class="cap-icon">✦</div>
+            <h3 class="cap-title">Observations engine</h3>
+            <p class="cap-desc">No dashboards to interpret. The Observations engine reads the day's data and surfaces what actually matters - in plain language, automatically, every day.</p>
+        </div>
+    </div>
+</div>
+
+<!-- ── Screenshots ── -->
+<div class="section-wrap" style="padding-top: 0;">
+    <div class="screens-box">
+        <p class="eyebrow" style="margin-bottom: 8px;">The app</p>
+        <h2 class="section-h" style="margin-bottom: 44px;">Real data. Real patterns.</h2>
+        <div class="screens-grid">
+            <div class="screen-item lead">
+                <div class="phone">
+                    <img src="images/screenshot-daily.jpeg" alt="Daily overview — sleep, tremor, HRV, daylight">
+                </div>
+                <div class="screen-caption">
+                    <strong>Daily review</strong>
+                    <span>Sleep, tremor, HRV, and daylight — one scroll</span>
+                </div>
+            </div>
+            <div class="screen-item">
+                <div class="phone">
+                    <img src="images/screenshot-food.jpeg" alt="Food entry with detected attributes">
+                </div>
+                <div class="screen-caption">
+                    <strong>Food logging</strong>
+                    <span>Voice entry. Kampa detects what matters.</span>
+                </div>
+            </div>
+            <div class="screen-item">
+                <div class="phone">
+                    <img src="images/screenshot-observations.jpeg" alt="Observations — automatically surfaced insights">
+                </div>
+                <div class="screen-caption">
+                    <strong>Observations</strong>
+                    <span>Patterns surfaced automatically</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tremor chart callout -->
+        <div class="tremor-callout">
+            <div class="tremor-header">
+                <strong>Tremor timeline - medication, exercise &amp; meditation overlaid</strong>
+                <span>Every event that matters, on one chart</span>
+            </div>
+            <img src="images/screenshot-tremor.jpeg" alt="Tremor chart with medication, workout, and meditation events">
+            <div class="tremor-legend">
+                <div class="legend-item">
+                    <span>💊</span>
+                    <div><strong>Medication</strong><p>Dose timing + effect window</p></div>
+                </div>
+                <div class="legend-item">
+                    <span>🏃</span>
+                    <div><strong>Workout</strong><p>Exercise sessions correlated</p></div>
+                </div>
+                <div class="legend-item">
+                    <span>🧘</span>
+                    <div><strong>Meditation</strong><p>Mindfulness sessions tracked</p></div>
+                </div>
+                <div class="legend-item">
+                    <span>🍽️</span>
+                    <div><strong>Food</strong><p>Meals and their aftereffects</p></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Story ── -->
+<div class="section-wrap" id="story">
+    <div class="story-grid">
+        <div>
+            <p class="eyebrow">Why Kampa exists</p>
+            <blockquote>
+                "Parkinson's runs in my family - a condition that makes every day unpredictable and degrades quality of life. I couldn't find a tool that would quietly watch, surface patterns, and help someone understand their own body without adding cognitive burden. So I built one. The goal is more than monitoring: it's giving someone with Parkinson's enough self-knowledge to make real lifestyle changes, see the difficult days coming, and face them better."
+            </blockquote>
+        </div>
+        <div>
+            <div class="builder-card">
+                <div class="builder-head">
+                    <div class="builder-avatar">B</div>
+                    <div>
+                        <div class="builder-name">Bhav Bhasin</div>
+                        <div class="builder-title">Product &amp; Technology Leader · San Francisco Bay Area</div>
+                    </div>
+                </div>
+                <p class="builder-bio">25+ years building consumer-scale technology at Meta, Uber, and PayPal - leading product and engineering organizations across safety, risk, infrastructure, and operations. Kampa applies that same discipline to a personal problem: ambient-first design, clinical-grade sensing, zero cognitive burden.</p>
+                <div class="builder-links">
+                    <a href="https://linkedin.com/in/bhavdeep" target="_blank" rel="noopener" class="pill-link">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z"/><circle cx="4" cy="4" r="2"/></svg>
+                        LinkedIn
+                    </a>
+                    <a href="mailto:info@kampavata.com" class="pill-link">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
+                        Email
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Roadmap ── -->
+<div class="section-wrap">
+    <p class="eyebrow">What's coming</p>
+    <h2 class="section-h">Already built. More on the way.</h2>
+    <p class="section-p" style="margin-bottom: 40px;">The foundation is running. The roadmap builds toward a complete picture of how Parkinson's moves through a life.</p>
+    <div class="roadmap-grid">
+        <div class="roadmap-item">
+            <div class="roadmap-label">In development</div>
+            <div class="roadmap-title">Longitudinal insights</div>
+            <p class="roadmap-desc">Weeks and months of personal baselines - detecting drift before a patient or neurologist would notice. "Your Sinemet effect window has shortened by 12 minutes over the last 30 days."</p>
+        </div>
+        <div class="roadmap-item">
+            <div class="roadmap-label">In development</div>
+            <div class="roadmap-title">Predictive nudges</div>
+            <p class="roadmap-desc">Proactive wrist alerts built from your own patterns - not generic reminders. "Your typical wear-off is at 4 hours. Your last dose was 3h 50m ago."</p>
+        </div>
+        <div class="roadmap-item">
+            <div class="roadmap-label">Roadmap</div>
+            <div class="roadmap-title">Glucose - tremor correlation</div>
+            <p class="roadmap-desc">Continuous glucose monitoring via Dexcom or Abbott Libre, read through Apple Health. No PD app currently measures how glucose spikes affect levodopa absorption and tremor.</p>
+        </div>
+        <div class="roadmap-item">
+            <div class="roadmap-label">Roadmap</div>
+            <div class="roadmap-title">Neurologist PDF export</div>
+            <p class="roadmap-desc">Patient-controlled clinical summary - tremor trends, medication adherence, key correlations - exportable as a PDF to share with your care team at any appointment.</p>
+        </div>
+        <div class="roadmap-item">
+            <div class="roadmap-label">Roadmap</div>
+            <div class="roadmap-title">Voice-first logging</div>
+            <p class="roadmap-desc">"Hey Siri, log Sinemet." App Intents built for tremor-affected hands - no typing required. Designed around how PD patients actually interact with their phones.</p>
+        </div>
+        <div class="roadmap-item">
+            <div class="roadmap-label">Roadmap</div>
+            <div class="roadmap-title">Small research cohort</div>
+            <p class="roadmap-desc">Expanding beyond a single patient to a small TestFlight group - validating whether the patterns Kampa surfaces are consistent across individuals or deeply personal.</p>
+        </div>
+    </div>
+</div>
+
+<!-- ── Contact ── -->
+<div class="contact-wrap">
+    <div class="contact-inner">
+        <h2 class="contact-h">Interested in Kampa?</h2>
+        <p class="contact-p">Early access, research collaboration, clinical feedback, or just want to follow what's being built. Reach out directly.</p>
+        <a href="mailto:info@kampavata.com" class="email-btn">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
+            info@kampavata.com
+        </a>
+    </div>
+</div>
+
+<!-- ── Footer ── -->
+<div class="footer-wrap">
+    <footer>
+        <div class="wordmark">
+            <svg width="32" height="19" viewBox="0 0 240 144" fill="none" xmlns="http://www.w3.org/2000/svg" style="color:var(--text-3); flex-shrink:0;">
+                <path d="M8 90 C 28 90, 30 30, 56 30 C 78 30, 80 110, 104 95 C 124 82, 126 60, 150 60 C 168 60, 172 78, 192 78 L 232 78" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="232" cy="78" r="5" fill="currentColor"/>
+            </svg>
+            <span style="font-family:var(--font-geist); font-weight:500; font-size:15px; letter-spacing:-0.02em; color:var(--text-2);">k<span style="color:var(--blue);">ā</span>mpa</span>
+            <span style="color:var(--text-3);font-size:12px;margin-left:4px;">· kampavata.com · kampa.health</span>
+        </div>
+        <div class="footer-meta">
+            Built in San Francisco Bay Area · Built with Claude Code
+        </div>
+    </footer>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,17 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="KaMPA app icon">
+  <title>KāMPA — App icon</title>
+  <defs>
+    <linearGradient id="kampaBg" x1="256" y1="0" x2="256" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4A8CD6"></stop>
+      <stop offset="1" stop-color="#2F5D99"></stop>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="512" height="512" rx="116" ry="116"></rect>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect width="512" height="512" fill="url(#kampaBg)"></rect>
+    <path d="M78 320 C 132 320, 142 150, 200 150 C 258 150, 268 378, 326 332 C 378 290, 392 268, 434 268" stroke="#FFFFFF" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+    <circle cx="434" cy="268" r="17" fill="#FFFFFF"></circle>
+  </g>
+</svg>
