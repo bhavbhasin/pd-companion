@@ -424,6 +424,23 @@
         .screen-caption strong { display: block; font-size: 14px; font-weight: 600; margin-bottom: 3px; }
         .screen-caption span { font-size: 12.5px; color: var(--text-3); }
 
+        /* Day at a glance */
+        .glance-card {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px 28px;
+            margin-bottom: 20px;
+        }
+        .glance-item { display: flex; align-items: center; gap: 12px; }
+        .glance-icon { font-size: 22px; line-height: 1; flex-shrink: 0; }
+        .glance-num { font-size: 20px; font-weight: 700; color: var(--text-1); letter-spacing: -0.02em; line-height: 1.1; }
+        .glance-label { font-size: 12px; color: var(--text-3); margin-top: 3px; }
+        @media (max-width: 768px) { .glance-card { grid-template-columns: repeat(2, 1fr); gap: 18px; } }
+
         /* Detail cards */
         .detail-grid {
             display: grid;
@@ -771,15 +788,7 @@
         <div class="cap-card">
             <div class="cap-icon">🍎</div>
             <h3 class="cap-title">Deep Apple Health integration</h3>
-            <p class="cap-desc">Reads six Apple Health domains in real time - sleep stages (REM, Core, Deep), heart rate variability, workouts, medications, and daylight exposure - cross-correlated against continuous tremor data.</p>
-            <div class="hk-strip">
-                <span class="hk-chip">Sleep stages</span>
-                <span class="hk-chip">HRV</span>
-                <span class="hk-chip">Workouts</span>
-                <span class="hk-chip">Medications</span>
-                <span class="hk-chip">Daylight</span>
-                <span class="hk-chip">Nutrition</span>
-            </div>
+            <p class="cap-desc">Reads six Apple Health domains in real time - sleep stages (REM, Core, Deep), heart rate variability, workouts, medications, nutrition, and daylight exposure - cross-correlated against continuous tremor data.</p>
         </div>
         <div class="cap-card">
             <div class="cap-icon">✦</div>
@@ -793,7 +802,26 @@
 <div class="section-wrap" style="padding-top: 0;">
     <div class="screens-box">
         <p class="eyebrow" style="margin-bottom: 8px;">The app</p>
-        <h2 class="section-h" style="margin-bottom: 44px;">Real data. Real patterns.</h2>
+        <h2 class="section-h" style="margin-bottom: 28px;">Real data. Real patterns.</h2>
+        <!-- Day at a glance -->
+        <div class="glance-card">
+            <div class="glance-item">
+                <span class="glance-icon">🛏️</span>
+                <div><div class="glance-num">5h 47m</div><div class="glance-label">Total sleep</div></div>
+            </div>
+            <div class="glance-item">
+                <span class="glance-icon">📈</span>
+                <div><div class="glance-num">0.9</div><div class="glance-label">Tremor avg · Slight</div></div>
+            </div>
+            <div class="glance-item">
+                <span class="glance-icon">💜</span>
+                <div><div class="glance-num">36 ms</div><div class="glance-label">HRV</div></div>
+            </div>
+            <div class="glance-item">
+                <span class="glance-icon">☀️</span>
+                <div><div class="glance-num">53m</div><div class="glance-label">In daylight</div></div>
+            </div>
+        </div>
         <!-- Tremor chart callout — the centerpiece -->
         <div class="tremor-callout" style="margin-top: 0;">
             <div class="tremor-header">
@@ -822,7 +850,7 @@
         </div>
 
         <!-- Detail cards — the story behind each event -->
-        <p class="section-p" style="margin: 48px 0 24px; max-width: 560px;">Tap any event on the timeline and Kampa shows you the detail - what it was, when it happened, and what it means.</p>
+        <p class="section-p" style="margin: 48px 0 24px; max-width: none;">Tap any event on the timeline and Kampa shows you the detail - what it was, when it happened, and what it means.</p>
         <div class="detail-grid">
             <div class="detail-card">
                 <span class="detail-icon">🍽️</span>
