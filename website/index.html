@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kampa — Movement Intelligence for Parkinson's</title>
-    <meta name="description" content="Kampa passively monitors tremor via Apple Watch, correlates medication, food, sleep, and exercise, and surfaces the patterns that matter. No manual logging required.">
+    <meta name="description" content="Kampa passively monitors tremor via Apple Watch, correlates medication, food, sleep, and exercise, and surfaces the patterns that matter. No manual symptom tracking required.">
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-08KTDP6KRR"></script>
     <script>
@@ -80,6 +80,20 @@
             color: var(--text-3);
             letter-spacing: 0.02em;
         }
+        .pron-btn {
+            background: none;
+            border: none;
+            padding: 0 0 0 6px;
+            margin: 0;
+            cursor: pointer;
+            color: var(--text-3);
+            display: inline-flex;
+            align-items: center;
+            vertical-align: middle;
+            line-height: 1;
+            transition: color 0.18s;
+        }
+        .pron-btn:hover { color: var(--blue); }
         .etym-lang {
             font-size: 11px;
             font-weight: 600;
@@ -198,15 +212,6 @@
             padding: 128px 56px 80px;
         }
 
-        .hero-pre {
-            font-size: 13.5px;
-            font-weight: 400;
-            color: var(--text-3);
-            letter-spacing: 0.01em;
-            margin-bottom: 18px;
-            font-style: italic;
-        }
-
         .badge {
             display: inline-flex;
             align-items: center;
@@ -296,26 +301,6 @@
         }
 
         /* App icon display */
-        .app-icon-wrap {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 28px;
-        }
-        .app-icon-wrap img {
-            width: 96px;
-            height: 96px;
-            border-radius: 22px;
-            box-shadow: 0 8px 32px rgba(74,140,214,0.3), 0 2px 8px rgba(0,0,0,0.4);
-        }
-        .app-icon-platforms {
-            font-size: 12px;
-            font-weight: 500;
-            letter-spacing: 0.08em;
-            color: var(--text-3);
-            text-transform: uppercase;
-        }
 
         /* Phone frame */
         .phone-wrap {
@@ -439,6 +424,41 @@
         .screen-caption strong { display: block; font-size: 14px; font-weight: 600; margin-bottom: 3px; }
         .screen-caption span { font-size: 12.5px; color: var(--text-3); }
 
+        /* Detail cards */
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+        .detail-card {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px 22px;
+        }
+        .detail-icon { font-size: 24px; display: block; margin-bottom: 16px; line-height: 1; }
+        .detail-label {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--blue);
+            margin-bottom: 8px;
+        }
+        .detail-head { font-size: 15.5px; font-weight: 600; color: var(--text-1); line-height: 1.3; margin-bottom: 8px; }
+        .detail-sub { font-size: 13px; color: var(--text-2); line-height: 1.55; }
+        .dtag {
+            display: inline-block;
+            background: var(--surface-1);
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            padding: 1px 9px;
+            font-size: 11.5px;
+            color: var(--text-2);
+            margin: 2px 2px 0 0;
+        }
+        @media (max-width: 768px) { .detail-grid { grid-template-columns: 1fr; } }
+
         /* Tremor callout */
         .tremor-callout {
             margin-top: 44px;
@@ -505,15 +525,9 @@
             margin-bottom: 16px;
         }
         .builder-avatar {
-            width: 52px; height: 52px;
+            width: 64px; height: 64px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #4B9EFF, #a855f7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            font-weight: 700;
-            color: #fff;
+            object-fit: cover;
             flex-shrink: 0;
         }
         .builder-name { font-size: 17px; font-weight: 650; margin-bottom: 2px; }
@@ -694,13 +708,12 @@
 <!-- ── Hero ── -->
 <div class="hero">
     <div>
-        <p class="hero-pre">Your Parkinson's is unlike anyone else's. Understanding yours is what changes things.</p>
         <div class="badge">
             <span class="badge-dot"></span>
             Apple Movement Disorder API
         </div>
         <h1>Notice what your body already knows.</h1>
-        <p class="hero-sub">Kampa passively monitors tremor through your Apple Watch, correlates every dose, meal, workout, and night of sleep - and surfaces the patterns that matter. No manual logging. No daily check-ins.</p>
+        <p class="hero-sub">No two people experience Parkinson's the same way. Kampa passively monitors your tremor through Apple Watch, correlates every dose, meal, workout, and night of sleep, and surfaces the patterns that are true for you - so you can adjust your life around what actually affects you. No manual symptom tracking. No daily check-ins.</p>
         <div class="chips">
             <span class="chip">watchOS</span>
             <span class="chip">Apple Health</span>
@@ -710,10 +723,6 @@
         </div>
     </div>
     <div class="phone-wrap">
-        <div class="app-icon-wrap">
-            <img src="assets/kampa-app-icon.svg" alt="Kampa app icon">
-            <span class="app-icon-platforms">iOS · watchOS</span>
-        </div>
         <div class="phone">
             <img src="images/screenshot-observations.jpeg" alt="Kampa Observations screen showing AI-surfaced insights">
         </div>
@@ -726,7 +735,7 @@
     <div class="etym-inner">
         <div class="etym-name">
             <span class="etym-word">k<span class="a-blue">ā</span>mpa</span>
-            <span class="etym-pron">kuhm-pah</span>
+            <span class="etym-pron">kuhm-pah<button class="pron-btn" type="button" aria-label="Play pronunciation of kāmpa" onclick="document.getElementById('pron-audio').play()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none"></polygon><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg></button><audio id="pron-audio" src="audio/kampa-pron.m4a" preload="none"></audio></span>
             <span class="etym-lang">Sanskrit · कम्प</span>
         </div>
         <p class="etym-def">
@@ -785,38 +794,8 @@
     <div class="screens-box">
         <p class="eyebrow" style="margin-bottom: 8px;">The app</p>
         <h2 class="section-h" style="margin-bottom: 44px;">Real data. Real patterns.</h2>
-        <div class="screens-grid">
-            <div class="screen-item">
-                <div class="phone">
-                    <img src="images/screenshot-daily.jpeg" alt="Daily overview — sleep, tremor, HRV, daylight">
-                </div>
-                <div class="screen-caption">
-                    <strong>Daily review</strong>
-                    <span>Sleep, tremor, HRV, and daylight - one scroll</span>
-                </div>
-            </div>
-            <div class="screen-item">
-                <div class="phone">
-                    <img src="images/screenshot-food.jpeg" alt="Food entry with detected attributes">
-                </div>
-                <div class="screen-caption">
-                    <strong>Food logging</strong>
-                    <span>Voice entry. Kampa detects what matters.</span>
-                </div>
-            </div>
-            <div class="screen-item">
-                <div class="phone">
-                    <img src="images/screenshot-observations.jpeg" alt="Observations — automatically surfaced insights">
-                </div>
-                <div class="screen-caption">
-                    <strong>Observations</strong>
-                    <span>Patterns surfaced automatically</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tremor chart callout -->
-        <div class="tremor-callout">
+        <!-- Tremor chart callout — the centerpiece -->
+        <div class="tremor-callout" style="margin-top: 0;">
             <div class="tremor-header">
                 <strong>Tremor timeline - medication, exercise &amp; meditation overlaid</strong>
                 <span>Every event that matters, on one chart</span>
@@ -841,6 +820,29 @@
                 </div>
             </div>
         </div>
+
+        <!-- Detail cards — the story behind each event -->
+        <p class="section-p" style="margin: 48px 0 24px; max-width: 560px;">Tap any event on the timeline and Kampa shows you the detail - what it was, when it happened, and what it means.</p>
+        <div class="detail-grid">
+            <div class="detail-card">
+                <span class="detail-icon">🍽️</span>
+                <div class="detail-label">Food</div>
+                <div class="detail-head">5 almonds, 2 walnuts, chai</div>
+                <div class="detail-sub">Logged by voice at 8:32 AM. Kampa auto-detected <span class="dtag">Caffeine</span> <span class="dtag">Fat</span></div>
+            </div>
+            <div class="detail-card">
+                <span class="detail-icon">🧘</span>
+                <div class="detail-label">Meditation</div>
+                <div class="detail-head">30 minutes at 10:00 PM</div>
+                <div class="detail-sub">Every event timestamped - ready to correlate against tremor.</div>
+            </div>
+            <div class="detail-card">
+                <span class="detail-icon">💊</span>
+                <div class="detail-label">Insight</div>
+                <div class="detail-head">Sinemet at 12 PM — tremor down 83%</div>
+                <div class="detail-sub">Avg 2.1 → 0.3 in the 30–90 min window after. No charts to read.</div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -850,19 +852,19 @@
         <div>
             <p class="eyebrow">Why Kampa exists</p>
             <blockquote>
-                "Parkinson's runs in my family - a condition that makes every day unpredictable and degrades quality of life. I couldn't find a tool that would quietly watch, surface patterns, and help someone understand their own body without adding cognitive burden. So I built one. The goal is more than monitoring: it's giving someone with Parkinson's enough self-knowledge to make real lifestyle changes, see the difficult days coming, and face them better."
+                "Parkinson's is a cause I care about deeply - a condition that makes every day unpredictable and steadily erodes quality of life. I couldn't find a tool that would quietly watch, surface patterns, and help someone understand their own body without adding cognitive burden. So I built one. The goal is more than monitoring: it's giving someone with Parkinson's enough self-knowledge to make real lifestyle changes, see the difficult days coming, and face them better."
             </blockquote>
         </div>
         <div>
             <div class="builder-card">
                 <div class="builder-head">
-                    <div class="builder-avatar">B</div>
+                    <img class="builder-avatar" src="images/bhav-avatar.jpg" alt="Bhav Bhasin">
                     <div>
                         <div class="builder-name">Bhav Bhasin</div>
-                        <div class="builder-title">Product &amp; Technology Leader · San Francisco Bay Area</div>
+                        <div class="builder-title">Founder</div>
                     </div>
                 </div>
-                <p class="builder-bio">25+ years building consumer-scale technology at Meta, Uber, and PayPal - leading product and engineering organizations across safety, risk, infrastructure, and operations. Kampa applies that same discipline to a personal problem: ambient-first design, clinical-grade sensing, zero cognitive burden.</p>
+                <p class="builder-bio">25+ years building consumer and enterprise software products at Meta, Uber, and PayPal - leading product and engineering organizations across safety, risk, infrastructure, and operations. Kampa applies that same discipline to a health problem: ambient-first design, clinical-grade sensing, zero cognitive burden.</p>
                 <div class="builder-links">
                     <a href="https://linkedin.com/in/bhavdeep" target="_blank" rel="noopener" class="pill-link">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6zM2 9h4v12H2z"/><circle cx="4" cy="4" r="2"/></svg>

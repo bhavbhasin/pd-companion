@@ -19,3 +19,13 @@ EP5499_Movement_Disorder_APIs_Addendum.pdf
 
 # Local data backups outside the source tree
 PD Companion/PD Companion Backups/
+
+# Original full-size headshots (only the cropped avatar is used/deployed)
+website/images/Bhav1.JPG
+website/images/Bhav2.JPG
+
+# Raw/unused detail screenshot sources (designed cards used instead)
+website/images/detail-food.PNG
+website/images/detail-meditation.PNG
+website/images/detail-food-card.jpg
+website/images/detail-meditation-card.jpg
