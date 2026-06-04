@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy — Kampa</title>
+    <meta name="description" content="How Kampa handles data on its website and in its app. Health data stays on your own device and in your private iCloud. No Kampa servers. No data brokers.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;1,14..32,400&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0a0a0a;
+            --surface-1: #111113;
+            --surface-2: #1c1c1e;
+            --border: #2c2c2e;
+            --blue: #4A8CD6;
+            --blue-dim: rgba(74, 140, 214, 0.12);
+            --blue-border: rgba(74, 140, 214, 0.30);
+            --text-1: #ffffff;
+            --text-2: rgba(235, 235, 245, 0.76);
+            --text-3: rgba(235, 235, 245, 0.36);
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-geist: 'Geist', 'Inter', sans-serif;
+            --max-w: 760px;
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            background: var(--bg);
+            color: var(--text-1);
+            font-family: var(--font);
+            -webkit-font-smoothing: antialiased;
+            line-height: 1.7;
+            font-weight: 300;
+        }
+        nav {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 32px;
+            background: rgba(10, 10, 10, 0.72);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .wordmark { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+        .wordmark .name {
+            font-family: var(--font-geist); font-weight: 500; font-size: 18px;
+            letter-spacing: -0.02em; color: #fff;
+        }
+        .wordmark .name .a-blue { color: var(--blue); }
+        .nav-back { color: var(--text-2); text-decoration: none; font-size: 14px; transition: color 0.18s; }
+        .nav-back:hover { color: var(--text-1); }
+        .container { max-width: var(--max-w); margin: 0 auto; padding: 72px 32px 96px; }
+        .eyebrow {
+            font-size: 11.5px; font-weight: 650; letter-spacing: 0.11em;
+            text-transform: uppercase; color: var(--blue); margin-bottom: 14px;
+        }
+        h1 {
+            font-size: clamp(30px, 4vw, 42px); font-weight: 700;
+            letter-spacing: -0.03em; line-height: 1.1; margin-bottom: 12px;
+        }
+        .meta { font-size: 13.5px; color: var(--text-3); margin-bottom: 48px; }
+        .intro {
+            background: var(--surface-1); border: 1px solid var(--border);
+            border-radius: 14px; padding: 24px 26px; margin-bottom: 44px;
+            font-size: 16px; color: var(--text-2); line-height: 1.75;
+        }
+        h2 {
+            font-size: 20px; font-weight: 600; letter-spacing: -0.02em;
+            color: var(--text-1); margin: 44px 0 14px;
+        }
+        h3 { font-size: 15.5px; font-weight: 600; color: var(--text-1); margin: 24px 0 8px; }
+        p { color: var(--text-2); margin-bottom: 14px; font-size: 15.5px; }
+        ul { list-style: none; padding: 0; margin: 12px 0 18px; }
+        li {
+            color: var(--text-2); font-size: 15px; padding: 5px 0 5px 22px;
+            position: relative; line-height: 1.6;
+        }
+        li::before { content: '—'; position: absolute; left: 0; color: var(--blue); }
+        strong { font-weight: 500; color: var(--text-1); }
+        a { color: var(--blue); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s; }
+        a:hover { border-bottom-color: var(--blue); }
+        .callout {
+            background: var(--blue-dim); border: 1px solid var(--blue-border);
+            border-radius: 10px; padding: 16px 20px; margin: 18px 0;
+        }
+        .callout p { margin: 0; color: var(--text-1); font-weight: 400; }
+        footer {
+            border-top: 1px solid var(--border); padding: 32px;
+            text-align: center; font-size: 12.5px; color: var(--text-3);
+        }
+        footer a { color: var(--text-2); }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a href="index.html" class="wordmark" aria-label="Kampa home">
+        <svg width="38" height="23" viewBox="0 0 240 144" fill="none" xmlns="http://www.w3.org/2000/svg" style="color:#fff; flex-shrink:0;">
+            <path d="M8 90 C 28 90, 30 30, 56 30 C 78 30, 80 110, 104 95 C 124 82, 126 60, 150 60 C 168 60, 172 78, 192 78 L 232 78" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="232" cy="78" r="5" fill="currentColor"/>
+        </svg>
+        <span class="name">k<span class="a-blue">ā</span>mpa</span>
+    </a>
+    <a href="index.html" class="nav-back">← Back to site</a>
+</nav>
+
+<div class="container">
+
+    <p class="eyebrow">Legal</p>
+    <h1>Privacy Policy</h1>
+    <p class="meta">Kampa · Effective June 2026</p>
+
+    <div class="intro">
+        Kampa is built on a simple principle: your health data is yours, and it should stay that way. This policy explains plainly what data the Kampa website collects, what data the Kampa app works with, and where that data lives. The short version - the app keeps your health data on your own devices and in your own private iCloud. Kampa operates no servers that receive it, and never sells or shares it.
+    </div>
+
+    <h2>Who we are</h2>
+    <p>Kampa ("Kampa," "we," "us") is an independent project that builds an iOS and watchOS app for people living with Parkinson's. The app passively monitors movement through Apple Watch and helps a person understand how their daily life relates to their symptoms. This policy covers two separate things: the Kampa website (this site) and the Kampa app.</p>
+
+    <h2>Part 1 — The website</h2>
+    <p>When you visit this website, we collect limited, standard analytics data to understand how people find and use the site.</p>
+    <h3>What we collect on the website</h3>
+    <ul>
+        <li><strong>Google Analytics data</strong> - pages viewed, approximate location (derived from IP address), device and browser type, referring source, and time spent. Google Analytics sets cookies in your browser to do this.</li>
+        <li><strong>Anything you send us</strong> - if you email <a href="mailto:info@kampa.health">info@kampa.health</a>, we receive your email address and whatever you choose to write.</li>
+    </ul>
+    <h3>How we use it</h3>
+    <p>Website analytics are used only to understand traffic and improve the site - which pages resonate, where visitors come from. We do not use this data for advertising, and we do not sell it. Email you send us is used only to respond to you.</p>
+    <p>You can block analytics cookies through your browser settings or a browser extension at any time, with no effect on your ability to use the site. For more on how Google processes this data, see <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a>.</p>
+
+    <h2>Part 2 — The app</h2>
+    <p>The Kampa app is where health data is involved. This is the part that matters most, and it is built to keep your data with you.</p>
+
+    <h3>What the app collects, from your own devices</h3>
+    <p><strong>Movement and symptom data</strong></p>
+    <ul>
+        <li>Tremor and dyskinesia measurements from your Apple Watch, via Apple's Movement Disorder API (part of CoreMotion)</li>
+    </ul>
+    <p><strong>Health and lifestyle data, from Apple HealthKit, only with your permission</strong></p>
+    <ul>
+        <li>Sleep stages and duration</li>
+        <li>Heart rate and heart rate variability (HRV)</li>
+        <li>Workouts - type, duration, intensity</li>
+        <li>Medications</li>
+        <li>Mindfulness and meditation sessions</li>
+        <li>Nutrition and daylight exposure</li>
+        <li>Step count and daily activity</li>
+    </ul>
+    <p><strong>Context you choose to add</strong></p>
+    <ul>
+        <li>Voice notes (transcribed on-device; audio is not retained)</li>
+        <li>Photos you take to capture context such as meals (stored locally)</li>
+        <li>Notes such as medication timing or notable events</li>
+    </ul>
+
+    <h3>Where your app data lives</h3>
+    <div class="callout">
+        <p>Your health data stays on your iPhone and Apple Watch, in your personal Apple HealthKit store, and - where you enable it - in your own private iCloud. Kampa operates no servers that receive your health data, and no one at Kampa can access it.</p>
+    </div>
+    <p>The app contains no third-party analytics, no advertising SDKs, and no tracking. It does not transmit your health data anywhere. Any syncing between your devices happens through your own private iCloud account, governed by <a href="https://www.apple.com/legal/privacy/" target="_blank" rel="noopener">Apple's privacy terms</a> - not through Kampa.</p>
+    <p>If you delete the app, locally stored data is removed from that device. Data in Apple Health and in your iCloud persists until you delete it there.</p>
+
+    <h3>How your app data is used</h3>
+    <p>It is used for one purpose - to help you understand and manage your own symptoms: to show patterns over time, to surface correlations between symptoms and factors like sleep, exercise, food, and medication, and to highlight what tends to precede better or worse periods. All of this analysis happens on your device. Nothing is sent anywhere to be processed.</p>
+
+    <h3>Data sharing</h3>
+    <div class="callout">
+        <p>Kampa does not sell, rent, or share your health data with anyone - not advertisers, not data brokers, not researchers, not anyone. It exists only on your own devices and in your own iCloud.</p>
+    </div>
+    <p>In line with Apple's HealthKit requirements, HealthKit data is never used for advertising or marketing and is never disclosed to third parties.</p>
+
+    <h3>Apple's Movement Disorder API</h3>
+    <p>The app uses Apple's Movement Disorder API to passively measure tremor and dyskinesia in the background using Apple Watch motion sensors - an API Apple developed specifically for Parkinson's symptom monitoring. The API delivers measurements in rolling 7-day windows, which the app reads and stores locally to build your personal history over time. For accurate readings, the Apple Watch is worn on the more affected arm; this is set during setup and can be changed at any time.</p>
+
+    <h2>How Kampa is distributed</h2>
+    <p>Kampa is in active development. It is first being made available to a small, invite-only group of testers through Apple's TestFlight, and may later be released on the App Store. The data practices above apply throughout. If Kampa ever introduces a feature that involves sharing data beyond your own devices - for example, an optional, anonymized contribution to Parkinson's research - it will be <strong>strictly opt-in</strong>, clearly explained, and subject to your explicit consent before any data leaves your device. This policy will be updated and users notified before any such change takes effect.</p>
+
+    <h2>Not a medical device</h2>
+    <p><strong>Kampa is not a medical device.</strong> It is not intended for, and should not be used for, the diagnosis, treatment, cure, or prevention of any disease or medical condition, including Parkinson's disease. It is a personal tool for self-tracking and pattern awareness. Nothing in the app is medical advice. Any pattern the app surfaces should be discussed with a qualified healthcare provider before you act on it, and medication decisions in particular should always be made with your doctor.</p>
+
+    <h2>Age</h2>
+    <p>Kampa is intended for adults. It is not directed at, designed for, or intended to be used by anyone under the age of 13, and we do not knowingly collect data from children under 13.</p>
+
+    <h2>Your California privacy rights</h2>
+    <p>If you are a California resident, the CCPA/CPRA gives you rights to know what personal information is collected about you, to request its deletion, and to opt out of its sale (we do not sell personal information). The only personal information Kampa holds is the website analytics described in Part 1 and any email you send us - the app's health data is never transmitted to us, so it is not in our possession to disclose or delete. To exercise these rights, contact us at <a href="mailto:info@kampa.health">info@kampa.health</a>.</p>
+
+    <h2>Changes to this policy</h2>
+    <p>If this policy changes in a way that affects how your data is handled, we will update this page and revise the effective date above, and - for material changes affecting app users - notify users before the change takes effect.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about this policy can be sent to <a href="mailto:info@kampa.health">info@kampa.health</a>.</p>
+
+</div>
+
+<footer>
+    © 2026 Kampa Health · <a href="index.html">kampa.health</a> · <a href="terms.html">Terms of Use</a>
+</footer>
+
+</body>
+</html>
