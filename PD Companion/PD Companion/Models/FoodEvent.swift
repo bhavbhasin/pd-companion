@@ -3,11 +3,13 @@ import SwiftData
 
 @Model
 final class FoodEvent {
-    var id: UUID
-    var timestamp: Date
+    // Defaults are required for CloudKit (NSPersistentCloudKitContainer):
+    // every stored property must be optional or have a default value.
+    var id: UUID = UUID()
+    var timestamp: Date = Date.now
     var userDescription: String?
-    var attributes: [FoodAttribute]  // ML-determined; empty until analysis runs
-    var type: FoodType               // kept for schema compat; always .mealSnack on new entries
+    var attributes: [FoodAttribute] = []  // ML-determined; empty until analysis runs
+    var type: FoodType = FoodType.mealSnack  // kept for schema compat; always .mealSnack on new entries
     var notes: String?
 
     init(

@@ -3,9 +3,11 @@ import SwiftData
 
 @Model
 final class TremorReading {
-    var timestamp: Date
-    var tremorScore: Double
-    var dyskinesiaScore: Double
+    // Defaults are required for CloudKit (NSPersistentCloudKitContainer):
+    // every stored property must be optional or have a default value.
+    var timestamp: Date = Date.distantPast
+    var tremorScore: Double = 0
+    var dyskinesiaScore: Double = 0
 
     init(timestamp: Date, tremorScore: Double, dyskinesiaScore: Double) {
         self.timestamp = timestamp

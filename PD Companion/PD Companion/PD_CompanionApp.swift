@@ -10,7 +10,13 @@ import UIKit
 enum AppContainer {
     static let shared: ModelContainer = {
         do {
-            return try ModelContainer(for: TremorReading.self, FoodEvent.self)
+            // .automatic resolves the app's CloudKit container from the iCloud
+            // entitlement, syncing TremorReading + FoodEvent to the user's private
+            // database for backup + cross-device restore. Requires the iCloud
+            // (CloudKit) capability on the iPhone target; the store fails to init
+            // without it, so add the capability before running on device.
+            let config = ModelConfiguration(cloudKitDatabase: .automatic)
+            return try ModelContainer(for: TremorReading.self, FoodEvent.self, configurations: config)
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }
