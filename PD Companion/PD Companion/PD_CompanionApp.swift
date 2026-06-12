@@ -70,6 +70,7 @@ struct PD_CompanionApp: App {
                 .onChange(of: scenePhase) { _, newPhase in
                     switch newPhase {
                     case .active:
+                        connectivity.refreshWatchState()
                         connectivity.requestFreshTremorData()
                     case .background:
                         Self.scheduleTremorSync()
