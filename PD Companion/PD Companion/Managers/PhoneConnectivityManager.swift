@@ -28,6 +28,19 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         WCSession.default.activate()
     }
 
+    /// Re-read live WCSession state. The session's isPaired/isWatchAppInstalled
+    /// values are not reliably hydrated at the instant activation completes, and
+    /// sessionWatchStateDidChange only fires on a transition — so the flags can
+    /// get stuck at a stale `false` even while data flows via application context.
+    /// Call this on every foreground to keep the status icon honest.
+    func refreshWatchState() {
+        let session = WCSession.default
+        guard session.activationState == .activated else { return }
+        isWatchPaired = session.isPaired
+        isWatchAppInstalled = session.isWatchAppInstalled
+        isWatchReachable = session.isReachable
+    }
+
     func requestFreshTremorData() {
         guard WCSession.default.activationState == .activated else { return }
 
