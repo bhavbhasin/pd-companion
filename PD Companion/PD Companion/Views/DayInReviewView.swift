@@ -15,7 +15,7 @@ struct DayInReviewView: View {
     @State private var showingWatchStatus = false
     @State private var showingLogSheet = false
     @State private var selectedEvent: DayEvent?
-    @State private var isExporting = false
+    @State private var showingBackup = false
 
     var body: some View {
         NavigationStack {
@@ -64,38 +64,11 @@ struct DayInReviewView: View {
                 }
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
-                        guard !isExporting else { return }
-                        isExporting = true
-                        Task {
-                            defer { Task { @MainActor in isExporting = false } }
-                            guard let folder = await CSVBackupExporter.exportAll(
-                                container: AppContainer.shared
-                            ) else { return }
-                            await healthKit.exportAllSamples(to: folder)
-                            let files = (try? FileManager.default.contentsOfDirectory(
-                                at: folder, includingPropertiesForKeys: nil
-                            )) ?? []
-                            guard !files.isEmpty else {
-                                try? FileManager.default.removeItem(at: folder)
-                                return
-                            }
-                            await MainActor.run {
-                                ShareSheetPresenter.present(items: files) {
-                                    try? FileManager.default.removeItem(at: folder)
-                                }
-                            }
-                        }
+                        showingBackup = true
                     } label: {
-                        if isExporting {
-                            ProgressView()
-                                .controlSize(.small)
-                                .accessibilityLabel("Preparing data export")
-                        } else {
-                            Image(systemName: "square.and.arrow.up")
-                                .accessibilityLabel("Export data backup")
-                        }
+                        Image(systemName: "externaldrive.badge.icloud")
+                            .accessibilityLabel("Backup and export")
                     }
-                    .disabled(isExporting)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -119,6 +92,9 @@ struct DayInReviewView: View {
             }
             .sheet(item: $selectedEvent) { event in
                 EventDetailSheet(event: event)
+            }
+            .sheet(isPresented: $showingBackup) {
+                BackupSheet()
             }
             .task(id: selectedDate) {
                 await healthKit.fetchDayInReview(for: selectedDate)
