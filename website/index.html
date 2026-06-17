@@ -609,6 +609,33 @@
         @media (max-width: 1024px) { .roadmap-grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 640px) { .roadmap-grid { grid-template-columns: 1fr; } }
 
+        /* ── What's new (changelog) ── */
+        .changelog-list { display: flex; flex-direction: column; gap: 12px; }
+        .changelog-item {
+            background: var(--surface-1);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px 26px;
+            display: grid;
+            grid-template-columns: 124px 1fr;
+            gap: 24px;
+            align-items: baseline;
+            transition: border-color 0.2s;
+        }
+        .changelog-item:hover { border-color: var(--blue-border); }
+        .changelog-date {
+            font-size: 11.5px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--blue);
+            white-space: nowrap;
+        }
+        .changelog-title { font-size: 15.5px; font-weight: 600; line-height: 1.3; margin-bottom: 6px; }
+        .changelog-desc { font-size: 13.5px; color: var(--text-2); line-height: 1.6; }
+        .changelog-desc em { color: var(--text-1); font-style: italic; }
+        @media (max-width: 640px) { .changelog-item { grid-template-columns: 1fr; gap: 5px; } }
+
         /* ── Contact ── */
         .contact-wrap {
             max-width: var(--max-w);
@@ -717,6 +744,7 @@
     </a>
     <div class="nav-links">
         <a href="#how-it-works" class="nav-link">How it works</a>
+        <a href="#whats-new" class="nav-link">What's new</a>
         <a href="#story" class="nav-link">Story</a>
         <a href="mailto:info@kampa.health" class="nav-cta">Get in touch</a>
     </div>
@@ -903,6 +931,43 @@
                         Email
                     </a>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── What's new ── -->
+<div class="section-wrap" id="whats-new">
+    <p class="eyebrow">What's new</p>
+    <h2 class="section-h">Recently shipped.</h2>
+    <p class="section-p">What's landed in the app lately. Each release gets a closer look on <a href="https://www.linkedin.com/company/kampa-health/" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;">LinkedIn</a>.</p>
+    <div class="changelog-list">
+        <div class="changelog-item">
+            <div class="changelog-date">Jun 2026</div>
+            <div>
+                <div class="changelog-title">Private cloud backup &amp; restore</div>
+                <div class="changelog-desc">Your data backs up to your own private iCloud (Apple's CloudKit) and restores on a new device - lose or replace your phone and your history isn't gone. On-device first; you stay in control of what it's ever used for.</div>
+            </div>
+        </div>
+        <div class="changelog-item">
+            <div class="changelog-date">Jun 2026</div>
+            <div>
+                <div class="changelog-title">See exactly what's stored</div>
+                <div class="changelog-desc">A new in-app Backup view shows every record type, count, and date range Kampa holds on your device - plus one-tap CSV export of everything.</div>
+            </div>
+        </div>
+        <div class="changelog-item">
+            <div class="changelog-date">Jun 2026</div>
+            <div>
+                <div class="changelog-title">Kāmpa, named</div>
+                <div class="changelog-desc">The app takes its name and identity: <em>Kāmpa</em>, from <em>Kampavata</em> - the Ayurvedic term for the tremor disorder now called Parkinson's.</div>
+            </div>
+        </div>
+        <div class="changelog-item">
+            <div class="changelog-date">May 2026</div>
+            <div>
+                <div class="changelog-title">Food, meditation &amp; event logging</div>
+                <div class="changelog-desc">Capture meals, mindfulness sessions, and daily events - each timestamped and ready to correlate against continuous tremor data.</div>
             </div>
         </div>
     </div>
