@@ -1,0 +1,16 @@
+/* brand-theme-dark.css — theme Kampa SVGs for DARK backgrounds.
+   Applied at export time by export-brand.sh via rsvg-convert --stylesheet.
+   The SVGs themselves stay theme-neutral (currentColor strokes, CSS-driven text);
+   this file paints them white with the brand-blue accent for dark surfaces. */
+
+* { color: #FFFFFF; }                       /* currentColor strokes (wave marks) -> white */
+
+.wm, .wmLk {                                /* wordmark text classes */
+  font-family: 'Geist';
+  font-weight: 500;                         /* Geist Medium, per the site .wm rule */
+  font-size: 72px;
+  letter-spacing: -1.4px;
+  fill: #FFFFFF;
+}
+
+.wm tspan, .wmLk tspan { fill: #4A8CD6; }   /* the macron ā in brand blue (--blue) */
