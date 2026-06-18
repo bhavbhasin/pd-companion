@@ -678,6 +678,31 @@
             background: var(--blue-dim);
             border-color: var(--blue-border);
         }
+        .contact-reqs {
+            font-size: 13px;
+            color: var(--text-3);
+            line-height: 1.6;
+            max-width: 440px;
+            margin: 28px auto 0;
+        }
+        /* Staged: primary CTA for when the TestFlight beta opens (see contact section) */
+        .beta-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--blue);
+            border: 1px solid var(--blue);
+            color: #fff;
+            padding: 15px 32px;
+            border-radius: 100px;
+            font-size: 17px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+        .beta-btn:hover {
+            filter: brightness(1.08);
+        }
 
         /* ── Footer ── */
         .footer-wrap {
@@ -1021,6 +1046,25 @@
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
             info@kampa.health
         </a>
+        <p class="contact-reqs">
+            Requires an iPhone on iOS&nbsp;26 (iPhone&nbsp;11 or later, including iPhone&nbsp;SE 2nd gen) and an Apple&nbsp;Watch on watchOS&nbsp;10 (Series&nbsp;4 or later). The Apple&nbsp;Watch is required - it's how Kampa reads tremor.
+        </p>
+        <!-- ════════ STAGED: TestFlight "Join the beta" CTA ════════
+             DO NOT uncomment until build 1 is APPROVED and the public TestFlight link is live.
+             A live "beta is open" CTA with a dead link is worse than no CTA.
+
+             Flip steps (≈one minute):
+               1. Replace TESTFLIGHT_URL below with the real public TestFlight link.
+               2. Delete this comment's opening/closing markers so the <a> renders.
+               3. Optional: change the heading above to "The beta is open." and demote the
+                  email button (swap class to .email-btn-secondary) so the beta button is primary.
+               4. Fire the queued "Kampa is in testing - request access" LinkedIn post (dual moment).
+
+        <a href="TESTFLIGHT_URL" target="_blank" rel="noopener" class="beta-btn">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5 21.5 20H2.5L12 2.5zm0 5L6.6 17.3h10.8L12 7.5z"/></svg>
+            Join the beta on TestFlight
+        </a>
+        ════════ END STAGED ════════ -->
     </div>
 </div>
 
