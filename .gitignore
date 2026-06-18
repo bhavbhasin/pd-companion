@@ -21,6 +21,10 @@ EP5499_Movement_Disorder_APIs_Addendum.pdf
 # Local data backups outside the source tree
 PD Companion/PD Companion Backups/
 
+# Correlation-engine Python prototype lab — local-only, kept out of the
+# public repo by design (like the strategic notes above).
+analysis/
+
 # Original full-size headshots (only the cropped avatar is used/deployed)
 website/images/Bhav1.JPG
 website/images/Bhav2.JPG
