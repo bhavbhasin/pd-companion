@@ -1,0 +1,16 @@
+# Deploy only when the website actually changes.
+#
+# This repo (pd-companion) holds BOTH the iOS/watchOS app and this marketing
+# site. Netlify's base directory is "website", but without this rule every push
+# to main - including app-only commits - triggers a full production deploy
+# (~15 credits each against the 300/month free allowance). This skips the
+# deploy unless something under website/ changed.
+#
+# Netlify "ignore" semantics: exit 0 = skip the build, non-zero = build.
+# `git diff --quiet` exits 0 when the pathspec has NO changes (skip) and 1 when
+# it does (build). $CACHED_COMMIT_REF..$COMMIT_REF spans the whole push, so
+# batched commits are evaluated together. The ':(top)website/' magic pathspec is
+# anchored at the repo root, so the check is correct whether Netlify runs it
+# from the repo root or from the base directory.
+[build]
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- ':(top)website/'"
