@@ -19,6 +19,7 @@ class HealthKitManager: ObservableObject {
     @Published var daySleep: SleepBreakdown?
     @Published var dayEvents: [DayEvent] = []
     @Published var dayHRV: Double?
+    @Published var dayHRVSamples: [HRVSample] = []
     @Published var dayDaylightMinutes: Double?
 
     private let writeTypes: Set<HKSampleType> = [
@@ -254,6 +255,7 @@ class HealthKitManager: ObservableObject {
         async let doses = fetchMedicationDosesInRange(from: startOfDay, to: endOfDay)
         async let mindful = fetchMindfulnessSessionsInRange(from: startOfDay, to: endOfDay)
         async let hrv = fetchAverageHRVInRange(from: startOfDay, to: endOfDay)
+        async let hrvSamples = fetchHRVSamplesInRange(from: startOfDay, to: endOfDay)
         async let daylight = fetchTimeInDaylightInRange(from: startOfDay, to: endOfDay)
 
         let resolvedSleep = await sleep
@@ -261,6 +263,7 @@ class HealthKitManager: ObservableObject {
         let resolvedDoses = await doses
         let resolvedMindful = await mindful
         let resolvedHRV = await hrv
+        let resolvedHRVSamples = await hrvSamples
         let resolvedDaylight = await daylight
 
         var events: [DayEvent] = []
@@ -286,6 +289,7 @@ class HealthKitManager: ObservableObject {
         daySleep = resolvedSleep
         dayEvents = events
         dayHRV = resolvedHRV
+        dayHRVSamples = resolvedHRVSamples
         dayDaylightMinutes = resolvedDaylight
     }
 
@@ -301,6 +305,30 @@ class HealthKitManager: ObservableObject {
                     for: HKUnit.secondUnit(with: .milli)
                 )
                 continuation.resume(returning: value)
+            }
+            store.execute(query)
+        }
+    }
+
+    /// Timestamped HRV (SDNN) samples for the day, sorted ascending.
+    /// The day-average alone can't be related to tremor within a single day;
+    /// the per-sample series lets the engine do a within-day association.
+    private func fetchHRVSamplesInRange(from start: Date, to end: Date) async -> [HRVSample] {
+        let type = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        let sort = [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type, predicate: predicate,
+                limit: HKObjectQueryNoLimit, sortDescriptors: sort
+            ) { _, samples, _ in
+                let result = (samples as? [HKQuantitySample] ?? []).map {
+                    HRVSample(
+                        timestamp: $0.startDate,
+                        value: $0.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
+                    )
+                }
+                continuation.resume(returning: result)
             }
             store.execute(query)
         }

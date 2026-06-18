@@ -10,6 +10,17 @@ struct DayObservation: Identifiable {
     let headline: String
     let detail: String?
     let sentiment: Sentiment
+    // Representative time, used to order the panel chronologically
+    // (night → daytime events → end-of-day summaries). Defaults late so
+    // anything unanchored sinks to the bottom rather than jumping to the top.
+    var sortDate: Date = .distantFuture
+
+    /// Returns a copy anchored to `date` for chronological ordering.
+    func at(_ date: Date) -> DayObservation {
+        var copy = self
+        copy.sortDate = date
+        return copy
+    }
 
     enum Sentiment {
         case positive, negative, neutral, informational
@@ -26,6 +37,14 @@ struct DayObservation: Identifiable {
 }
 
 // MARK: - Engine
+//
+// Design note: this is a single-day, rule-based engine. With one day of data it
+// can describe *what co-occurred*, but it cannot prove *what caused what* — a single
+// pill-then-walk or a missed-dose-then-coffee can't be statistically untangled from
+// one instance. So the language here is deliberately temporal/contextual, not causal,
+// and it guards against the two most common misattributions (overlapping dose+activity,
+// and food "effects" that are really pre-dose wearing-off). Real attribution is the
+// job of the cross-day correlation engine; this panel only surfaces hypotheses.
 
 struct ObservationEngine {
 
@@ -34,114 +53,183 @@ struct ObservationEngine {
         events: [DayEvent],
         foodEvents: [FoodEvent],
         sleep: SleepBreakdown?,
-        hrv: Double?
+        hrvSamples: [HRVSample],
+        daylightMinutes: Double?
     ) -> [DayObservation] {
         guard !readings.isEmpty else { return [] }
 
-        var result: [DayObservation] = []
-        result += doseWindowObservations(readings: readings, events: events)
-        result += workoutWindowObservations(readings: readings, events: events)
-        result += tremorTrajectoryObservation(readings: readings)
-        result += caffeineObservations(readings: readings, foodEvents: foodEvents)
-        result += sugarObservations(readings: readings, foodEvents: foodEvents)
-        result += proteinDoseProximityObservations(events: events, foodEvents: foodEvents)
-        result += fatDoseProximityObservations(events: events, foodEvents: foodEvents)
-        result += sleepObservations(sleep: sleep)
-        return result
-    }
-
-    // MARK: Post-dose tremor effect
-
-    private static func doseWindowObservations(
-        readings: [TremorReading], events: [DayEvent]
-    ) -> [DayObservation] {
-        let doses: [(time: Date, name: String?)] = events.compactMap {
-            if case .medication(_, let time, let name) = $0 { return (time, name) }
+        let doseTimes: [Date] = events.compactMap {
+            if case .medication(_, let time, _) = $0 { return time }
             return nil
         }
 
-        return doses.compactMap { dose in
-            let pre = windowAvg(readings,
-                                from: dose.time.addingTimeInterval(-1800),
-                                to: dose.time)
+        let dayStart = Calendar.current.startOfDay(for: readings.map(\.timestamp).min() ?? Date())
+        let dayEnd = dayStart.addingTimeInterval(86400)
+
+        var result: [DayObservation] = []
+        result += medicationAndExerciseObservations(readings: readings, events: events)
+        result += dyskinesiaDoseObservations(readings: readings, events: events)
+        result += tremorTrajectoryObservation(readings: readings, anchor: dayEnd)
+        result += foodEvents.filter { hasCaffeine($0) }.compactMap {
+            foodRiseObservation(event: $0, readings: readings, doseTimes: doseTimes,
+                                factorLabel: "caffeine", icon: "cup.and.saucer.fill",
+                                mechanismNote: "")
+        }
+        result += foodEvents.filter { hasSugar($0) }.compactMap {
+            foodRiseObservation(event: $0, readings: readings, doseTimes: doseTimes,
+                                factorLabel: "sugar", icon: "fork.knife",
+                                mechanismNote: "Glycemic swings can affect tremor in PD. ")
+        }
+        result += hrvTremorObservation(readings: readings, hrvSamples: hrvSamples, anchor: dayEnd)
+        result += sleepObservations(sleep: sleep, daylightMinutes: daylightMinutes, anchor: dayStart)
+
+        // Chronological: night (sleep/daylight) → daytime events → end-of-day summaries.
+        return result.sorted { $0.sortDate < $1.sortDate }
+    }
+
+    // MARK: Medication + exercise (with confounder guard)
+    //
+    // If a dose and a workout share a response window we can't credit either one,
+    // so we emit a single combined note instead of two competing claims. Only the
+    // doses/workouts that *don't* overlap get a standalone observation.
+
+    private static func medicationAndExerciseObservations(
+        readings: [TremorReading], events: [DayEvent]
+    ) -> [DayObservation] {
+        let doses: [(time: Date, name: String)] = events.compactMap {
+            if case .medication(_, let time, let name) = $0 { return (time, name ?? "dose") }
+            return nil
+        }
+        let workouts: [(start: Date, end: Date, name: String)] = events.compactMap {
+            if case .workout(_, let start, let dur, let type) = $0 {
+                return (start, start.addingTimeInterval(dur), type.displayName)
+            }
+            return nil
+        }
+
+        var out: [DayObservation] = []
+        var confoundedDoses = Set<Int>()
+        var confoundedWorkouts = Set<Int>()
+
+        // Combined notes: a dose landing from 30 min before the workout starts to
+        // 90 min after it ends shares the tremor response window with the activity.
+        for (wi, w) in workouts.enumerated() {
+            guard let di = doses.firstIndex(where: { dose in
+                dose.time >= w.start.addingTimeInterval(-1800) &&
+                dose.time <= w.end.addingTimeInterval(5400)
+            }) else { continue }
+
+            confoundedWorkouts.insert(wi)
+            confoundedDoses.insert(di)
+
+            let anchor = min(w.start, doses[di].time)
+            let pre = windowAvg(readings, from: anchor.addingTimeInterval(-1800), to: anchor)
+            let post = windowAvg(readings,
+                                 from: w.end.addingTimeInterval(1800),
+                                 to: w.end.addingTimeInterval(5400))
+            guard let pre, let post, pre > 0.1 else { continue }
+
+            let pct = (pre - post) / pre * 100
+            guard abs(pct) >= 15 else { continue }
+            let dir = pct > 0 ? "lower" : "higher"
+            out.append(DayObservation(
+                icon: "pill.fill",
+                iconColor: .secondary,
+                headline: "\(doses[di].name.capitalized) and \(w.name.lowercased()) overlapped — tremor \(dir) afterward",
+                detail: "Avg \(fmt(pre)) before → \(fmt(post)) after. The dose and the activity were too close together to credit either one — watch days you do just one.",
+                sentiment: .neutral
+            ).at(anchor))
+        }
+
+        // Standalone workouts
+        for (wi, w) in workouts.enumerated() where !confoundedWorkouts.contains(wi) {
+            let pre = windowAvg(readings, from: w.start.addingTimeInterval(-1800), to: w.start)
+            let post = windowAvg(readings,
+                                 from: w.end.addingTimeInterval(1800),
+                                 to: w.end.addingTimeInterval(5400))
+            guard let pre, let post, pre > 0.1 else { continue }
+            let pct = (pre - post) / pre * 100
+            if pct >= 15 {
+                out.append(DayObservation(
+                    icon: "figure.run", iconColor: .green,
+                    headline: "Tremor fell \(Int(pct))% after \(w.name.lowercased())",
+                    detail: "Avg \(fmt(pre)) before → \(fmt(post)) in the hour after the session. One day isn't proof — watch whether it holds.",
+                    sentiment: .positive
+                ).at(w.start))
+            } else if pct <= -15 {
+                out.append(DayObservation(
+                    icon: "figure.run", iconColor: .orange,
+                    headline: "Tremor rose after \(w.name.lowercased())",
+                    detail: "Avg \(fmt(pre)) before → \(fmt(post)) after. May settle over the next few hours.",
+                    sentiment: .neutral
+                ).at(w.start))
+            }
+        }
+
+        // Standalone doses
+        for (di, dose) in doses.enumerated() where !confoundedDoses.contains(di) {
+            let pre = windowAvg(readings, from: dose.time.addingTimeInterval(-1800), to: dose.time)
             let post = windowAvg(readings,
                                  from: dose.time.addingTimeInterval(1800),
                                  to: dose.time.addingTimeInterval(5400))
-            guard let pre, let post, pre > 0.1 else { return nil }
-
-            let delta = (pre - post) / pre * 100
+            guard let pre, let post, pre > 0.1 else { continue }
+            let pct = (pre - post) / pre * 100
             let timeStr = dose.time.formatted(.dateTime.hour().minute())
-            let name = (dose.name ?? "dose").capitalized
-
-            if delta >= 15 {
-                return DayObservation(
-                    icon: "pill.fill",
-                    iconColor: .green,
-                    headline: "\(name) at \(timeStr) — tremor down \(Int(delta))%",
+            let name = dose.name.capitalized
+            if pct >= 15 {
+                out.append(DayObservation(
+                    icon: "pill.fill", iconColor: .green,
+                    headline: "Tremor fell \(Int(pct))% after \(name) at \(timeStr)",
                     detail: "Avg \(fmt(pre)) before → \(fmt(post)) in the 30–90 min window after.",
                     sentiment: .positive
-                )
-            } else if delta <= -15 {
-                return DayObservation(
-                    icon: "pill.fill",
-                    iconColor: .orange,
-                    headline: "Tremor rose after \(name.lowercased()) at \(timeStr)",
-                    detail: "Avg \(fmt(pre)) before → \(fmt(post)) after. May indicate wearing-off timing.",
-                    sentiment: .negative
-                )
+                ).at(dose.time))
+            } else if pct <= -15 {
+                out.append(DayObservation(
+                    icon: "pill.fill", iconColor: .orange,
+                    headline: "Tremor rose after \(name) at \(timeStr)",
+                    detail: "Avg \(fmt(pre)) before → \(fmt(post)) after — may indicate wearing-off before the next dose.",
+                    sentiment: .neutral
+                ).at(dose.time))
             }
-            return nil
         }
+
+        return out
     }
 
-    // MARK: Post-workout effect
+    // MARK: Peak-dose dyskinesia
+    //
+    // Inverted from tremor: dyskinesia (levodopa-induced involuntary movement)
+    // tends to *rise* near peak dose, 30–120 min after taking it. Gated on an
+    // absolute floor so near-zero readings don't fire noise.
 
-    private static func workoutWindowObservations(
+    private static func dyskinesiaDoseObservations(
         readings: [TremorReading], events: [DayEvent]
     ) -> [DayObservation] {
-        let workouts: [(start: Date, end: Date, type: HKWorkoutActivityType)] = events.compactMap {
-            if case .workout(_, let start, let dur, let type) = $0 {
-                return (start, start.addingTimeInterval(dur), type)
-            }
+        let doses: [(time: Date, name: String)] = events.compactMap {
+            if case .medication(_, let time, let name) = $0 { return (time, name ?? "dose") }
             return nil
         }
-
-        return workouts.compactMap { workout in
+        return doses.compactMap { dose in
             let pre = windowAvg(readings,
-                                from: workout.start.addingTimeInterval(-1800),
-                                to: workout.start)
+                                from: dose.time.addingTimeInterval(-1800),
+                                to: dose.time, metric: \.dyskinesiaScore)
             let post = windowAvg(readings,
-                                 from: workout.end.addingTimeInterval(1800),
-                                 to: workout.end.addingTimeInterval(5400))
-            guard let pre, let post, pre > 0.1 else { return nil }
-
-            let delta = (pre - post) / pre * 100
-            let name = workout.type.displayName
-
-            if delta >= 15 {
-                return DayObservation(
-                    icon: "figure.run",
-                    iconColor: .green,
-                    headline: "\(name) reduced tremor \(Int(delta))%",
-                    detail: "Avg \(fmt(pre)) before → \(fmt(post)) in the hour after the session.",
-                    sentiment: .positive
-                )
-            } else if delta <= -15 {
-                return DayObservation(
-                    icon: "figure.run",
-                    iconColor: .orange,
-                    headline: "Tremor elevated after \(name)",
-                    detail: "Avg \(fmt(pre)) before → \(fmt(post)) after. May resolve over the next few hours.",
-                    sentiment: .neutral
-                )
-            }
-            return nil
+                                 from: dose.time.addingTimeInterval(1800),
+                                 to: dose.time.addingTimeInterval(7200), metric: \.dyskinesiaScore)
+            guard let pre, let post, post >= 0.5, post - pre >= 0.5 else { return nil }
+            let timeStr = dose.time.formatted(.dateTime.hour().minute())
+            return DayObservation(
+                icon: "waveform.path", iconColor: .pink,
+                headline: "Dyskinesia rose after \(dose.name.capitalized) at \(timeStr)",
+                detail: "Avg \(fmt(pre)) before → \(fmt(post)) in the 30–120 min window after. Involuntary movement that peaks after a dose is typical peak-dose dyskinesia — note whether it eases as the dose wears off.",
+                sentiment: .neutral
+            ).at(dose.time)
         }
     }
 
     // MARK: Tremor trajectory (morning / afternoon / evening)
 
-    private static func tremorTrajectoryObservation(readings: [TremorReading]) -> [DayObservation] {
+    private static func tremorTrajectoryObservation(readings: [TremorReading], anchor: Date) -> [DayObservation] {
         let cal = Calendar.current
 
         func avg(hour range: Range<Int>) -> Double? {
@@ -171,7 +259,7 @@ struct ObservationEngine {
             headline: "Tremor was lowest in the \(best.name)",
             detail: "\(best.name.capitalized): \(fmt(best.avg)) avg · \(worst.name.capitalized): \(fmt(worst.avg)) avg",
             sentiment: .informational
-        )]
+        ).at(anchor)]
     }
 
     // MARK: Attribute helpers — delegate to FoodAttribute.detect for entries saved before wiring
@@ -181,170 +269,136 @@ struct ObservationEngine {
         return FoodAttribute.detect(in: event.userDescription ?? "")
     }
 
-    private static func hasCaffeine(_ event: FoodEvent) -> Bool {
-        attributes(for: event).contains(.caffeine)
-    }
+    private static func hasCaffeine(_ event: FoodEvent) -> Bool { attributes(for: event).contains(.caffeine) }
+    private static func hasSugar(_ event: FoodEvent) -> Bool { attributes(for: event).contains(.sugar) }
 
-    private static func hasProtein(_ event: FoodEvent) -> Bool {
-        attributes(for: event).contains(.protein)
-    }
+    // MARK: Food → tremor rise (caffeine / sugar), with pre-dose wearing-off guard
 
-    private static func hasSugar(_ event: FoodEvent) -> Bool {
-        attributes(for: event).contains(.sugar)
-    }
+    private static func foodRiseObservation(
+        event: FoodEvent, readings: [TremorReading], doseTimes: [Date],
+        factorLabel: String, icon: String, mechanismNote: String
+    ) -> DayObservation? {
+        let pre = windowAvg(readings,
+                            from: event.timestamp.addingTimeInterval(-900),
+                            to: event.timestamp)
+        let post = windowAvg(readings,
+                             from: event.timestamp.addingTimeInterval(1800),
+                             to: event.timestamp.addingTimeInterval(3600))
+        guard let pre, let post, pre > 0.1 else { return nil }
 
-    private static func hasFat(_ event: FoodEvent) -> Bool {
-        attributes(for: event).contains(.fat)
-    }
+        let delta = (post - pre) / pre * 100
+        guard delta >= 20 else { return nil }
+        let timeStr = event.timestamp.formatted(.dateTime.hour().minute())
 
-    // MARK: Caffeine effect
-
-    private static func caffeineObservations(
-        readings: [TremorReading], foodEvents: [FoodEvent]
-    ) -> [DayObservation] {
-        return foodEvents.filter { hasCaffeine($0) }.compactMap { event in
-            let pre = windowAvg(readings,
-                                from: event.timestamp.addingTimeInterval(-900),
-                                to: event.timestamp)
-            let post = windowAvg(readings,
-                                 from: event.timestamp.addingTimeInterval(1800),
-                                 to: event.timestamp.addingTimeInterval(3600))
-            guard let pre, let post, pre > 0.1 else { return nil }
-
-            let delta = (post - pre) / pre * 100
-            let timeStr = event.timestamp.formatted(.dateTime.hour().minute())
-
-            guard delta >= 20 else { return nil }
+        // Confounder: tremor naturally climbs before the first dose of the day.
+        // If no dose preceded this entry, a rise is more likely wearing-off than the food.
+        let dosedBefore = doseTimes.contains { $0 <= event.timestamp }
+        guard dosedBefore else {
             return DayObservation(
-                icon: "cup.and.saucer.fill",
-                iconColor: .orange,
-                headline: "Tremor rose after caffeine at \(timeStr) (+\(Int(delta))%)",
-                detail: "Avg \(fmt(pre)) before → \(fmt(post)) in the 30–60 min window after.",
-                sentiment: .negative
-            )
+                icon: "clock.arrow.circlepath", iconColor: .secondary,
+                headline: "Tremor rose around \(timeStr), after \(factorLabel)",
+                detail: "You hadn't taken a dose yet, so this likely reflects morning wearing-off rather than the \(factorLabel). Avg \(fmt(pre)) → \(fmt(post)).",
+                sentiment: .neutral
+            ).at(event.timestamp)
         }
+
+        return DayObservation(
+            icon: icon, iconColor: .orange,
+            headline: "Tremor rose in the hour after \(factorLabel) at \(timeStr) (+\(Int(delta))%)",
+            detail: "\(mechanismNote)Avg \(fmt(pre)) → \(fmt(post)) in the 30–60 min window after. One day isn't proof — watch whether this repeats.",
+            sentiment: .neutral
+        ).at(event.timestamp)
     }
 
-    // MARK: Sugar effect
+    // MARK: HRV ↔ tremor (within-day association)
+    //
+    // A single day-average HRV can't be related to tremor. Instead we pair each
+    // tremor reading with the nearest HRV sample, split the day into lower- vs
+    // higher-HRV stretches, and only surface a hedged note when there's enough
+    // data and a real gap. This stays silent on quiet/low-data days rather than
+    // inventing a pattern. The cross-day engine does the real verdict.
 
-    private static func sugarObservations(
-        readings: [TremorReading], foodEvents: [FoodEvent]
+    private static func hrvTremorObservation(
+        readings: [TremorReading], hrvSamples: [HRVSample], anchor: Date
     ) -> [DayObservation] {
-        return foodEvents.filter { hasSugar($0) }.compactMap { event in
-            let pre = windowAvg(readings,
-                                from: event.timestamp.addingTimeInterval(-900),
-                                to: event.timestamp)
-            let post = windowAvg(readings,
-                                 from: event.timestamp.addingTimeInterval(1800),
-                                 to: event.timestamp.addingTimeInterval(3600))
-            guard let pre, let post, pre > 0.1 else { return nil }
+        guard hrvSamples.count >= 4, readings.count >= 8 else { return [] }
 
-            let delta = (post - pre) / pre * 100
-            let timeStr = event.timestamp.formatted(.dateTime.hour().minute())
-
-            guard delta >= 20 else { return nil }
-            return DayObservation(
-                icon: "fork.knife",
-                iconColor: .orange,
-                headline: "Tremor rose after high-sugar entry at \(timeStr) (+\(Int(delta))%)",
-                detail: "Glycemic spike → postprandial hypotension is common in PD and can elevate tremor. Avg \(fmt(pre)) before → \(fmt(post)) in the 30–60 min window after.",
-                sentiment: .negative
-            )
+        let paired: [(tremor: Double, hrv: Double)] = readings.compactMap { r in
+            guard let nearest = hrvSamples.min(by: {
+                abs($0.timestamp.timeIntervalSince(r.timestamp)) <
+                abs($1.timestamp.timeIntervalSince(r.timestamp))
+            }), abs(nearest.timestamp.timeIntervalSince(r.timestamp)) <= 900 else { return nil }
+            return (r.tremorScore, nearest.value)
         }
+        guard paired.count >= 8 else { return [] }
+
+        let sortedHRV = paired.map(\.hrv).sorted()
+        let medianHRV = sortedHRV[sortedHRV.count / 2]
+        let low = paired.filter { $0.hrv < medianHRV }
+        let high = paired.filter { $0.hrv >= medianHRV }
+        guard low.count >= 3, high.count >= 3 else { return [] }
+
+        let lowT = low.map(\.tremor).reduce(0, +) / Double(low.count)
+        let highT = high.map(\.tremor).reduce(0, +) / Double(high.count)
+        guard highT > 0.1 else { return [] }
+
+        let pct = (lowT - highT) / highT * 100
+        guard pct >= 20 else { return [] }
+
+        return [DayObservation(
+            icon: "bolt.heart.fill", iconColor: .purple,
+            headline: "Tremor ran higher when HRV was lower today",
+            detail: "On lower-HRV stretches tremor averaged \(fmt(lowT)) vs \(fmt(highT)) when HRV was higher. Low HRV can reflect stress or fatigue, which may amplify tremor — worth confirming across more days.",
+            sentiment: .informational
+        ).at(anchor)]
     }
 
-    // MARK: Protein-dose proximity
+    // MARK: Sleep + daylight (circadian) context
 
-    private static func proteinDoseProximityObservations(
-        events: [DayEvent], foodEvents: [FoodEvent]
+    private static func sleepObservations(
+        sleep: SleepBreakdown?, daylightMinutes: Double?, anchor: Date
     ) -> [DayObservation] {
-        let doseTimes: [Date] = events.compactMap {
-            if case .medication(_, let time, _) = $0 { return time }
-            return nil
-        }
+        var out: [DayObservation] = []
 
-        return foodEvents
-            .filter { hasProtein($0) }
-            .compactMap { meal in
-                guard doseTimes.contains(where: {
-                    abs($0.timeIntervalSince(meal.timestamp)) < 3600
-                }) else { return nil }
-
-                let timeStr = meal.timestamp.formatted(.dateTime.hour().minute())
-                return DayObservation(
-                    icon: "fork.knife",
-                    iconColor: .orange,
-                    headline: "Protein meal at \(timeStr) close to a dose",
-                    detail: "Dietary protein competes with levodopa for absorption — check whether tremor was affected in the following hour.",
-                    sentiment: .neutral
-                )
+        if let sleep, sleep.hasData {
+            if sleep.totalAsleepHours < 6.0 {
+                out.append(DayObservation(
+                    icon: "bed.double.fill", iconColor: .orange,
+                    headline: "Short sleep night (\(formatHours(sleep.totalAsleepHours)))",
+                    detail: "Poor sleep is associated with higher tremor severity the following day.",
+                    sentiment: .negative
+                ).at(anchor))
+            } else if sleep.deepHours < 0.5 {
+                out.append(DayObservation(
+                    icon: "bed.double.fill", iconColor: .orange,
+                    headline: "Low deep sleep (\(formatHours(sleep.deepHours)))",
+                    detail: "Deep sleep supports motor recovery — this may have affected today's tremor baseline.",
+                    sentiment: .negative
+                ).at(anchor))
             }
-    }
-
-    // MARK: Fat-dose proximity
-
-    private static func fatDoseProximityObservations(
-        events: [DayEvent], foodEvents: [FoodEvent]
-    ) -> [DayObservation] {
-        let doseTimes: [Date] = events.compactMap {
-            if case .medication(_, let time, _) = $0 { return time }
-            return nil
         }
 
-        return foodEvents
-            .filter { hasFat($0) }
-            .compactMap { meal in
-                guard doseTimes.contains(where: {
-                    abs($0.timeIntervalSince(meal.timestamp)) < 5400
-                }) else { return nil }
-
-                let timeStr = meal.timestamp.formatted(.dateTime.hour().minute())
-                return DayObservation(
-                    icon: "fork.knife",
-                    iconColor: .orange,
-                    headline: "High-fat meal at \(timeStr) close to a dose",
-                    detail: "Fat slows gastric emptying and can delay your Sinemet onset by 20–40 minutes — your effective window may start later than usual.",
-                    sentiment: .neutral
-                )
-            }
-    }
-
-    // MARK: Sleep context
-
-    private static func sleepObservations(sleep: SleepBreakdown?) -> [DayObservation] {
-        guard let sleep, sleep.hasData else { return [] }
-
-        if sleep.totalAsleepHours < 6.0 {
-            return [DayObservation(
-                icon: "bed.double.fill",
-                iconColor: .orange,
-                headline: "Short sleep night (\(formatHours(sleep.totalAsleepHours)))",
-                detail: "Poor sleep is associated with higher tremor severity the following day.",
-                sentiment: .negative
-            )]
+        if let mins = daylightMinutes, mins < 20 {
+            out.append(DayObservation(
+                icon: "sun.max.fill", iconColor: .orange,
+                headline: "Little time in daylight (\(Int(mins))m)",
+                detail: "Light exposure anchors your circadian rhythm and supports sleep quality, which in turn influence next-day motor symptoms.",
+                sentiment: .neutral
+            ).at(anchor.addingTimeInterval(1)))
         }
 
-        if sleep.deepHours < 0.5 {
-            return [DayObservation(
-                icon: "bed.double.fill",
-                iconColor: .orange,
-                headline: "Low deep sleep (\(formatHours(sleep.deepHours)))",
-                detail: "Deep sleep supports motor recovery — this may have affected today's tremor baseline.",
-                sentiment: .negative
-            )]
-        }
-
-        return []
+        return out
     }
 
     // MARK: Helpers
 
     private static func windowAvg(
-        _ readings: [TremorReading], from start: Date, to end: Date, minCount: Int = 2
+        _ readings: [TremorReading], from start: Date, to end: Date,
+        minCount: Int = 2, metric: KeyPath<TremorReading, Double> = \.tremorScore
     ) -> Double? {
         let window = readings.filter { $0.timestamp >= start && $0.timestamp < end }
         guard window.count >= minCount else { return nil }
-        return window.map(\.tremorScore).reduce(0, +) / Double(window.count)
+        return window.map { $0[keyPath: metric] }.reduce(0, +) / Double(window.count)
     }
 
     private static func fmt(_ value: Double) -> String {
@@ -366,12 +420,14 @@ struct ObservationsPanel: View {
     let events: [DayEvent]
     let foodEvents: [FoodEvent]
     let sleep: SleepBreakdown?
-    let hrv: Double?
+    let hrvSamples: [HRVSample]
+    let daylightMinutes: Double?
 
     private var observations: [DayObservation] {
         ObservationEngine.generate(
             readings: readings, events: events,
-            foodEvents: foodEvents, sleep: sleep, hrv: hrv
+            foodEvents: foodEvents, sleep: sleep,
+            hrvSamples: hrvSamples, daylightMinutes: daylightMinutes
         )
     }
 

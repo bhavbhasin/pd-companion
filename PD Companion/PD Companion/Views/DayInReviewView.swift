@@ -24,8 +24,7 @@ struct DayInReviewView: View {
                     GlanceCard(
                         sleep: healthKit.daySleep,
                         tremorReadings: dayReadings,
-                        hrv: healthKit.dayHRV,
-                        daylightMinutes: healthKit.dayDaylightMinutes
+                        hrv: healthKit.dayHRV
                     )
                     TremorTimelinePanel(
                         readings: dayReadings,
@@ -34,13 +33,17 @@ struct DayInReviewView: View {
                         dayEnd: dayEnd,
                         onEventTap: { selectedEvent = $0 }
                     )
-                    SleepStagesPanel(sleep: healthKit.daySleep)
+                    SleepStagesPanel(
+                        sleep: healthKit.daySleep,
+                        daylightMinutes: healthKit.dayDaylightMinutes
+                    )
                     ObservationsPanel(
                         readings: dayReadings,
                         events: allDayEvents,
                         foodEvents: dayFoodEvents,
                         sleep: healthKit.daySleep,
-                        hrv: healthKit.dayHRV
+                        hrvSamples: healthKit.dayHRVSamples,
+                        daylightMinutes: healthKit.dayDaylightMinutes
                     )
                 }
                 .padding()
@@ -234,7 +237,6 @@ private struct GlanceCard: View {
     let sleep: SleepBreakdown?
     let tremorReadings: [TremorReading]
     let hrv: Double?
-    let daylightMinutes: Double?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -247,8 +249,8 @@ private struct GlanceCard: View {
             HStack(spacing: 16) {
                 stat(icon: "bolt.heart.fill", color: .purple,
                      value: hrvValue, sub: "HRV")
-                stat(icon: "sun.max.fill", color: .orange,
-                     value: daylightValue, sub: "In daylight")
+                stat(icon: "waveform.path", color: dyskinesiaColor,
+                     value: dyskinesiaValue, sub: dyskinesiaLabel)
             }
         }
         .padding()
@@ -310,11 +312,35 @@ private struct GlanceCard: View {
         return "\(Int(hrv)) ms"
     }
 
-    private var daylightValue: String {
-        guard let mins = daylightMinutes, mins > 0 else { return "—" }
-        if mins < 60 { return "\(Int(mins))m" }
-        let h = Int(mins / 60); let m = Int(mins) % 60
-        return m == 0 ? "\(h)h" : "\(h)h \(m)m"
+    private var avgDyskinesia: Double? {
+        guard !tremorReadings.isEmpty else { return nil }
+        return tremorReadings.reduce(0.0) { $0 + $1.dyskinesiaScore } / Double(tremorReadings.count)
+    }
+
+    private var dyskinesiaValue: String {
+        guard let v = avgDyskinesia else { return "—" }
+        return String(format: "%.1f", v)
+    }
+
+    private var dyskinesiaLabel: String {
+        guard let v = avgDyskinesia else { return "No movement data" }
+        switch v {
+        case ..<0.5: return "Dyskinesia: None"
+        case ..<1.5: return "Dyskinesia: Slight"
+        case ..<2.5: return "Dyskinesia: Mild"
+        case ..<3.5: return "Dyskinesia: Moderate"
+        default:     return "Dyskinesia: Strong"
+        }
+    }
+
+    private var dyskinesiaColor: Color {
+        guard let v = avgDyskinesia else { return .secondary }
+        switch v {
+        case ..<0.5: return .secondary
+        case ..<1.5: return .yellow
+        case ..<2.5: return .orange
+        default:     return .pink
+        }
     }
 }
 
@@ -572,6 +598,7 @@ private struct TremorTimelinePanel: View {
 
 private struct SleepStagesPanel: View {
     let sleep: SleepBreakdown?
+    let daylightMinutes: Double?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -628,10 +655,26 @@ private struct SleepStagesPanel: View {
                     .font(.subheadline).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
             }
+
+            if let mins = daylightMinutes, mins > 0 {
+                Divider().padding(.vertical, 2)
+                HStack(spacing: 6) {
+                    Image(systemName: "sun.max.fill")
+                        .foregroundStyle(.orange).font(.caption)
+                    Text("\(daylightText(mins)) in daylight")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
         }
         .padding()
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func daylightText(_ mins: Double) -> String {
+        if mins < 60 { return "\(Int(mins))m" }
+        let h = Int(mins / 60); let m = Int(mins) % 60
+        return m == 0 ? "\(h)h" : "\(h)h \(m)m"
     }
 
     private func stageColor(_ stage: SleepStage) -> Color {

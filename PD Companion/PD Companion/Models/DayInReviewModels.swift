@@ -2,6 +2,11 @@ import Foundation
 import HealthKit
 import SwiftUI
 
+struct HRVSample: Equatable {
+    let timestamp: Date
+    let value: Double   // SDNN, milliseconds
+}
+
 struct SleepBreakdown: Equatable {
     var totalAsleepHours: Double
     var deepHours: Double
