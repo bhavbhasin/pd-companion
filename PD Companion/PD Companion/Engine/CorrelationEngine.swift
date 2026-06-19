@@ -1,0 +1,569 @@
+import Foundation
+
+// MARK: - Correlation engine (Swift port of the Python lab)
+//
+// Deterministic statistics on the patient's own timeline — NOT machine learning.
+// The engine computes; narration/LLM comes later. This is the Swift + Accelerate
+// port of the validated `analysis/` lab. Plain Swift is used where the work is
+// event-alignment/binning (clearer + correct); Accelerate/vDSP can optimize the
+// bulk reductions later without changing results.
+//
+// PURE: takes arrays in, returns [Insight] out. No HealthKit / SwiftData access
+// here — data plumbing (multi-day dose fetch) and view wiring live elsewhere, so
+// this stays unit-testable for parity against the Python output.
+//
+// Parity targets (from analysis/NOTES.md, 18-06-2026 backup):
+//   • afternoon onset ~67 min vs morning ~38 min
+//   • KM median ON-duration ~192 min   (wearing-off module — next step)
+
+/// A levodopa dose event (Sinemet / Mucuna). In the app these come from HealthKit;
+/// in tests they come from the CSV backup. `Sendable` so it can be handed to the
+/// engine on a background thread.
+struct Dose: Sendable {
+    let timestamp: Date
+    let name: String
+}
+
+/// A lightweight, `Sendable` snapshot of a tremor reading — only the fields the
+/// engine reads. The app maps its SwiftData `TremorReading`s into these *on the main
+/// actor*, so the engine can run off the main thread without ever touching managed
+/// objects (which are not thread-safe). Keeps the engine fully decoupled from
+/// SwiftData, as its header promises.
+struct TremorPoint: Sendable {
+    let timestamp: Date
+    let tremorScore: Double
+}
+
+// `nonisolated`: the project defaults types to `@MainActor` isolation
+// (SWIFT_DEFAULT_ACTOR_ISOLATION). The engine is pure, stateless computation that we
+// deliberately run off the main thread — so it must opt out of main-actor isolation.
+nonisolated enum CorrelationEngine {
+
+    /// Calendar used for all time-of-day bucketing. Defaults to the device's
+    /// calendar (= the patient's local time); tests override it to pin a timezone
+    /// so parity against the Pacific-based Python lab is deterministic.
+    /// `nonisolated(unsafe)`: single-writer (only a test sets it, before running) —
+    /// the app never mutates it, so there is no concurrent access to guard.
+    nonisolated(unsafe) static var calendar: Calendar = .current
+
+    // Entry point: run every module, return the surfaced insights.
+    static func generateInsights(samples: [TremorPoint], doses: [Dose]) -> [Insight] {
+        var out: [Insight] = []
+        if let afternoon = afternoonDoseInsight(samples: samples, doses: doses) {
+            out.append(afternoon)
+        }
+        if let wearingOff = wearingOffInsight(samples: samples, doses: doses) {
+            out.append(wearingOff)
+        }
+        return out
+    }
+}
+
+// MARK: - Dose-response (port of analysis/src/dose_response.py)
+
+nonisolated extension CorrelationEngine {
+
+    // Tunables mirror the Python constants exactly.
+    static let preMin = 30.0       // baseline window before the dose
+    static let postMin = 180.0     // max trajectory window after the dose
+    static let binMin = 5.0        // resampling resolution relative to dose
+    static let keyWindow = 90.0    // window we require coverage in (onset happens here)
+    static let minCoverage = 0.5   // require >=50% of key-window bins present
+
+    enum Bucket: String, CaseIterable {
+        case morning = "Morning"
+        case preLunch = "Pre-lunch"
+        case afternoon = "Afternoon"
+        case eveningNight = "Evening/Night"
+    }
+
+    struct DoseTrace {
+        let t0: Date
+        let hour: Double
+        let bucket: Bucket
+        let baseline: Double
+        let trough: Double
+        let drop: Double
+        let tTrough: Double
+        let tHalf: Double      // onset latency proxy; .nan if the drop never reaches 50%
+        let coverage: Double
+        let postEff: Double
+        // Raw (pre-smoothing) per-bin tremor on the shared [-preMin, postMin) grid,
+        // .nan where a bin had no readings. Retained so curves can be aggregated
+        // across doses without re-binning; bin centers are `binCenters(-preMin, postMin)`.
+        let binValues: [Double]
+    }
+
+    static func bucketOf(_ hour: Double) -> Bucket {
+        switch hour {
+        case 6..<9.5:    return .morning
+        case 9.5..<12.5: return .preLunch
+        case 12.5..<17:  return .afternoon
+        default:         return .eveningNight   // 17–24 and 0–6 (wrap)
+        }
+    }
+
+    /// Local wall-clock hour (+ minute fraction). Time-of-day questions are
+    /// meaningless in UTC, so we read components in the device's calendar — the
+    /// Swift equivalent of the Python loader's tz-convert to Pacific.
+    static func hourOfDay(_ date: Date) -> Double {
+        let c = calendar.dateComponents([.hour, .minute], from: date)
+        return Double(c.hour ?? 0) + Double(c.minute ?? 0) / 60.0
+    }
+
+    /// Build one trace per dose that has adequate tremor coverage.
+    static func buildTraces(samples: [TremorPoint], doses: [Dose]) -> [DoseTrace] {
+        let series = samples.sorted { $0.timestamp < $1.timestamp }
+        let ds = doses.sorted { $0.timestamp < $1.timestamp }
+        var traces: [DoseTrace] = []
+
+        for (i, dose) in ds.enumerated() {
+            let t0 = dose.timestamp
+
+            // Guard 1: truncate the post window at the next dose.
+            let postEff: Double
+            if i + 1 < ds.count {
+                let gap = ds[i + 1].timestamp.timeIntervalSince(t0) / 60.0
+                postEff = min(postMin, max(0, gap))
+            } else {
+                postEff = postMin
+            }
+
+            let lo = t0.addingTimeInterval(-preMin * 60)
+            let hi = t0.addingTimeInterval(postEff * 60)
+            let win = series.filter { $0.timestamp >= lo && $0.timestamp <= hi }
+            if win.count < 3 { continue }
+
+            let rel = win.map { $0.timestamp.timeIntervalSince(t0) / 60.0 }
+            let vals = win.map { $0.tremorScore }
+            let (centers, binnedVals) = binned(rel: rel, vals: vals, lo: -preMin, hi: postMin)
+
+            // Coverage in the clinically key [0, min(keyWindow, postEff)] window.
+            let keyHi = min(keyWindow, postEff)
+            var keyTotal = 0, keyPresent = 0
+            for (idx, c) in centers.enumerated() where c >= 0 && c <= keyHi {
+                keyTotal += 1
+                if !binnedVals[idx].isNaN { keyPresent += 1 }
+            }
+            let coverage = Double(keyPresent) / Double(max(1, keyTotal))
+            if coverage < minCoverage { continue }
+
+            // Baseline = mean of pre-dose bins in [-preMin, 0).
+            var baseSum = 0.0, baseN = 0
+            for idx in centers.indices where centers[idx] >= -preMin && centers[idx] < 0 && !binnedVals[idx].isNaN {
+                baseSum += binnedVals[idx]; baseN += 1
+            }
+            if baseN == 0 { continue }
+            let baseline = baseSum / Double(baseN)
+
+            let sm = smooth(binnedVals)
+            var postCenters: [Double] = [], postVals: [Double] = []
+            for (idx, c) in centers.enumerated() where c > 0 && c <= postEff {
+                postCenters.append(c); postVals.append(sm[idx])
+            }
+            if postVals.allSatisfy({ $0.isNaN }) { continue }
+
+            // Trough = smoothed minimum post-dose (nanargmin).
+            var ti = -1; var minV = Double.infinity
+            for (k, v) in postVals.enumerated() where !v.isNaN && v < minV { minV = v; ti = k }
+            if ti < 0 { continue }
+            let trough = postVals[ti]
+            let tTrough = postCenters[ti]
+            let drop = baseline - trough
+
+            // Onset latency proxy: first post-dose time reaching 50% of the drop.
+            var tHalf = Double.nan
+            if drop > 0 {
+                let target = baseline - 0.5 * drop
+                var best = Double.infinity
+                for k in postVals.indices where !postVals[k].isNaN && postVals[k] <= target {
+                    if postCenters[k] < best { best = postCenters[k] }
+                }
+                if best.isFinite { tHalf = best }
+            }
+
+            let hour = hourOfDay(t0)
+            traces.append(DoseTrace(
+                t0: t0, hour: hour, bucket: bucketOf(hour),
+                baseline: baseline, trough: trough, drop: drop,
+                tTrough: tTrough, tHalf: tHalf, coverage: coverage, postEff: postEff,
+                binValues: binnedVals
+            ))
+        }
+        return traces
+    }
+
+    /// The afternoon-dose finding, or nil if the pattern doesn't clear the gate.
+    static func afternoonDoseInsight(samples: [TremorPoint], doses: [Dose]) -> Insight? {
+        let traces = buildTraces(samples: samples, doses: doses)
+
+        func onset(_ bucket: Bucket) -> (mean: Double, n: Int) {
+            let xs = traces.filter { $0.bucket == bucket && !$0.tHalf.isNaN }.map { $0.tHalf }
+            return (nanmean(xs), xs.count)
+        }
+        let aft = onset(.afternoon)
+        let morn = onset(.morning)
+
+        // Surfacing gate (logic-based; see Insights design): need enough afternoon
+        // doses, a morning comparator, and a meaningfully slower afternoon onset.
+        guard aft.n >= 5, morn.n >= 3, !aft.mean.isNaN, !morn.mean.isNaN else { return nil }
+        let delta = aft.mean - morn.mean
+        guard delta >= 15 else { return nil }
+
+        let confidence: Insight.Confidence =
+            (aft.n >= 20 && delta >= 25) ? .strong :
+            (aft.n >= 10 && delta >= 20) ? .moderate : .emerging
+
+        let scored = traces.filter { !$0.tHalf.isNaN }.count
+        let days = Set(traces.map { calendar.startOfDay(for: $0.t0) }).count
+        let aftMin = Int(aft.mean.rounded())
+        let mornMin = Int(morn.mean.rounded())
+
+        // Single string literals (no `+` chains — those blow up Swift's type-checker).
+        let summary = "Takes ~\(aftMin) min to kick in vs. ~\(mornMin) min in the morning — but lasts a normal length."
+        let finding = "It also peaks weaker, while duration stays normal — so the issue is getting the dose *in*, not it wearing off early. From \(scored) scored doses over \(days) days."
+        let mechanism = "Levodopa is absorbed in the gut and enters the brain through the same transporter dietary protein uses, so a protein lunch can slow and blunt the dose after it. PD also slows stomach emptying, more after meals and later in the day. Both point to one lever you control: when you eat relative to the dose. Likely, not proven."
+
+        return Insight(
+            title: "Your afternoon dose works slower",
+            summary: summary,
+            stage: .hypothesis,
+            finding: finding,
+            mechanism: mechanism,
+            confidence: confidence,
+            evidenceDays: days,
+            chart: doseResponseChart(traces: traces)
+        )
+    }
+
+    /// Plot-ready overlay of mean tremor-vs-time curves, one per daytime bucket
+    /// (the morning-vs-afternoon contrast the card describes). Evening/night is
+    /// omitted — it's sleep-confounded and not part of the story.
+    static func doseResponseChart(traces: [DoseTrace]) -> InsightChart {
+        let centers = binCenters(lo: -preMin, hi: postMin)
+        var curves: [DoseCurve] = []
+        for bucket in [Bucket.morning, .preLunch, .afternoon] {
+            let inBucket = traces.filter { $0.bucket == bucket }
+            guard inBucket.count >= 3 else { continue }   // too few to mean meaningfully
+            curves.append(DoseCurve(
+                label: bucket.rawValue,
+                bucket: bucket,
+                doseCount: inBucket.count,
+                points: aggregateCurve(series: inBucket.map(\.binValues), centers: centers)
+            ))
+        }
+        return .doseResponse(DoseResponseChart(curves: curves, threshold: offThreshold, doseMinute: 0))
+    }
+}
+
+// MARK: - Wearing-off / ON-duration (port of analysis/src/wearing_off.py)
+
+nonisolated extension CorrelationEngine {
+
+    static let offThreshold = 1.0   // tremor >= this == OFF
+    static let maxWindow = 300.0    // look up to 5h post-dose for the natural decay
+    static let gapIso = 240.0       // "isolated" dose = next dose >= this many min away
+    static let sustainBins = 2      // consecutive OFF bins required to call OFF-return
+
+    struct DoseDuration {
+        let t0: Date
+        let hour: Double
+        let bucket: Bucket
+        let baseline: Double
+        let trough: Double
+        let intervalMin: Double   // to next dose; .nan if last of the series
+        let durationMin: Double   // dose → OFF-return (or censor time)
+        let observed: Bool        // true = OFF-return seen; false = right-censored
+        let isolated: Bool        // eligible for the canonical curve
+        // SMOOTHED (k=3, nan-aware) per-bin tremor on the [-preMin, maxWindow) grid,
+        // for the canonical wearing-off curve. Smoothed (not raw) to match the Python
+        // lab, whose iso_traces averages the smoothed per-dose series.
+        let binValues: [Double]
+    }
+
+    static func analyzeWearingOff(samples: [TremorPoint], doses: [Dose]) -> [DoseDuration] {
+        let series = samples.sorted { $0.timestamp < $1.timestamp }
+        let ds = doses.sorted { $0.timestamp < $1.timestamp }
+        var results: [DoseDuration] = []
+
+        for (i, dose) in ds.enumerated() {
+            let t0 = dose.timestamp
+            var interval = Double.nan
+            if i + 1 < ds.count { interval = ds[i + 1].timestamp.timeIntervalSince(t0) / 60.0 }
+            let isolated = interval.isNaN || interval >= gapIso
+
+            let lo = t0.addingTimeInterval(-preMin * 60)
+            let hi = t0.addingTimeInterval(maxWindow * 60)
+            let win = series.filter { $0.timestamp >= lo && $0.timestamp <= hi }
+            if win.count < 4 { continue }
+
+            let rel = win.map { $0.timestamp.timeIntervalSince(t0) / 60.0 }
+            let vals = win.map { $0.tremorScore }
+            let (centers, rawBins) = binned(rel: rel, vals: vals, lo: -preMin, hi: maxWindow)
+            let sm = smooth(rawBins)
+
+            // Baseline (smoothed) over pre-dose bins.
+            var baseSum = 0.0, baseN = 0
+            for idx in centers.indices where centers[idx] >= -preMin && centers[idx] < 0 && !sm[idx].isNaN {
+                baseSum += sm[idx]; baseN += 1
+            }
+            let baseline = baseN > 0 ? baseSum / Double(baseN) : Double.nan
+
+            // Trough = smoothed minimum post-dose; skip if no post coverage.
+            var trough = Double.infinity, anyPost = false
+            for idx in centers.indices where centers[idx] > 0 && !sm[idx].isNaN {
+                anyPost = true
+                if sm[idx] < trough { trough = sm[idx] }
+            }
+            if !anyPost { continue }
+
+            // Observation horizon: truncate at the next dose.
+            let horizon = interval.isNaN ? maxWindow : min(maxWindow, interval)
+            let (duration, observed) = offReturn(centers: centers, sm: sm, horizon: horizon, thr: offThreshold)
+
+            let hour = hourOfDay(t0)
+            results.append(DoseDuration(
+                t0: t0, hour: hour, bucket: bucketOf(hour),
+                baseline: baseline, trough: trough, intervalMin: interval,
+                durationMin: duration, observed: observed, isolated: isolated,
+                binValues: sm   // smoothed series → canonical curve (Python parity)
+            ))
+        }
+        return results
+    }
+
+    /// Time from dose to a sustained OFF-return after control is achieved; else
+    /// censored at the horizon. Mirrors `wearing_off._off_return`.
+    static func offReturn(centers: [Double], sm: [Double], horizon: Double, thr: Double) -> (Double, Bool) {
+        var cc: [Double] = [], yy: [Double] = []
+        for idx in centers.indices where centers[idx] > 0 && centers[idx] <= horizon {
+            cc.append(centers[idx]); yy.append(sm[idx])
+        }
+        if cc.isEmpty || yy.allSatisfy({ $0.isNaN }) { return (horizon, false) }
+
+        // Did the dose achieve control (drop below threshold) at all?
+        var minY = Double.infinity
+        for v in yy where !v.isNaN && v < minY { minY = v }
+        if !(minY < thr) { return (horizon, false) }
+
+        guard let onI = yy.firstIndex(where: { !$0.isNaN && $0 < thr }) else { return (horizon, false) }
+        var run = 0
+        for j in onI..<yy.count {
+            if !yy[j].isNaN && yy[j] >= thr {
+                run += 1
+                if run >= sustainBins { return (cc[j - sustainBins + 1], true) }
+            } else {
+                run = 0
+            }
+        }
+        return (cc[cc.count - 1], false)
+    }
+
+    /// Kaplan–Meier median survival with right-censoring (hand-rolled; the Python
+    /// lab uses statsmodels SurvfuncRight). Returns the first event time where the
+    /// survival estimate drops to <= 0.5.
+    static func kmMedian(durations: [Double], observed: [Bool]) -> Double {
+        var time: [Double] = [], event: [Bool] = []
+        for (d, o) in zip(durations, observed) where !d.isNaN && d > 0 { time.append(d); event.append(o) }
+        if time.isEmpty { return .nan }
+
+        let eventTimes = Set(zip(time, event).filter { $0.1 }.map { $0.0 }).sorted()
+        var surv = 1.0
+        for t in eventTimes {
+            let nAtRisk = time.filter { $0 >= t }.count
+            if nAtRisk == 0 { break }
+            var d = 0
+            for (tt, ev) in zip(time, event) where ev && tt == t { d += 1 }
+            surv *= 1 - Double(d) / Double(nAtRisk)
+            if surv <= 0.5 { return t }
+        }
+        return .nan
+    }
+
+    /// The wearing-off insight (the "discuss with your neurologist" card), or nil.
+    static func wearingOffInsight(samples: [TremorPoint], doses: [Dose]) -> Insight? {
+        let results = analyzeWearingOff(samples: samples, doses: doses)
+        guard results.count >= 20 else { return nil }
+
+        let km = kmMedian(durations: results.map(\.durationMin), observed: results.map(\.observed))
+        guard !km.isNaN else { return nil }
+
+        // Daytime inter-dose gaps (exclude overnight gaps > 600 min).
+        var dayIntervals: [Double] = []
+        for r in results where r.hour >= 6 && r.hour < 20 && !r.intervalMin.isNaN && r.intervalMin < 600 {
+            dayIntervals.append(r.intervalMin)
+        }
+        let medInterval = median(dayIntervals)
+        // Gate: the gap between doses must exceed how long a dose lasts.
+        guard !medInterval.isNaN, medInterval > km else { return nil }
+
+        let durH = String(format: "%.1f", km / 60)
+        let gapH = String(format: "%.0f", medInterval / 60)
+        let kmMin = Int(km.rounded())
+        let gapMin = Int(medInterval.rounded())
+        let observedCount = results.filter { $0.observed }.count
+        let days = Set(results.map { calendar.startOfDay(for: $0.t0) }).count
+        let confidence: Insight.Confidence = results.count >= 40 ? .strong : .moderate
+
+        let summary = "Daytime gaps (~\(gapH) h) exceed how long each dose lasts (~\(durH) h), opening predictable OFF windows."
+        let finding = "Each dose holds for a median of \(kmMin) min (about \(durH) h), but your daytime doses are spaced ~\(gapH) h apart — so tremor returns before the next dose. From \(results.count) doses over \(days) days."
+        let consider = "When the gap between doses is longer than a dose lasts, predictable OFF windows open up. Neurologists have several levers for this — for example adjusting dose timing or frequency, or a longer-acting formulation. These are decisions only your neurologist can make. The value here is bringing them this pattern, with the data behind it."
+        let bring = [
+            "Median ON-duration: \(kmMin) min (Kaplan–Meier, n=\(results.count) doses)",
+            "Median daytime gap between doses: ~\(gapH) h (\(gapMin) min)",
+            "\(observedCount) of \(results.count) doses observed wearing off before the next dose",
+        ]
+
+        return Insight(
+            title: "Your doses are spaced wider than they last",
+            summary: summary,
+            stage: .clinicalDiscussion,
+            finding: finding,
+            mechanism: "This is the classic wearing-off pattern: the interval between doses is longer than a single dose lasts.",
+            confidence: confidence,
+            evidenceDays: days,
+            chart: wearingOffChart(results: results, km: km),
+            clinical: ClinicalDiscussion(whatTheyMightConsider: consider, bringThisData: bring)
+        )
+    }
+
+    /// The canonical single-dose response curve (mean tremor vs minutes since dose)
+    /// averaged across *isolated* doses, plus the reference levels the card annotates:
+    /// the pre-dose baseline, the OFF threshold, the deepest-ON minute, and the KM
+    /// median ON-duration (where tremor is expected to have crossed back into OFF).
+    static func wearingOffChart(results: [DoseDuration], km: Double) -> InsightChart {
+        let isolated = results.filter { $0.isolated }
+        let centers = binCenters(lo: -preMin, hi: maxWindow)
+        let points = aggregateCurve(series: isolated.map(\.binValues), centers: centers)
+
+        let preVals = points.filter { $0.minute < 0 && !$0.value.isNaN }.map(\.value)
+        let baseline = nanmean(preVals)
+
+        // Deepest ON = minute of the lowest post-dose point on the mean curve.
+        let postPts = points.filter { $0.minute > 0 && !$0.value.isNaN }
+        let bestOnMinute = postPts.min(by: { $0.value < $1.value })?.minute ?? .nan
+
+        let curve = DoseCurve(label: "Typical dose", bucket: nil, doseCount: isolated.count, points: points)
+        return .wearingOff(WearingOffChart(
+            curve: curve, threshold: offThreshold, baseline: baseline,
+            bestOnMinute: bestOnMinute, medianDurationMin: km
+        ))
+    }
+
+    static func median(_ xs: [Double]) -> Double {
+        let s = xs.sorted(); let n = s.count
+        if n == 0 { return .nan }
+        return n % 2 == 1 ? s[n / 2] : (s[n / 2 - 1] + s[n / 2]) / 2
+    }
+}
+
+// MARK: - Chart data (plot-ready engine output)
+//
+// Pure values (Foundation only) so the engine stays UI-free and parity-testable.
+// The SwiftUI chart view consumes these; the engine never imports SwiftUI/Charts.
+// All curves are expressed in minutes *relative to the dose* (t=0 = dose taken).
+
+nonisolated extension CorrelationEngine {
+
+    /// One point on an aggregated curve: mean tremor at a minute offset, plus how
+    /// many doses contributed (so the view can fade or drop thin-evidence tails —
+    /// e.g. afternoon doses truncated by the evening dose have falling `n`).
+    struct CurvePoint {
+        let minute: Double
+        let value: Double   // mean tremor across contributing doses; .nan if none
+        let n: Int
+    }
+
+    /// A mean tremor trajectory for one group of doses (a time-of-day bucket, or
+    /// the pooled "typical dose" for the wearing-off curve).
+    struct DoseCurve: Identifiable {
+        let label: String       // "Morning" / "Afternoon" / "Typical dose"
+        let bucket: Bucket?     // nil for the pooled wearing-off curve
+        let doseCount: Int
+        let points: [CurvePoint]
+        var id: String { label }
+    }
+
+    /// Overlay of per-bucket curves for the afternoon-dose card.
+    struct DoseResponseChart {
+        let curves: [DoseCurve]
+        let threshold: Double    // OFF reference line
+        let doseMinute: Double   // x where the dose was taken (0)
+    }
+
+    /// The canonical levodopa response for the wearing-off card.
+    struct WearingOffChart {
+        let curve: DoseCurve
+        let threshold: Double          // OFF reference line
+        let baseline: Double           // pre-dose mean tremor
+        let bestOnMinute: Double       // deepest-ON point on the mean curve
+        let medianDurationMin: Double  // KM median ON-duration (vertical marker)
+    }
+
+    /// Plot-ready payload attached to an `Insight`. Each case maps to one chart view.
+    enum InsightChart {
+        case doseResponse(DoseResponseChart)
+        case wearingOff(WearingOffChart)
+    }
+
+    /// Bin centers for a [lo, hi) grid at `binMin` resolution — the same grid
+    /// `binned(...)` produces, so stored `binValues` align index-for-index.
+    static func binCenters(lo: Double, hi: Double) -> [Double] {
+        let n = Int((hi - lo) / binMin)
+        return (0..<n).map { lo + Double($0) * binMin + binMin / 2 }
+    }
+
+    /// Mean-of-means across per-dose binned trajectories on a shared grid. Each
+    /// dose is weighted equally (one trajectory, one vote) and bins are nan-aware,
+    /// so the result is the average dose response, not a reading-count-weighted one.
+    static func aggregateCurve(series: [[Double]], centers: [Double]) -> [CurvePoint] {
+        centers.indices.map { i in
+            var sum = 0.0, c = 0
+            for s in series where i < s.count && !s[i].isNaN { sum += s[i]; c += 1 }
+            return CurvePoint(minute: centers[i], value: c > 0 ? sum / Double(c) : .nan, n: c)
+        }
+    }
+}
+
+// MARK: - NaN-aware numeric helpers (mirror numpy's nan* semantics)
+
+nonisolated extension CorrelationEngine {
+
+    /// Mean-bin `vals` by relative minute into binMin bins over [-preMin, postMin),
+    /// returning bin centers and per-bin means (.nan where a bin is empty).
+    static func binned(rel: [Double], vals: [Double], lo: Double, hi: Double) -> (centers: [Double], values: [Double]) {
+        let n = Int((hi - lo) / binMin)
+        var sums = [Double](repeating: 0, count: n)
+        var counts = [Int](repeating: 0, count: n)
+        for (r, v) in zip(rel, vals) {
+            let idx = Int(((r - lo) / binMin).rounded(.down))
+            if idx >= 0 && idx < n { sums[idx] += v; counts[idx] += 1 }
+        }
+        var centers = [Double](repeating: 0, count: n)
+        var out = [Double](repeating: .nan, count: n)
+        for i in 0..<n {
+            centers[i] = lo + Double(i) * binMin + binMin / 2
+            if counts[i] > 0 { out[i] = sums[i] / Double(counts[i]) }
+        }
+        return (centers, out)
+    }
+
+    /// Light nan-aware centered moving average (k=3), for trough finding.
+    static func smooth(_ y: [Double]) -> [Double] {
+        let n = y.count
+        var out = [Double](repeating: .nan, count: n)
+        for i in 0..<n {
+            let lo = max(0, i - 1), hi = min(n - 1, i + 1)
+            var s = 0.0, c = 0
+            for j in lo...hi where !y[j].isNaN { s += y[j]; c += 1 }
+            if c > 0 { out[i] = s / Double(c) }
+        }
+        return out
+    }
+
+    static func nanmean(_ xs: [Double]) -> Double {
+        var s = 0.0, c = 0
+        for v in xs where !v.isNaN { s += v; c += 1 }
+        return c > 0 ? s / Double(c) : .nan
+    }
+}

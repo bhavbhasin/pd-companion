@@ -12,7 +12,6 @@ struct DayInReviewView: View {
     @State private var selectedDate: Date = Calendar.current.startOfDay(
         for: Date().addingTimeInterval(-86400)
     )
-    @State private var showingWatchStatus = false
     @State private var showingLogSheet = false
     @State private var selectedEvent: DayEvent?
     @State private var showingBackup = false
@@ -74,19 +73,13 @@ struct DayInReviewView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showingWatchStatus = true
+                    NavigationLink {
+                        InsightsView()
                     } label: {
-                        Image(systemName: watchStatus.icon)
-                            .foregroundStyle(watchStatus.color)
-                            .accessibilityLabel(watchStatus.title)
+                        Image(systemName: "lightbulb.max")
+                            .accessibilityLabel("Insights")
                     }
                 }
-            }
-            .alert(watchStatus.title, isPresented: $showingWatchStatus) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(watchStatus.guidance)
             }
             .sheet(isPresented: $showingLogSheet) {
                 LogEntrySheet { loggedDate in
@@ -107,46 +100,6 @@ struct DayInReviewView: View {
                 await healthKit.fetchDayInReview(for: selectedDate)
             }
         }
-    }
-
-    private struct WatchStatus {
-        let icon: String
-        let color: Color
-        let title: String
-        let guidance: String
-    }
-
-    private var watchStatus: WatchStatus {
-        if !connectivity.isWatchPaired {
-            return WatchStatus(
-                icon: "applewatch.slash",
-                color: .secondary,
-                title: "No Apple Watch paired",
-                guidance: "Pair an Apple Watch with this iPhone using the Watch app to start tracking tremor data."
-            )
-        }
-        if !connectivity.isWatchAppInstalled {
-            return WatchStatus(
-                icon: "applewatch.slash",
-                color: .secondary,
-                title: "Watch app not installed",
-                guidance: "Open the Watch app on iPhone → My Watch → find PD Companion → tap Install."
-            )
-        }
-        if connectivity.isWatchReachable {
-            return WatchStatus(
-                icon: "applewatch.radiowaves.left.and.right",
-                color: .green,
-                title: "Watch connected",
-                guidance: "Tremor data syncs automatically in the background. No action needed."
-            )
-        }
-        return WatchStatus(
-            icon: "applewatch",
-            color: .orange,
-            title: "Watch not currently reachable",
-            guidance: "Your Watch is paired but not actively connected. Data will resume syncing on its own once the connection restores — usually within an hour."
-        )
     }
 
     private var dayStart: Date { Calendar.current.startOfDay(for: selectedDate) }
@@ -599,19 +552,32 @@ private struct TremorTimelinePanel: View {
 private struct SleepStagesPanel: View {
     let sleep: SleepBreakdown?
     let daylightMinutes: Double?
+    // Collapsed by default: total sleep already shows in the glance card, so the
+    // hypnogram detail is opt-in. The interruptions badge stays visible collapsed —
+    // it's the one sleep datum not surfaced elsewhere.
+    @State private var expanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Sleep").font(.headline)
-                Spacer()
-                if let s = sleep, s.interruptions > 0 {
-                    Label("\(s.interruptions) interruption\(s.interruptions == 1 ? "" : "s")",
-                          systemImage: "exclamationmark.circle")
-                        .font(.caption).foregroundStyle(.orange).labelStyle(.titleAndIcon)
+            Button {
+                withAnimation(.snappy) { expanded.toggle() }
+            } label: {
+                HStack {
+                    Text("Sleep").font(.headline).foregroundStyle(.primary)
+                    Spacer()
+                    if let s = sleep, s.interruptions > 0 {
+                        Label("\(s.interruptions) interruption\(s.interruptions == 1 ? "" : "s")",
+                              systemImage: "exclamationmark.circle")
+                            .font(.caption).foregroundStyle(.orange).labelStyle(.titleAndIcon)
+                    }
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.caption2).foregroundStyle(.tertiary)
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
+            if expanded {
             if let s = sleep, s.hasData, !s.stages.isEmpty {
                 Chart {
                     ForEach(s.stages) { seg in
@@ -665,6 +631,7 @@ private struct SleepStagesPanel: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
+            }   // end if expanded
         }
         .padding()
         .background(.regularMaterial)

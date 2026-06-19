@@ -476,6 +476,23 @@ class HealthKitManager: ObservableObject {
         }
     }
 
+    /// All "taken" levodopa doses (Sinemet / Mucuna) over the last `days` days,
+    /// mapped to the engine's `Dose` type. Mirrors the Python loader's
+    /// levodopa-only + taken-only filter so the correlation engine sees the same
+    /// inputs it was validated against.
+    func fetchLevodopaDoses(days: Int = 120) async -> [Dose] {
+        let end = Date()
+        let start = Calendar.current.date(byAdding: .day, value: -days, to: end)
+            ?? end.addingTimeInterval(-Double(days) * 86400)
+        let raw = await fetchMedicationDosesInRange(from: start, to: end)
+        return raw.compactMap { entry in
+            guard let name = entry.name else { return nil }
+            let key = name.lowercased()
+            guard key.contains("sinemet") || key.contains("mucuna") else { return nil }
+            return Dose(timestamp: entry.time, name: name)
+        }
+    }
+
     private func fetchMedicationDosesInRange(
         from start: Date, to end: Date
     ) async -> [(time: Date, name: String?)] {

@@ -436,7 +436,7 @@ struct ObservationsPanel: View {
             HStack {
                 Image(systemName: "sparkles")
                     .foregroundStyle(.yellow)
-                Text("Observations")
+                Text("Daily Observations")
                     .font(.headline)
             }
 

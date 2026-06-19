@@ -1,0 +1,207 @@
+//
+//  CorrelationEngineParityTests.swift
+//  PD CompanionTests
+//
+//  Trust gate for the Swift port of the Python correlation lab. Runs the engine
+//  on the SAME CSV backup the Python validated against and asserts it reproduces
+//  the lab's numbers. If this is green, the Swift dose-response port is faithful.
+//
+//  Targets captured from `analysis/` (18-06-2026 backup), Pacific time:
+//      buckets/onset (mean t_half): Morning 39.81 · Pre-lunch 36.29 ·
+//                                   Afternoon 66.72 · Evening 43.88
+//      137 traces · 134 with onset · 147 levodopa "taken" doses · 41 days
+//
+//  NOTE: reads Bhav's local backup folder (gitignored health data). On a machine
+//  without it, the test no-ops rather than failing.
+
+import Foundation
+import Testing
+@testable import PD_Companion
+
+struct CorrelationEngineParityTests {
+
+    static let backupDir =
+        "/Users/bhav/Documents/ParkinsonsProject/PD Companion/PD Companion Backups/18-06-2026"
+
+    @Test func engineMatchesPythonLab() throws {
+        // Pin bucketing to Pacific so the test is deterministic regardless of the
+        // machine's timezone (the Python lab works in America/Los_Angeles).
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        CorrelationEngine.calendar = cal
+
+        // Fail loudly if the data isn't reachable — never skip silently (a silent
+        // skip masquerades as a pass). Physical devices can't see the Mac path, so
+        // this test must be run on an iOS Simulator.
+        let tremorPath = try #require(
+            Self.findCSV(prefix: "tremor_readings"),
+            "Backup CSVs not found at \(Self.backupDir). Run this test on an iOS Simulator — a physical device cannot read the Mac filesystem."
+        )
+        let medsPath = try #require(Self.findCSV(prefix: "medication_doses"))
+
+        let samples = try Self.loadTremor(tremorPath)
+        let doses = try Self.loadLevodopaTakenDoses(medsPath)
+
+        #expect(samples.count == 54731, "tremor row count")
+        #expect(doses.count == 147, "levodopa 'taken' dose count")
+
+        let traces = CorrelationEngine.buildTraces(samples: samples, doses: doses)
+        #expect(traces.count == 137, "total dose traces")
+        #expect(traces.filter { !$0.tHalf.isNaN }.count == 134, "traces with onset")
+
+        func onsetMean(_ b: CorrelationEngine.Bucket) -> Double {
+            let xs = traces.filter { $0.bucket == b && !$0.tHalf.isNaN }.map(\.tHalf)
+            return xs.isEmpty ? .nan : xs.reduce(0, +) / Double(xs.count)
+        }
+        // tol 0.5 min: same algorithm, so any real drift means a port bug.
+        #expect(abs(onsetMean(.morning)      - 39.808) < 0.5, "morning onset")
+        #expect(abs(onsetMean(.preLunch)     - 36.293) < 0.5, "pre-lunch onset")
+        #expect(abs(onsetMean(.afternoon)    - 66.719) < 0.5, "afternoon onset")
+        #expect(abs(onsetMean(.eveningNight) - 43.883) < 0.5, "evening onset")
+
+        let days = Set(traces.map { cal.startOfDay(for: $0.t0) }).count
+        #expect(days == 41, "distinct days")
+
+        // The surfaced insight should fire, be Strong, and quote the real numbers.
+        let insight = CorrelationEngine.afternoonDoseInsight(samples: samples, doses: doses)
+        #expect(insight != nil)
+        #expect(insight?.confidence == .strong)
+        #expect(insight?.summary.contains("67") == true)
+        #expect(insight?.summary.contains("40") == true)
+
+        // --- Wearing-off / Kaplan–Meier parity ---
+        let durations = CorrelationEngine.analyzeWearingOff(samples: samples, doses: doses)
+        #expect(durations.count == 147, "dose-duration count")
+        let observed = durations.filter { $0.observed }.count
+        #expect(observed == 101, "observed OFF-returns")
+        #expect(durations.count - observed == 46, "censored")
+        #expect(durations.filter { $0.isolated }.count == 106, "isolated doses")
+
+        let km = CorrelationEngine.kmMedian(
+            durations: durations.map(\.durationMin), observed: durations.map(\.observed))
+        #expect(abs(km - 192.5) < 0.6, "KM median ON-duration")
+
+        var dayIv: [Double] = []
+        for r in durations where r.hour >= 6 && r.hour < 20 && !r.intervalMin.isNaN && r.intervalMin < 600 {
+            dayIv.append(r.intervalMin)
+        }
+        #expect(abs(CorrelationEngine.median(dayIv) - 242.244) < 1.0, "median daytime interval")
+
+        let wInsight = CorrelationEngine.wearingOffInsight(samples: samples, doses: doses)
+        #expect(wInsight != nil)
+        #expect(wInsight?.stage == .clinicalDiscussion)
+        #expect(wInsight?.confidence == .strong)
+
+        // --- Chart data (plot-ready engine output) ---
+        // Dose-response overlay: morning + afternoon curves present, and the morning
+        // curve reaches a deeper ON (lower trough) than the afternoon one — the visual
+        // form of "afternoon works slower / less complete" (NOTES: ~0.0 vs ~0.15).
+        guard case .doseResponse(let dr)? = insight?.chart else {
+            Issue.record("afternoon insight should carry a dose-response chart"); return
+        }
+        func curve(_ label: String) -> CorrelationEngine.DoseCurve? { dr.curves.first { $0.label == label } }
+        let morningCurve = try #require(curve("Morning"))
+        let afternoonCurve = try #require(curve("Afternoon"))
+        func postMin(_ c: CorrelationEngine.DoseCurve) -> Double {
+            c.points.filter { $0.minute > 0 && !$0.value.isNaN }.map(\.value).min() ?? .nan
+        }
+        #expect(postMin(morningCurve) < postMin(afternoonCurve), "morning reaches deeper ON than afternoon")
+        // Bins should sit on the shared grid centers (-27.5 first, 5-min spacing).
+        #expect(abs((morningCurve.points.first?.minute ?? .nan) + 27.5) < 0.001, "first bin center")
+
+        // Wearing-off curve: pooled isolated doses, deepest ON in the expected window,
+        // baseline above the OFF line (doses taken from an OFF state), KM marker = 192.
+        guard case .wearingOff(let wo)? = wInsight?.chart else {
+            Issue.record("wearing-off insight should carry a wearing-off chart"); return
+        }
+        #expect(wo.curve.doseCount == 106, "pooled over isolated doses")
+        #expect(wo.bestOnMinute > 60 && wo.bestOnMinute < 200, "deepest ON in plausible window")
+        #expect(wo.baseline > wo.threshold, "pre-dose baseline is in the OFF range")
+        #expect(abs(wo.medianDurationMin - 192.5) < 0.6, "KM marker matches the headline")
+
+        // --- Decimal curve parity vs the Python lab (anchor points) ---
+        // Reference values captured from analysis/dump_curve_anchors.py on the
+        // 18-06-2026 backup. Dose-response = mean of RAW per-dose bins; wearing-off =
+        // mean of SMOOTHED per-dose bins (matching each Python module). tol 1e-3:
+        // identical arithmetic, so anything looser would mask a real port bug. This is
+        // the trust gate before these curves go into a clinician-facing PDF.
+        func value(_ c: CorrelationEngine.DoseCurve, at minute: Double) -> Double {
+            c.points.first { abs($0.minute - minute) < 0.01 }?.value ?? .nan
+        }
+        let tol = 0.001
+
+        #expect(abs(value(morningCurve, at: -2.5)  - 1.738565) < tol, "morning @ -2.5")
+        #expect(abs(value(morningCurve, at: 42.5)  - 0.419370) < tol, "morning @ 42.5")
+        #expect(abs(value(morningCurve, at: 92.5)  - 0.356462) < tol, "morning @ 92.5")
+        #expect(abs(value(morningCurve, at: 142.5) - 0.258925) < tol, "morning @ 142.5")
+
+        #expect(abs(value(afternoonCurve, at: -2.5)  - 1.736589) < tol, "afternoon @ -2.5")
+        #expect(abs(value(afternoonCurve, at: 42.5)  - 1.263052) < tol, "afternoon @ 42.5")
+        #expect(abs(value(afternoonCurve, at: 92.5)  - 0.873869) < tol, "afternoon @ 92.5")
+        #expect(abs(value(afternoonCurve, at: 142.5) - 0.480668) < tol, "afternoon @ 142.5")
+
+        #expect(abs(value(wo.curve, at: -2.5)  - 1.652807) < tol, "wearing-off @ -2.5")
+        #expect(abs(value(wo.curve, at: 2.5)   - 1.644887) < tol, "wearing-off @ 2.5")
+        #expect(abs(value(wo.curve, at: 62.5)  - 0.533881) < tol, "wearing-off @ 62.5")
+        #expect(abs(value(wo.curve, at: 122.5) - 0.208692) < tol, "wearing-off @ 122.5")
+        #expect(abs(value(wo.curve, at: 182.5) - 0.580301) < tol, "wearing-off @ 182.5")
+        #expect(abs(value(wo.curve, at: 242.5) - 0.965670) < tol, "wearing-off @ 242.5")
+        #expect(abs(wo.baseline - 1.385752) < tol, "wearing-off baseline")
+        #expect(abs(wo.bestOnMinute - 122.5) < 0.01, "wearing-off deepest-ON minute")
+    }
+
+    // MARK: - Minimal CSV loaders (test-only; the app writes CSV, never reads it)
+
+    private static let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static func findCSV(prefix: String) -> String? {
+        guard let files = try? FileManager.default.contentsOfDirectory(atPath: backupDir) else { return nil }
+        guard let name = files.first(where: { $0.hasPrefix(prefix) && $0.hasSuffix(".csv") }) else { return nil }
+        return backupDir + "/" + name
+    }
+
+    /// Returns (header→index, data rows as [[String]]). Naive split — the backup
+    /// CSVs have no quoted commas.
+    private static func rows(_ path: String) throws -> (idx: [String: Int], data: [[String]]) {
+        let text = try String(contentsOfFile: path, encoding: .utf8)
+        var lines = text.split(separator: "\n", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        guard !lines.isEmpty else { return ([:], []) }
+        let header = lines.removeFirst().split(separator: ",").map(String.init)
+        var idx: [String: Int] = [:]
+        for (i, h) in header.enumerated() { idx[h] = i }
+        let data = lines.map { $0.split(separator: ",", omittingEmptySubsequences: false).map(String.init) }
+        return (idx, data)
+    }
+
+    private static func loadTremor(_ path: String) throws -> [TremorPoint] {
+        let (idx, data) = try rows(path)
+        guard let tsi = idx["timestamp"], let tri = idx["tremorScore"] else { return [] }
+        return data.compactMap { r in
+            guard r.count > max(tsi, tri),
+                  let ts = iso.date(from: r[tsi]),
+                  let tremor = Double(r[tri]) else { return nil }
+            return TremorPoint(timestamp: ts, tremorScore: tremor)
+        }
+    }
+
+    private static func loadLevodopaTakenDoses(_ path: String) throws -> [Dose] {
+        let (idx, data) = try rows(path)
+        guard let sdi = idx["startDate"], let sti = idx["status"], let mni = idx["medicationName"]
+        else { return [] }
+        return data.compactMap { r in
+            guard r.count > max(sdi, sti, mni) else { return nil }
+            let status = r[sti].trimmingCharacters(in: .whitespaces).lowercased()
+            guard status == "taken" else { return nil }
+            let name = r[mni].trimmingCharacters(in: .whitespaces)
+            let key = name.lowercased()
+            guard key.contains("sinemet") || key.contains("mucuna") else { return nil }
+            guard let ts = iso.date(from: r[sdi]) else { return nil }
+            return Dose(timestamp: ts, name: name)
+        }
+    }
+}
