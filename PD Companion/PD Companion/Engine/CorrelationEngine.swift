@@ -42,6 +42,16 @@ struct GaitSample: Sendable {
     let value: Double
 }
 
+/// A distinct device/source contributing gait data, with how much and over what span —
+/// powers the "which devices are yours?" review. `Identifiable` for the SwiftUI list.
+struct GaitSourceInfo: Sendable, Identifiable {
+    let name: String
+    let count: Int
+    let firstDate: Date
+    let lastDate: Date
+    var id: String { name }
+}
+
 /// The four Apple mobility metrics tracked for PD *progression* (years, not days).
 /// Each carries the physiological clip range and which direction means worsening —
 /// the analysis parameters validated in the Python lab (analysis/src/gait.py). The
@@ -104,13 +114,17 @@ nonisolated enum CorrelationEngine {
     nonisolated(unsafe) static var calendar: Calendar = .current
 
     // Entry point: run every module, return the surfaced insights.
-    static func generateInsights(samples: [TremorPoint], doses: [Dose]) -> [Insight] {
+    static func generateInsights(samples: [TremorPoint], doses: [Dose],
+                                 gait: [GaitMetric: [GaitSample]] = [:]) -> [Insight] {
         var out: [Insight] = []
         if let afternoon = afternoonDoseInsight(samples: samples, doses: doses) {
             out.append(afternoon)
         }
         if let wearingOff = wearingOffInsight(samples: samples, doses: doses) {
             out.append(wearingOff)
+        }
+        if let g = gaitInsight(series: gait) {
+            out.append(g)
         }
         return out
     }
@@ -708,6 +722,55 @@ nonisolated extension CorrelationEngine {
     static func analyzeGait(series: [GaitMetric: [GaitSample]]) -> GaitProgression? {
         let trends = GaitMetric.allCases.compactMap { metricTrend($0, samples: series[$0] ?? []) }
         return trends.isEmpty ? nil : GaitProgression(metrics: trends)
+    }
+
+    /// Build the reassurance card from the gait analysis: walking speed is the hero
+    /// (chart + headline), the other three metrics ride along as a one-line summary.
+    /// Returns nil until there's enough span to say anything — gait is multi-year.
+    static func gaitInsight(series: [GaitMetric: [GaitSample]]) -> Insight? {
+        guard let prog = analyzeGait(series: series),
+              let speed = prog.trend(.walkingSpeed),
+              speed.nMonths >= 12, prog.spanYears >= 1.5 else { return nil }
+
+        let years = String(format: "%.1f", prog.spanYears)
+        let declining = prog.anySignificantWorsening
+        let speedPct = speed.pctReliable ? String(format: "%+.0f%%", speed.pctChange) : "flat"
+
+        func phrase(_ m: GaitMetric) -> String? {
+            guard let t = prog.trend(m) else { return nil }
+            let word: String
+            if !t.isSignificant { word = "flat" }
+            else if t.isWorsening { word = "declining" }
+            else { word = (m == .doubleSupport) ? "steadier" : "improving" }
+            return "\(m.display.lowercased()) \(word)"
+        }
+        let others = [GaitMetric.stepLength, .doubleSupport, .asymmetry]
+            .compactMap(phrase).joined(separator: " · ")
+
+        var insight = Insight(
+            title: declining ? "Your walking shows some change" : "Your walking hasn't declined",
+            summary: declining
+                ? "Over \(years) years, a gait marker is trending down — worth mentioning to your neurologist."
+                : "Over \(years) years: walking speed \(speedPct), with no measurable decline across your gait markers.",
+            stage: .verdict,
+            finding: "Walking speed \(speedPct) over \(years)y; \(others). Monthly medians from Apple mobility metrics (\(speed.nMonths) months).",
+            mechanism: "Multi-year mobility metrics are noisy and shift with footwear, walking surface, phone placement, and device — read the direction, not the decimals. Not a clinical assessment.",
+            confidence: .moderate,
+            evidenceDays: Int(prog.spanYears * 365.25),
+            verdict: Verdict(
+                outcome: declining ? .inconclusive : .worked,
+                controlLabel: "Earliest", controlValue: "baseline",
+                changeLabel: "Now", changeValue: "speed \(speedPct)",
+                summary: declining
+                    ? "Some gait change over \(years) years — bring it up at your next appointment."
+                    : "No measurable gait decline over \(years) years — quietly reassuring for a progressive condition.",
+                nextStep: declining
+                    ? "Mention this trend to your neurologist."
+                    : "Nothing to change. The app keeps watching the trend."
+            )
+        )
+        insight.chart = gaitTrendChart(speed)
+        return insight
     }
 
     /// Clip → monthly medians (≥20/month) → linear trend for one metric.

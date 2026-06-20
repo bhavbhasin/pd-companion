@@ -551,6 +551,39 @@ class HealthKitManager: ObservableObject {
         }
     }
 
+    /// Distinct sources contributing gait data (name, sample count, date span) across
+    /// all four metrics — for the "which devices are yours?" review. Not filtered.
+    func fetchGaitSources() async -> [GaitSourceInfo] {
+        let start = Calendar.current.date(byAdding: .year, value: -12, to: Date()) ?? .distantPast
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date())
+        var tally: [String: (count: Int, first: Date, last: Date)] = [:]
+        for metric in GaitMetric.allCases {
+            let (type, _) = Self.gaitHKType(metric)
+            for s in await sourceSamples(type: type, predicate: predicate) {
+                let name = s.sourceRevision.source.name
+                if let e = tally[name] {
+                    tally[name] = (e.count + 1, min(e.first, s.startDate), max(e.last, s.startDate))
+                } else {
+                    tally[name] = (1, s.startDate, s.startDate)
+                }
+            }
+        }
+        return tally.map {
+            GaitSourceInfo(name: $0.key, count: $0.value.count,
+                           firstDate: $0.value.first, lastDate: $0.value.last)
+        }.sorted { $0.count > $1.count }
+    }
+
+    private func sourceSamples(type: HKQuantityType, predicate: NSPredicate) async -> [HKQuantitySample] {
+        await withCheckedContinuation { c in
+            let q = HKSampleQuery(sampleType: type, predicate: predicate,
+                                  limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, s, _ in
+                c.resume(returning: (s as? [HKQuantitySample]) ?? [])
+            }
+            store.execute(q)
+        }
+    }
+
     private func fetchMedicationDosesInRange(
         from start: Date, to end: Date
     ) async -> [(time: Date, name: String?)] {

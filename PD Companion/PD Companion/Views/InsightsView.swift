@@ -244,6 +244,17 @@ extension Insight {
 
 // MARK: - Screen
 
+/// Per-user gait source exclusions (device names the user marked "not mine"), stored
+/// locally. Default empty → every source counts, correct for the common single-owner
+/// case. New devices are included automatically; only exclusions persist.
+enum GaitSourcePrefs {
+    private static let key = "excludedGaitSources"
+    static var excluded: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: key) ?? []) }
+        set { UserDefaults.standard.set(Array(newValue), forKey: key) }
+    }
+}
+
 // Container: loads the engine's output once, then hands it to the renderer.
 // Tremor readings come from SwiftData (multi-day); doses from HealthKit.
 struct InsightsView: View {
@@ -251,6 +262,9 @@ struct InsightsView: View {
     @Query(sort: \TremorReading.timestamp, order: .forward) private var allReadings: [TremorReading]
     @State private var insights: [Insight] = []
     @State private var meds: [ClinicalReportPDF.MedSummary] = []
+    @State private var gaitSources: [GaitSourceInfo] = []
+    @State private var excludedSources: Set<String> = GaitSourcePrefs.excluded
+    @State private var showSources = false
     @State private var didLoad = false
 
     var body: some View {
@@ -258,7 +272,9 @@ struct InsightsView: View {
             if didLoad {
                 // Once computed: either the cards, or the genuine empty state for a
                 // user with no qualifying data (InsightsList decides which).
-                InsightsList(insights: $insights, meds: meds)
+                InsightsList(insights: $insights, meds: meds,
+                             gaitSourceCount: gaitSources.count,
+                             onReviewSources: { showSources = true })
             } else {
                 // While computing: a real loading state, distinct from "no data."
                 InsightsLoadingState()
@@ -266,6 +282,11 @@ struct InsightsView: View {
         }
         .navigationTitle("Insights")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showSources) {
+            GaitSourcesView(sources: gaitSources, excluded: $excludedSources) {
+                Task { await reloadGait() }
+            }
+        }
         .task {
             guard !didLoad else { return }
 
@@ -278,12 +299,25 @@ struct InsightsView: View {
             }
             let doses = await healthKit.fetchLevodopaDoses()
             meds = Self.medSummaries(from: doses)
+            gaitSources = await healthKit.fetchGaitSources()
+            let gait = await healthKit.fetchGaitSeries(excludedSources: excludedSources)
 
             insights = await Task.detached(priority: .userInitiated) {
-                CorrelationEngine.generateInsights(samples: samples, doses: doses)
+                CorrelationEngine.generateInsights(samples: samples, doses: doses, gait: gait)
             }.value
             didLoad = true
         }
+    }
+
+    /// Re-run just the gait analysis after the user edits which sources are theirs.
+    private func reloadGait() async {
+        GaitSourcePrefs.excluded = excludedSources
+        let gait = await healthKit.fetchGaitSeries(excludedSources: excludedSources)
+        let newGait = await Task.detached(priority: .userInitiated) {
+            CorrelationEngine.gaitInsight(series: gait)
+        }.value
+        insights.removeAll { if case .gaitTrend = $0.chart { return true } else { return false } }
+        if let newGait { insights.append(newGait) }
     }
 
     /// Roll the fetched doses into one row per medication for the report's meds block:
@@ -321,6 +355,8 @@ private struct InsightsLoadingState: View {
 private struct InsightsList: View {
     @Binding var insights: [Insight]
     var meds: [ClinicalReportPDF.MedSummary] = []   // for the report's meds block
+    var gaitSourceCount: Int = 0                     // >1 → the gait card offers a source review
+    var onReviewSources: (() -> Void)? = nil
 
     private var attention: [Binding<Insight>] { bindings { $0.stage == .hypothesis || $0.stage == .experiment } }
     private var clinical:  [Binding<Insight>] { bindings { $0.stage == .clinicalDiscussion } }
@@ -339,7 +375,8 @@ private struct InsightsList: View {
             if hasInsights {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(orderedInsights, id: \.wrappedValue.id) { $insight in
-                        InsightCard(insight: $insight, allInsights: insights, meds: meds)
+                        InsightCard(insight: $insight, allInsights: insights, meds: meds,
+                                    gaitSourceCount: gaitSourceCount, onReviewSources: onReviewSources)
                     }
                     disclaimerFooter
                 }
@@ -371,6 +408,8 @@ private struct InsightCard: View {
     @Binding var insight: Insight
     let allInsights: [Insight]   // for the full-report PDF
     var meds: [ClinicalReportPDF.MedSummary] = []   // observed medications, for the PDF meds block
+    var gaitSourceCount: Int = 0                     // distinct devices feeding gait (for the review affordance)
+    var onReviewSources: (() -> Void)? = nil
     @State private var expanded = false
     @State private var showWhy = false   // second-level disclosure for the mechanism
     @State private var isGeneratingPDF = false   // share button shows a spinner while the PDF renders
@@ -433,6 +472,19 @@ private struct InsightCard: View {
         case .wearingOff(let wo):   WearingOffChartView(chart: wo)
         case .gaitTrend(let g):     GaitTrendChartView(chart: g)
         case .none:                 EmptyView()
+        }
+
+        // Gait only: when more than one device fed the data, let the user confirm which
+        // are theirs (foreign data — a family member's synced-in device — skews the trend).
+        if case .gaitTrend = insight.chart, gaitSourceCount > 1, let onReviewSources {
+            Button(action: onReviewSources) {
+                Label("Data from \(gaitSourceCount) devices — confirm which are yours",
+                      systemImage: "iphone")
+                    .font(.caption)
+            }
+            .buttonStyle(.borderless)
+            .tint(Insight.brandBlue)
+            .padding(.top, 2)
         }
 
         switch insight.stage {
@@ -1082,6 +1134,67 @@ private struct InsightsEmptyState: View {
             .clipShape(RoundedRectangle(cornerRadius: 14))
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Walking data sources review
+//
+// Surfaced only when >1 device fed the gait data. Multi-select by exclusion: every
+// source is "mine" (on) by default; the user switches off any that aren't theirs (a
+// family member's synced-in device). Persists the excluded set per-user; new devices
+// are included automatically. This is the only honest way to validate source ownership
+// — HealthKit gives no "this is the account owner" flag.
+
+private struct GaitSourcesView: View {
+    let sources: [GaitSourceInfo]
+    @Binding var excluded: Set<String>
+    let onDone: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(sources) { s in
+                        Toggle(isOn: binding(for: s)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(s.name)
+                                Text("\(s.count) readings · \(span(s))")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .tint(Insight.brandBlue)
+                    }
+                } header: {
+                    Text("Which of these are your devices?")
+                } footer: {
+                    Text("Walking data from devices you switch off won't count toward your gait trend. Keep all of your own phones on — new devices are included automatically.")
+                }
+            }
+            .navigationTitle("Walking data sources")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { onDone(); dismiss() }
+                }
+            }
+        }
+    }
+
+    private func binding(for s: GaitSourceInfo) -> Binding<Bool> {
+        Binding(
+            get: { !excluded.contains(s.name.lowercased()) },
+            set: { isMine in
+                if isMine { excluded.remove(s.name.lowercased()) }
+                else { excluded.insert(s.name.lowercased()) }
+            }
+        )
+    }
+
+    private func span(_ s: GaitSourceInfo) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "MMM yyyy"
+        return "\(f.string(from: s.firstDate))–\(f.string(from: s.lastDate))"
     }
 }
 
