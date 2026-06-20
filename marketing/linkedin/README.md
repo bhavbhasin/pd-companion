@@ -32,8 +32,9 @@ when feature traction warrants it — cadence follows the building, not a fixed 
 
 - [ ] **Kampa is in testing — request access** — TestFlight launch. The next big beat. Dual moment: website CTA ("request access") + a strong post. Site: `core` (adds an access CTA) + `changelog`. — `needs-feature` (TestFlight release; see BACKLOG.md distribution-readiness)
 - [ ] **The first patterns Kampa surfaced** — the correlation engine: levodopa wearing-off window, OFF-period timing. The strongest "this actually works" story. — `needs-feature` (correlation engine, see BACKLOG.md / ParkinsonsProject.md)
-- [ ] **Why "Kampa"?** — etymology: *Kampavata*, the Ayurvedic name for the tremor disorder. Human, distinctive, zero new features required. Good filler for a build-light week. — `ready`
 - [ ] **Ambient voice insight ("the magic")** — plain-language daily summary, hands-free. — `needs-feature`
+
+> Dropped: "Why 'Kampa'?" etymology post — the website already covers why Kampa; the standalone-post moment has passed (Jun 19).
 
 ## Idea bank (unscheduled)
 
