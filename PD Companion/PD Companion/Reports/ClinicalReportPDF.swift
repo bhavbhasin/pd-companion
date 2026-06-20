@@ -32,8 +32,17 @@ private func geist(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> UIFon
 
 enum ClinicalReportPDF {
 
+    /// One medication's observed usage over the report window. Strength is absent on
+    /// purpose — HealthKit doesn't expose medication strength to third-party apps (see
+    /// the build journal); we show only what's auto-readable: name + observed dosing.
+    struct MedSummary {
+        let name: String
+        let doseCount: Int
+        let dayCount: Int   // distinct days with at least one logged dose of this med
+    }
+
     /// Build a multi-insight clinical report PDF, returning a temp-file URL or nil.
-    static func generate(insights: [Insight]) -> URL? {
+    static func generate(insights: [Insight], meds: [MedSummary] = []) -> URL? {
         guard !insights.isEmpty else { return nil }
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: kPage))
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Kampa-Report.pdf")
@@ -50,6 +59,16 @@ enum ClinicalReportPDF {
                 let intro = "A plain-language summary of patterns Kampa detected from passive Apple Watch monitoring over \(days) days, prepared for discussion with your care team. One person's own data (n-of-1) — not a diagnosis or a treatment recommendation."
                 c.text(intro, geist(11), kInk)
                 c.space(16)
+
+                if !meds.isEmpty {
+                    c.label("MEDICATIONS")
+                    for m in meds {
+                        let perDay = m.dayCount > 0 ? Double(m.doseCount) / Double(m.dayCount) : 0
+                        let rate = perDay >= 1 ? "~\(Int(perDay.rounded()))/day" : "occasional"
+                        c.bullet("\(m.name) — \(m.doseCount) doses logged, \(rate)")
+                    }
+                    c.space(14)
+                }
 
                 c.label("AT A GLANCE")
                 for i in insights { c.glance(i.title, i.summary) }

@@ -250,6 +250,7 @@ struct InsightsView: View {
     @EnvironmentObject private var healthKit: HealthKitManager
     @Query(sort: \TremorReading.timestamp, order: .forward) private var allReadings: [TremorReading]
     @State private var insights: [Insight] = []
+    @State private var meds: [ClinicalReportPDF.MedSummary] = []
     @State private var didLoad = false
 
     var body: some View {
@@ -257,7 +258,7 @@ struct InsightsView: View {
             if didLoad {
                 // Once computed: either the cards, or the genuine empty state for a
                 // user with no qualifying data (InsightsList decides which).
-                InsightsList(insights: $insights)
+                InsightsList(insights: $insights, meds: meds)
             } else {
                 // While computing: a real loading state, distinct from "no data."
                 InsightsLoadingState()
@@ -276,12 +277,26 @@ struct InsightsView: View {
                 TremorPoint(timestamp: $0.timestamp, tremorScore: $0.tremorScore)
             }
             let doses = await healthKit.fetchLevodopaDoses()
+            meds = Self.medSummaries(from: doses)
 
             insights = await Task.detached(priority: .userInitiated) {
                 CorrelationEngine.generateInsights(samples: samples, doses: doses)
             }.value
             didLoad = true
         }
+    }
+
+    /// Roll the fetched doses into one row per medication for the report's meds block:
+    /// total doses + the count of distinct days they were logged on (so the PDF can show
+    /// an observed ~N/day rate). No strength — HealthKit doesn't expose it (see journal).
+    static func medSummaries(from doses: [Dose]) -> [ClinicalReportPDF.MedSummary] {
+        let cal = Calendar.current
+        return Dictionary(grouping: doses, by: \.name)
+            .map { name, ds in
+                let days = Set(ds.map { cal.startOfDay(for: $0.timestamp) }).count
+                return ClinicalReportPDF.MedSummary(name: name, doseCount: ds.count, dayCount: days)
+            }
+            .sorted { $0.doseCount > $1.doseCount }
     }
 }
 
@@ -305,6 +320,7 @@ private struct InsightsLoadingState: View {
 // and is trivially testable. Mutations (start/stop experiment) flow back via the binding.
 private struct InsightsList: View {
     @Binding var insights: [Insight]
+    var meds: [ClinicalReportPDF.MedSummary] = []   // for the report's meds block
 
     private var attention: [Binding<Insight>] { bindings { $0.stage == .hypothesis || $0.stage == .experiment } }
     private var clinical:  [Binding<Insight>] { bindings { $0.stage == .clinicalDiscussion } }
@@ -323,7 +339,7 @@ private struct InsightsList: View {
             if hasInsights {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(orderedInsights, id: \.wrappedValue.id) { $insight in
-                        InsightCard(insight: $insight, allInsights: insights)
+                        InsightCard(insight: $insight, allInsights: insights, meds: meds)
                     }
                     disclaimerFooter
                 }
@@ -354,6 +370,7 @@ private struct InsightsList: View {
 private struct InsightCard: View {
     @Binding var insight: Insight
     let allInsights: [Insight]   // for the full-report PDF
+    var meds: [ClinicalReportPDF.MedSummary] = []   // observed medications, for the PDF meds block
     @State private var expanded = false
     @State private var showWhy = false   // second-level disclosure for the mechanism
     @State private var isGeneratingPDF = false   // share button shows a spinner while the PDF renders
@@ -499,7 +516,7 @@ private struct InsightCard: View {
                     // so this Task stays on it; the brief sleep just guarantees a frame.
                     Task {
                         try? await Task.sleep(for: .milliseconds(50))
-                        let url = ClinicalReportPDF.generate(insights: allInsights)
+                        let url = ClinicalReportPDF.generate(insights: allInsights, meds: meds)
                         isGeneratingPDF = false
                         if let url {
                             ShareSheetPresenter.present(items: [url])
