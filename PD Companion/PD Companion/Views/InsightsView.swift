@@ -561,6 +561,8 @@ private struct InsightCard: View {
                 // intentionally NOT listed inline — they duplicate the finding above and
                 // live in the shareable summary below, which is the doctor-facing artifact.
                 Button {
+                    guard !isGeneratingPDF else { return }   // ignore a second tap during the wait
+                    ShareSheetPresenter.tapFeedback()         // instant acknowledgment, even on the cold render
                     isGeneratingPDF = true
                     // Defer the work one frame so SwiftUI paints the spinner (and commits
                     // its animation to the render server, where it keeps spinning) before
@@ -570,12 +572,15 @@ private struct InsightCard: View {
                     Task {
                         try? await Task.sleep(for: .milliseconds(50))
                         let url = ClinicalReportPDF.generate(insights: allInsights, meds: meds)
-                        isGeneratingPDF = false
+                        // Keep the spinner up through the share-sheet presentation too —
+                        // its first-run warmup is part of the cold-start delay, so
+                        // dismissing the spinner before this is what made it look absent.
                         if let url {
                             ShareSheetPresenter.present(items: [url])
                         } else {
                             ShareSheetPresenter.present(items: [clinicalSummaryText(c)])  // text fallback
                         }
+                        isGeneratingPDF = false
                     }
                 } label: {
                     HStack(spacing: 8) {

@@ -22,4 +22,12 @@ enum ShareSheetPresenter {
         }
         topVC.present(activity, animated: true)
     }
+
+    /// Immediate tactile acknowledgment for a button tap. Goes straight to the haptic
+    /// hardware, so it fires even when the main thread is about to block (e.g. the cold
+    /// first PDF render) — where a spinner can't paint in time. Lives here so callers
+    /// like InsightsView don't have to import UIKit.
+    static func tapFeedback() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
 }
