@@ -431,6 +431,7 @@ private struct InsightCard: View {
         switch insight.chart {
         case .doseResponse(let dr): DoseResponseChartView(chart: dr)
         case .wearingOff(let wo):   WearingOffChartView(chart: wo)
+        case .gaitTrend(let g):     GaitTrendChartView(chart: g)
         case .none:                 EmptyView()
         }
 
@@ -928,6 +929,58 @@ private struct WearingOffChartView: View {
     }
 }
 
+// MARK: - Gait trend chart
+//
+// The progression hero: one mobility metric's monthly medians (faint dots) with its
+// fitted linear trend (bold) across the years. Calendar-time x-axis — not dose-relative
+// like the other two charts. For walking speed, up = better, so a flat-or-rising line
+// is the reassuring read.
+
+private struct GaitTrendChartView: View {
+    let chart: CorrelationEngine.GaitTrendChart
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Chart {
+                ForEach(chart.points, id: \.date) { p in
+                    PointMark(x: .value("Month", p.date),
+                              y: .value(chart.metricLabel, p.value))
+                        .foregroundStyle(Insight.brandBlue.opacity(0.30))
+                        .symbolSize(16)
+                }
+                ForEach([chart.fitStart, chart.fitEnd], id: \.date) { p in
+                    LineMark(x: .value("Month", p.date),
+                             y: .value("Trend", p.value))
+                        .foregroundStyle(Insight.brandBlue)
+                        .lineStyle(StrokeStyle(lineWidth: 2.5))
+                }
+            }
+            .chartYScale(domain: yDomain)
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .year)) { _ in
+                    AxisGridLine(); AxisTick()
+                    AxisValueLabel(format: .dateTime.year())
+                }
+            }
+            .chartYAxis { AxisMarks { AxisGridLine(); AxisTick(); AxisValueLabel() } }
+            .frame(height: 170)
+            .accessibilityLabel("\(chart.metricLabel) over the years, monthly medians with a trend line")
+
+            Text("\(chart.metricLabel) (\(chart.unitLabel)) · monthly medians with trend. \(chart.higherIsWorse ? "Lower" : "Higher") is better.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    // Pad the observed range so the trend line isn't glued to the axis edges.
+    private var yDomain: ClosedRange<Double> {
+        let vals = chart.points.map(\.value) + [chart.fitStart.value, chart.fitEnd.value]
+        let lo = vals.min() ?? 0, hi = vals.max() ?? 1
+        let pad = max((hi - lo) * 0.15, 0.05)
+        return (lo - pad)...(hi + pad)
+    }
+}
+
 // MARK: - PDF chart rasterization
 //
 // The clinical PDF (ClinicalReportPDF) is UIKit/UIGraphics and can't host SwiftUI or
@@ -952,6 +1005,7 @@ private struct PDFChartCard: View {
             switch chart {
             case .doseResponse(let dr): DoseResponseChartView(chart: dr)
             case .wearingOff(let wo):   WearingOffChartView(chart: wo)
+            case .gaitTrend(let g):     GaitTrendChartView(chart: g)
             }
         }
         .padding(14)

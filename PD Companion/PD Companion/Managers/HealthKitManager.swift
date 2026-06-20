@@ -493,6 +493,64 @@ class HealthKitManager: ObservableObject {
         }
     }
 
+    /// Fetch the four mobility-metric series across (effectively) the user's full
+    /// history, for the gait-progression analysis. `excludedSources` is a set of
+    /// lowercased substrings matched against each sample's source name — used to drop
+    /// foreign data (e.g. a family member's device that synced into this HealthKit
+    /// store), which otherwise pollutes the multi-year trend. See the gait build note.
+    func fetchGaitSeries(
+        excludedSources: Set<String> = []
+    ) async -> [GaitMetric: [GaitSample]] {
+        let start = Calendar.current.date(byAdding: .year, value: -12, to: Date()) ?? .distantPast
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date())
+        var out: [GaitMetric: [GaitSample]] = [:]
+        for metric in GaitMetric.allCases {
+            out[metric] = await fetchGaitMetric(metric, predicate: predicate, excluded: excludedSources)
+        }
+        return out
+    }
+
+    private func fetchGaitMetric(
+        _ metric: GaitMetric, predicate: NSPredicate, excluded: Set<String>
+    ) async -> [GaitSample] {
+        let (type, unit) = Self.gaitHKType(metric)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type, predicate: predicate,
+                limit: HKObjectQueryNoLimit, sortDescriptors: [sort]
+            ) { _, samples, _ in
+                guard let samples = samples as? [HKQuantitySample] else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                let mapped: [GaitSample] = samples.compactMap { s in
+                    let name = s.sourceRevision.source.name.lowercased()
+                    if excluded.contains(where: { name.contains($0) }) { return nil }
+                    return GaitSample(date: s.startDate, value: s.quantity.doubleValue(for: unit))
+                }
+                continuation.resume(returning: mapped)
+            }
+            store.execute(query)
+        }
+    }
+
+    /// HealthKit type + unit for each gait metric. Percentage metrics use `.percent()`
+    /// (values come back as 0–1 fractions, matching the engine's clip ranges).
+    private static func gaitHKType(_ m: GaitMetric) -> (HKQuantityType, HKUnit) {
+        switch m {
+        case .walkingSpeed:
+            return (HKObjectType.quantityType(forIdentifier: .walkingSpeed)!,
+                    HKUnit.meter().unitDivided(by: .second()))
+        case .stepLength:
+            return (HKObjectType.quantityType(forIdentifier: .walkingStepLength)!, .meter())
+        case .doubleSupport:
+            return (HKObjectType.quantityType(forIdentifier: .walkingDoubleSupportPercentage)!, .percent())
+        case .asymmetry:
+            return (HKObjectType.quantityType(forIdentifier: .walkingAsymmetryPercentage)!, .percent())
+        }
+    }
+
     private func fetchMedicationDosesInRange(
         from start: Date, to end: Date
     ) async -> [(time: Date, name: String?)] {

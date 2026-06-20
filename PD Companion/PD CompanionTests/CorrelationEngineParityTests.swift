@@ -148,6 +148,48 @@ struct CorrelationEngineParityTests {
         #expect(abs(value(wo.curve, at: 242.5) - 0.965670) < tol, "wearing-off @ 242.5")
         #expect(abs(wo.baseline - 1.385752) < tol, "wearing-off baseline")
         #expect(abs(wo.bestOnMinute - 122.5) < 0.01, "wearing-off deepest-ON minute")
+
+        // --- Gait progression parity (analysis/src/gait.py on the same backup) ---
+        // Foreign-source ("Japnit kaur's iPhone") rows excluded, as in the lab. Anchors
+        // from analysis/dump_gait_anchors.py. Slopes/intercepts are pure OLS (tol 1e-6);
+        // the p-values exercise the hand-rolled t-distribution tail (tol 1e-3).
+        let prog = try #require(
+            CorrelationEngine.analyzeGait(series: Self.loadGait()),
+            "gait analysis should produce trends")
+
+        func gtrend(_ m: GaitMetric) throws -> CorrelationEngine.MetricTrend {
+            try #require(prog.trend(m), "\(m) trend present")
+        }
+
+        let speed = try gtrend(.walkingSpeed)
+        #expect(speed.nMonths == 70, "speed months")
+        #expect(abs(speed.slopePerYear - 0.0090484269) < 1e-6, "speed slope/yr")
+        #expect(abs(speed.intercept - 0.9977190145) < 1e-4, "speed intercept")
+        #expect(abs(speed.pValue - 0.0184220697) < 1e-3, "speed p-value")
+        #expect(abs(speed.pctChange - 5.211792) < 1e-2, "speed % change")
+        #expect(abs(speed.spanYears - 5.7467488022) < 1e-3, "gait span years")
+        #expect(speed.isWorsening == false, "speed up = not worsening")
+
+        let step = try gtrend(.stepLength)
+        #expect(step.nMonths == 70, "step months")
+        #expect(abs(step.slopePerYear - -0.0006050328) < 1e-6, "step slope/yr")
+        #expect(abs(step.pValue - 0.6849955061) < 1e-3, "step p-value (n.s.)")
+
+        let dsup = try gtrend(.doubleSupport)
+        #expect(dsup.nMonths == 70, "double-support months")
+        #expect(abs(dsup.slopePerYear - -0.0041791122) < 1e-6, "double-support slope/yr")
+        #expect(abs(dsup.pctChange - -7.858397) < 1e-2, "double-support % change")
+        #expect(dsup.pValue < 0.001, "double-support highly significant")
+        #expect(dsup.isWorsening == false, "double-support down = improving")
+
+        let asym = try gtrend(.asymmetry)
+        #expect(asym.nMonths == 67, "asymmetry months")
+        #expect(abs(asym.slopePerYear - -0.0007519235) < 1e-6, "asymmetry slope/yr")
+        #expect(abs(asym.pValue - 0.1728188659) < 1e-3, "asymmetry p-value (n.s.)")
+        #expect(asym.pctReliable == false, "asymmetry % unreliable (near-zero baseline)")
+
+        // Net read: nothing significantly worsening → the reassuring verdict.
+        #expect(prog.anySignificantWorsening == false, "no significant gait decline")
     }
 
     // MARK: - Minimal CSV loaders (test-only; the app writes CSV, never reads it)
@@ -203,5 +245,40 @@ struct CorrelationEngineParityTests {
             guard let ts = iso.date(from: r[sdi]) else { return nil }
             return Dose(timestamp: ts, name: name)
         }
+    }
+
+    // Gait CSVs may lack fractional seconds; try both ISO forms.
+    private static let isoPlain: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private static func parseDate(_ s: String) -> Date? {
+        iso.date(from: s) ?? isoPlain.date(from: s)
+    }
+
+    /// Load one mobility-metric series from the backup, dropping foreign-source rows
+    /// (a family member's device that synced in) exactly as the Python lab does.
+    private static func loadGaitSeries(prefix: String) -> [GaitSample] {
+        guard let path = findCSV(prefix: prefix),
+              let (idx, data) = try? rows(path),
+              let sdi = idx["startDate"], let vi = idx["value"], let sci = idx["source"]
+        else { return [] }
+        return data.compactMap { r in
+            guard r.count > max(sdi, vi, sci) else { return nil }
+            if r[sci].lowercased().contains("japnit") { return nil }   // foreign device
+            guard let d = parseDate(r[sdi]), let v = Double(r[vi]) else { return nil }
+            return GaitSample(date: d, value: v)
+        }
+    }
+
+    private static func loadGait() -> [GaitMetric: [GaitSample]] {
+        [
+            .walkingSpeed:  loadGaitSeries(prefix: "walking_speed_m_s"),
+            .stepLength:    loadGaitSeries(prefix: "walking_step_length_m"),
+            .doubleSupport: loadGaitSeries(prefix: "walking_double_support_pct"),
+            .asymmetry:     loadGaitSeries(prefix: "walking_asymmetry_pct"),
+        ]
     }
 }
