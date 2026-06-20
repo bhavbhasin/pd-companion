@@ -9,9 +9,11 @@ struct DayInReviewView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \TremorReading.timestamp, order: .forward) private var allReadings: [TremorReading]
     @Query(sort: \FoodEvent.timestamp, order: .forward) private var allFoodEvents: [FoodEvent]
-    @State private var selectedDate: Date = Calendar.current.startOfDay(
-        for: Date().addingTimeInterval(-86400)
-    )
+    // Default to today: the app is used through the day for logging (food, meds), so
+    // the view should reflect "now" — seeing yesterday right after logging something
+    // today reads as a bug. Today's data is partial (the chart fills as the day goes),
+    // which is honest; the date chevrons still reach yesterday for a complete-day review.
+    @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var showingLogSheet = false
     @State private var selectedEvent: DayEvent?
     @State private var showingBackup = false

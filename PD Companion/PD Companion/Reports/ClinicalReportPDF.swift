@@ -7,15 +7,28 @@ import UIKit
 // reproduction of the locked `analysis/make_clinical_pdf.py` layout — text first,
 // statistics demoted, with an n-of-1 safety footer.
 //
-// CHARTS are deliberately deferred: drawing the wearing-off / dose-response curves
-// natively needs the engine to expose averaged trajectories (a separate port). The
-// text content is the substance; charts are the next iteration.
+// CHARTS: each finding's curve is the same Swift Charts view shown in the app,
+// rasterized to a CGImage via `pdfChartImage(for:)` (in InsightsView) and drawn under
+// the pattern text, so the clinician sees the curve, not just prose about it.
 
 private let kPage = CGSize(width: 612, height: 792)        // US Letter
 private let kMargin: CGFloat = 48
 private let kBlue = UIColor(red: 0.290, green: 0.549, blue: 0.839, alpha: 1)   // brand #4A8CD6
 private let kInk = UIColor(red: 0.102, green: 0.114, blue: 0.133, alpha: 1)    // #1A1D22
 private let kGray = UIColor(white: 0.42, alpha: 1)
+
+/// Brand typeface — Geist (bundled static weights, registered via UIAppFonts). Falls
+/// back to the system font at the matching weight if a face failed to register, so the
+/// report always renders. Matches the website, which sets Geist 400/500/600.
+private func geist(_ size: CGFloat, _ weight: UIFont.Weight = .regular) -> UIFont {
+    let face: String
+    switch weight {
+    case .semibold, .bold: face = "Geist-SemiBold"
+    case .medium:          face = "Geist-Medium"
+    default:               face = "Geist-Regular"
+    }
+    return UIFont(name: face, size: size) ?? .systemFont(ofSize: size, weight: weight)
+}
 
 enum ClinicalReportPDF {
 
@@ -35,7 +48,7 @@ enum ClinicalReportPDF {
 
                 let days = insights.map(\.evidenceDays).max() ?? 0
                 let intro = "A plain-language summary of patterns Kampa detected from passive Apple Watch monitoring over \(days) days, prepared for discussion with your care team. One person's own data (n-of-1) — not a diagnosis or a treatment recommendation."
-                c.text(intro, .systemFont(ofSize: 11), kInk)
+                c.text(intro, geist(11), kInk)
                 c.space(16)
 
                 c.label("AT A GLANCE")
@@ -45,11 +58,15 @@ enum ClinicalReportPDF {
                 for i in insights {
                     c.section(i.title)
                     c.label("THE PATTERN")
-                    c.text("\(i.summary) \(i.finding)", .systemFont(ofSize: 12), kInk)
+                    c.text("\(i.summary) \(i.finding)", geist(12), kInk)
+                    if let chart = i.chart, let cg = pdfChartImage(for: chart) {
+                        c.space(10)
+                        c.image(cg)
+                    }
                     if let clinical = i.clinical {
                         c.space(12)
                         c.label("WHAT YOUR NEUROLOGIST MIGHT CONSIDER")
-                        c.text(clinical.whatTheyMightConsider, .systemFont(ofSize: 12), kInk)
+                        c.text(clinical.whatTheyMightConsider, geist(12), kInk)
                         c.space(12)
                         c.label("BRING THIS TO YOUR APPOINTMENT")
                         for item in clinical.bringThisData { c.bullet(item) }
@@ -58,9 +75,9 @@ enum ClinicalReportPDF {
                 }
 
                 c.label("METHODS & PROVENANCE")
-                c.text(methodsText, .systemFont(ofSize: 10), kGray)
+                c.text(methodsText, geist(10), kGray)
                 c.space(10)
-                c.text(safetyText, .italicSystemFont(ofSize: 9), kGray)
+                c.text(safetyText, geist(9), kGray)
             }
             return url
         } catch {
@@ -71,12 +88,32 @@ enum ClinicalReportPDF {
     // MARK: Header
 
     private static func drawHeader(_ c: inout Cursor) {
-        let big = UIFont.systemFont(ofSize: 24, weight: .semibold)
+        var textX = kMargin
+
+        // Brand waveform mark, vertically centered against the wordmark. Uses the blue
+        // variant (the white/dark-theme PNGs would be invisible on this white page).
+        if let wave = UIImage(named: "KampaWaveBlue") {
+            // ~1.3× the 24pt wordmark, matching the website lockup's wave-to-wordmark
+            // proportion (the nav runs the wave at ~1.6× the font height; 32pt keeps it
+            // prominent without over-dominating a document header).
+            let waveH: CGFloat = 32
+            let waveW = waveH * wave.size.width / wave.size.height
+            wave.draw(in: CGRect(x: kMargin, y: c.y - 2, width: waveW, height: waveH))
+            textX = kMargin + waveW + 8
+        }
+
+        // Wordmark: Geist Medium with -0.02em tracking on the web. Until Geist is
+        // bundled into the app we approximate with system Medium + matched kerning;
+        // swap the font name here once the Geist .ttf ships in the target.
+        let big = geist(24, .medium)
+        func run(_ s: String, _ color: UIColor) -> NSAttributedString {
+            NSAttributedString(string: s, attributes: [.font: big, .foregroundColor: color, .kern: -0.48])
+        }
         let wordmark = NSMutableAttributedString()
-        wordmark.append(NSAttributedString(string: "k", attributes: [.font: big, .foregroundColor: kInk]))
-        wordmark.append(NSAttributedString(string: "ā", attributes: [.font: big, .foregroundColor: kBlue]))
-        wordmark.append(NSAttributedString(string: "mpa", attributes: [.font: big, .foregroundColor: kInk]))
-        wordmark.draw(at: CGPoint(x: kMargin, y: c.y))
+        wordmark.append(run("k", kInk))
+        wordmark.append(run("ā", kBlue))
+        wordmark.append(run("mpa", kInk))
+        wordmark.draw(at: CGPoint(x: textX, y: c.y))
 
         let sub = NSAttributedString(string: "Clinical Summary Report", attributes: [
             .font: UIFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: kBlue])
@@ -137,7 +174,7 @@ private struct Cursor {
 
     mutating func label(_ s: String) {
         draw(NSAttributedString(string: s, attributes: [
-            .font: UIFont.systemFont(ofSize: 9, weight: .semibold),
+            .font: geist(9, .semibold),
             .foregroundColor: kGray, .kern: 0.5]), gap: 5)
     }
 
@@ -145,19 +182,29 @@ private struct Cursor {
     mutating func section(_ title: String) {
         space(4)
         draw(NSAttributedString(string: title, attributes: [
-            .font: UIFont.systemFont(ofSize: 15, weight: .semibold), .foregroundColor: kInk]), gap: 6)
+            .font: geist(15, .semibold), .foregroundColor: kInk]), gap: 6)
     }
 
     /// An "at a glance" row: chevroned title + indented one-line summary.
     mutating func glance(_ title: String, _ sub: String) {
         draw(NSAttributedString(string: "›  \(title)", attributes: [
-            .font: UIFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: kInk]), gap: 1)
+            .font: geist(12, .medium), .foregroundColor: kInk]), gap: 1)
         let para = NSMutableParagraphStyle()
         para.lineSpacing = 2
         para.firstLineHeadIndent = 14
         para.headIndent = 14
         draw(NSAttributedString(string: sub, attributes: [
-            .font: UIFont.systemFont(ofSize: 10), .foregroundColor: kGray, .paragraphStyle: para]), gap: 8)
+            .font: geist(10), .foregroundColor: kGray, .paragraphStyle: para]), gap: 8)
+    }
+
+    /// Draw a pre-rendered figure at full content width, preserving its aspect ratio,
+    /// onto a new page if it won't fit on the current one.
+    mutating func image(_ cg: CGImage) {
+        let w = width
+        let h = w * CGFloat(cg.height) / CGFloat(cg.width)
+        ensure(h)
+        UIImage(cgImage: cg).draw(in: CGRect(x: x, y: y, width: w, height: h))
+        y += h
     }
 
     mutating func bullet(_ s: String) {
@@ -165,7 +212,7 @@ private struct Cursor {
         para.lineSpacing = 2
         para.headIndent = 12
         draw(NSAttributedString(string: "•  \(s)", attributes: [
-            .font: UIFont.systemFont(ofSize: 11), .foregroundColor: kInk, .paragraphStyle: para]),
+            .font: geist(11), .foregroundColor: kInk, .paragraphStyle: para]),
              gap: 4)
     }
 

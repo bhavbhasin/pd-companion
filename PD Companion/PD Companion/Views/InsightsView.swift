@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import Charts
+import CoreGraphics
 
 // MARK: - Insights: the cross-day layer
 //
@@ -355,6 +356,7 @@ private struct InsightCard: View {
     let allInsights: [Insight]   // for the full-report PDF
     @State private var expanded = false
     @State private var showWhy = false   // second-level disclosure for the mechanism
+    @State private var isGeneratingPDF = false   // share button shows a spinner while the PDF renders
 
     var body: some View {
         VStack(alignment: .leading, spacing: expanded ? 12 : 6) {
@@ -489,16 +491,35 @@ private struct InsightCard: View {
                 // intentionally NOT listed inline — they duplicate the finding above and
                 // live in the shareable summary below, which is the doctor-facing artifact.
                 Button {
-                    if let url = ClinicalReportPDF.generate(insights: allInsights) {
-                        ShareSheetPresenter.present(items: [url])
-                    } else {
-                        ShareSheetPresenter.present(items: [clinicalSummaryText(c)])  // text fallback
+                    isGeneratingPDF = true
+                    // Defer the work one frame so SwiftUI paints the spinner (and commits
+                    // its animation to the render server, where it keeps spinning) before
+                    // the synchronous PDF render blocks the main thread — rasterizing the
+                    // charts is the ~3s slow part. ImageRenderer requires the main actor,
+                    // so this Task stays on it; the brief sleep just guarantees a frame.
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(50))
+                        let url = ClinicalReportPDF.generate(insights: allInsights)
+                        isGeneratingPDF = false
+                        if let url {
+                            ShareSheetPresenter.present(items: [url])
+                        } else {
+                            ShareSheetPresenter.present(items: [clinicalSummaryText(c)])  // text fallback
+                        }
                     }
                 } label: {
-                    Label("Prepare a summary to share", systemImage: "square.and.arrow.up")
-                        .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
+                    HStack(spacing: 8) {
+                        if isGeneratingPDF {
+                            ProgressView().tint(Insight.brandBlue)
+                            Text("Preparing summary…")
+                        } else {
+                            Label("Prepare a summary to share", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered).tint(Insight.brandBlue)
+                .disabled(isGeneratingPDF)
                 // No safety banner here: the "For your neurologist" header + the
                 // "decisions only your neurologist can make" line above + the list's
                 // global disclaimer already carry it. Three times would be nagging.
@@ -694,7 +715,7 @@ private struct DoseResponseChartView: View {
                 RuleMark(x: .value("Dose", chart.doseMinute))
                     .lineStyle(StrokeStyle(lineWidth: 1))
                     .foregroundStyle(.secondary.opacity(0.3))
-                    .annotation(position: .bottom, alignment: .leading, spacing: 2) {
+                    .annotation(position: .top, alignment: .center, spacing: 2) {
                         Text("dose").font(.caption2).foregroundStyle(.tertiary)
                     }
 
@@ -805,7 +826,7 @@ private struct WearingOffChartView: View {
                 RuleMark(x: .value("Dose", 0))
                     .lineStyle(StrokeStyle(lineWidth: 1))
                     .foregroundStyle(.secondary.opacity(0.3))
-                    .annotation(position: .bottom, alignment: .leading, spacing: 2) {
+                    .annotation(position: .top, alignment: .center, spacing: 2) {
                         Text("dose").font(.caption2).foregroundStyle(.tertiary)
                     }
 
@@ -888,6 +909,54 @@ private struct WearingOffChartView: View {
     private func hours(_ minutes: Double) -> String {
         String(format: "%.1fh", minutes / 60)
     }
+}
+
+// MARK: - PDF chart rasterization
+//
+// The clinical PDF (ClinicalReportPDF) is UIKit/UIGraphics and can't host SwiftUI or
+// Charts directly. Rather than re-draw the curves by hand, we render the very same
+// chart views to a bitmap and hand the PDF a CGImage. This lives here — not in the PDF
+// file — so InsightsView stays the single owner of the chart views, and so this file
+// stays UIKit-free (it returns CGImage and never names UIImage, per the file's
+// no-UIKit constraint).
+
+/// A chart sized and styled for a printed page: pinned to the PDF's content width,
+/// forced to a white / light appearance so it prints cleanly no matter the device's
+/// dark mode at generation time, and boxed so it reads as a figure on the page.
+private struct PDFChartCard: View {
+    let chart: CorrelationEngine.InsightChart
+
+    /// US-Letter width (612pt) minus the PDF's 48pt margins on each side — the same
+    /// content width ClinicalReportPDF draws text into, so the figure spans the column.
+    static let contentWidth: CGFloat = 612 - 48 * 2
+
+    var body: some View {
+        Group {
+            switch chart {
+            case .doseResponse(let dr): DoseResponseChartView(chart: dr)
+            case .wearingOff(let wo):   WearingOffChartView(chart: wo)
+            }
+        }
+        .padding(14)
+        .frame(width: PDFChartCard.contentWidth)
+        .background(Color.white)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(white: 0.88), lineWidth: 1)
+        )
+        .environment(\.colorScheme, .light)
+    }
+}
+
+/// Rasterize an insight's engine chart for embedding in the clinical PDF. Main-actor
+/// because it renders a SwiftUI view; returns a CGImage so the caller (UIKit) draws it
+/// and this file never has to import UIKit. The 3× scale keeps it crisp in print; the
+/// PDF draws it aspect-preserving, so the exact scale doesn't affect page layout.
+@MainActor
+func pdfChartImage(for chart: CorrelationEngine.InsightChart) -> CGImage? {
+    let renderer = ImageRenderer(content: PDFChartCard(chart: chart))
+    renderer.scale = 3
+    return renderer.cgImage
 }
 
 // MARK: - Empty / early state

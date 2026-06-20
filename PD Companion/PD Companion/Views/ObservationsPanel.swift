@@ -348,7 +348,7 @@ struct ObservationEngine {
         return [DayObservation(
             icon: "bolt.heart.fill", iconColor: .purple,
             headline: "Tremor ran higher when HRV was lower today",
-            detail: "On lower-HRV stretches tremor averaged \(fmt(lowT)) vs \(fmt(highT)) when HRV was higher. Low HRV can reflect stress or fatigue, which may amplify tremor — worth confirming across more days.",
+            detail: "Avg \(fmt(lowT)) on lower-HRV stretches vs \(fmt(highT)) on higher — worth confirming across more days.",
             sentiment: .informational
         ).at(anchor)]
     }
