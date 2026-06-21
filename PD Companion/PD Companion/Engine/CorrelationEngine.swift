@@ -24,6 +24,18 @@ struct Dose: Sendable {
     let name: String
 }
 
+/// A discrete workout event — the canonical shape the engine's event primitives
+/// (windowed-effect, etc.) consume. The activity type is carried as a raw `UInt`
+/// (HealthKit's `HKWorkoutActivityType.rawValue`) so the engine stays
+/// HealthKit-free and CSV-testable; the adapter (`HealthKitManager
+/// .fetchWorkoutEvents`) maps `HKWorkout` into this. One adapter brings in every
+/// activity type — Tai Chi, boxing, pickleball, tango — each tagged, not coded.
+struct WorkoutEvent: Sendable {
+    let start: Date
+    let duration: TimeInterval
+    let activityRawValue: UInt
+}
+
 /// A lightweight, `Sendable` snapshot of a tremor reading — only the fields the
 /// engine reads. The app maps its SwiftData `TremorReading`s into these *on the main
 /// actor*, so the engine can run off the main thread without ever touching managed
@@ -115,14 +127,15 @@ nonisolated enum CorrelationEngine {
 
     // Entry point: run every module, return the surfaced insights.
     static func generateInsights(samples: [TremorPoint], doses: [Dose],
-                                 gait: [GaitMetric: [GaitSample]] = [:]) -> [Insight] {
+                                 gait: [GaitMetric: [GaitSample]] = [:],
+                                 workouts: [WorkoutEvent] = []) -> [Insight] {
         // The registry now DRIVES execution: walk the active questions in order
         // and dispatch each to its analysis. Entries whose primitive isn't built
         // yet (the exercise / sleep / diet cluster) return nil and stay dormant —
         // the "ship the question, light up when the data earns it" model.
         InsightRegistry.starter
             .filter { $0.status == .active }
-            .compactMap { run($0, samples: samples, doses: doses, gait: gait) }
+            .compactMap { run($0, samples: samples, doses: doses, gait: gait, workouts: workouts) }
     }
 
     /// Dispatch one registry entry to the analysis that answers it.
@@ -132,8 +145,10 @@ nonisolated enum CorrelationEngine {
     /// (windowed-effect, overnight-lag, …) these explicit routes collapse into a
     /// real dispatch keyed on `entry.primitive` over catalog-extracted shapes —
     /// at which point a new exercise entry needs no code here, only its registry line.
+    /// `workouts` is now plumbed in (the adapter is live); the windowed-effect
+    /// primitive that consumes it is the next step.
     static func run(_ entry: RegistryEntry, samples: [TremorPoint], doses: [Dose],
-                    gait: [GaitMetric: [GaitSample]]) -> Insight? {
+                    gait: [GaitMetric: [GaitSample]], workouts: [WorkoutEvent]) -> Insight? {
         switch entry.id {
         case "dose-tremor-by-tod":      return afternoonDoseInsight(samples: samples, doses: doses)
         case "dose-tremor-wearing-off": return wearingOffInsight(samples: samples, doses: doses)

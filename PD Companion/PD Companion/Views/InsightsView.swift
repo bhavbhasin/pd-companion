@@ -301,9 +301,10 @@ struct InsightsView: View {
             meds = Self.medSummaries(from: doses)
             gaitSources = await healthKit.fetchGaitSources()
             let gait = await healthKit.fetchGaitSeries(excludedSources: excludedSources)
+            let workouts = await healthKit.fetchWorkoutEvents()
 
             insights = await Task.detached(priority: .userInitiated) {
-                CorrelationEngine.generateInsights(samples: samples, doses: doses, gait: gait)
+                CorrelationEngine.generateInsights(samples: samples, doses: doses, gait: gait, workouts: workouts)
             }.value
             didLoad = true
         }

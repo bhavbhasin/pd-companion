@@ -476,6 +476,23 @@ class HealthKitManager: ObservableObject {
         }
     }
 
+    /// The workout *adapter*: all workouts over the last `days` days, mapped to the
+    /// engine's `WorkoutEvent` shape (HealthKit's activity type carried as a raw
+    /// value, so the engine stays HealthKit-free). This is the single per-stream
+    /// burden that gets workouts into the engine — every activity type (Tai Chi,
+    /// boxing, pickleball, tango…) arrives through here, tagged, needing no new code.
+    func fetchWorkoutEvents(days: Int = 120) async -> [WorkoutEvent] {
+        let end = Date()
+        let start = Calendar.current.date(byAdding: .day, value: -days, to: end)
+            ?? end.addingTimeInterval(-Double(days) * 86400)
+        let workouts = await fetchWorkoutsInRange(from: start, to: end)
+        return workouts.map {
+            WorkoutEvent(start: $0.startDate,
+                         duration: $0.duration,
+                         activityRawValue: $0.workoutActivityType.rawValue)
+        }
+    }
+
     /// All "taken" levodopa doses (Sinemet / Mucuna) over the last `days` days,
     /// mapped to the engine's `Dose` type. Mirrors the Python loader's
     /// levodopa-only + taken-only filter so the correlation engine sees the same
