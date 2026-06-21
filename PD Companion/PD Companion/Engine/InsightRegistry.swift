@@ -13,14 +13,12 @@ import HealthKit
 // question over an existing primitive + already-adapted variable is config.
 // Full design: docs/intelligence-architecture.md.
 //
-// STATUS: this file is the SCHEMA + the starter "pre-wired 80%". It is inert
-// until the engine refactor (extract trend-regression primitive + the unified
-// confidence gate — the next task) teaches `CorrelationEngine` to DISPATCH on
-// it. During that refactor, `Variable`'s gait cases reconcile with the engine's
-// `GaitMetric`, and the three bespoke cards become the first three primitives.
+// STATUS: this file is the SCHEMA + the starter "pre-wired 80%", and it now
+// DRIVES execution — `CorrelationEngine.generateInsights` iterates these entries
+// and dispatches each on its `renderer`. Entries whose primitive/renderer aren't
+// built yet stay dormant (return nil) until their adapter + renderer land.
 //
-// ⚠ Add to the iOS app target ONLY. Until the engine reads it, it compiles but
-// does nothing — adding the file will not disturb a build.
+// ⚠ Add to the iOS app target ONLY.
 
 // MARK: Variables — everything reduces to two canonical shapes
 
@@ -100,6 +98,23 @@ enum Primitive: Hashable {
     case mealTimingCompetition(windowMin: Double)
 }
 
+// MARK: Renderers — how a validated finding is presented (generic OR bespoke)
+
+/// Which card view + copy a finding renders into. This is a SEPARATE axis from the
+/// primitive (the math): a primitive is always generic, but a renderer may be
+/// bespoke when the card genuinely is. Dispatch keys on this, not the primitive —
+/// because `.longTermTrend` alone can't distinguish the gait *composite* renderer
+/// (which fuses four mobility markers into one reassurance card) from a future
+/// single-metric trend card that would share the same primitive. A nil renderer =
+/// the question is registered but its card path isn't built yet (it stays dormant,
+/// like its primitive). See docs/intelligence-architecture.md → "renderer dimension".
+enum Renderer: Hashable {
+    case doseResponse      // per-time-of-day onset overlay (afternoon-dose card)
+    case wearingOff        // pooled survival curve (the "discuss with neurologist" card)
+    case gaitComposite     // bespoke: 4 mobility markers → 1 reassurance card
+    case windowedEffect    // generic event→signal change card (exercise/diet cluster)
+}
+
 // MARK: Provenance + safety + lifecycle
 
 /// Where a hypothesis came from — the provenance trail a health app must keep.
@@ -130,6 +145,9 @@ struct RegistryEntry: Identifiable, Hashable {
     let exposure: Variable
     let outcome: Variable
     let primitive: Primitive
+    /// Which card this finding renders into — the dispatch key. nil = no card path
+    /// built yet (registered but dormant, like an unimplemented primitive).
+    var renderer: Renderer? = nil
     let rationale: String          // why this hypothesis exists — preserved as provenance
     let source: HypothesisSource
     let safety: SafetyClass
@@ -153,13 +171,16 @@ enum InsightRegistry {
             id: "dose-tremor-by-tod",
             exposure: .levodopaDose, outcome: .tremor,
             primitive: .doseResponseByTimeOfDay(preMin: 30, postMin: 180),
+            renderer: .doseResponse,
             rationale: "Levodopa onset latency and completeness vary by time of day; afternoon doses observed slower and less complete.",
             source: .curated, safety: .clinicalReferral, minN: 5),
 
         RegistryEntry(
             id: "dose-tremor-wearing-off",
             exposure: .levodopaDose, outcome: .tremor,
-            primitive: .survivalDuration(onThreshold: 0.5),
+            // onThreshold matches the engine's offThreshold (tremor ≥ this = OFF).
+            primitive: .survivalDuration(onThreshold: 1.0),
+            renderer: .wearingOff,
             rationale: "ON-duration per dose (Kaplan–Meier) reveals wearing-off; daytime dose gaps can exceed the effect window.",
             source: .curated, safety: .clinicalReferral, minN: 5),
 
@@ -167,6 +188,7 @@ enum InsightRegistry {
             id: "dose-dyskinesia-peak",
             exposure: .levodopaDose, outcome: .dyskinesia,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
             rationale: "Peak-dose dyskinesia: involuntary movement can RISE 30–120 min post-dose (inverse of the tremor benefit).",
             source: .curated, safety: .clinicalReferral, minN: 5),
 
@@ -189,6 +211,7 @@ enum InsightRegistry {
             id: "caffeine-tremor",
             exposure: .caffeine, outcome: .tremor,
             primitive: .windowedEffect(preMin: 15, postMin: 120),
+            renderer: .windowedEffect,
             rationale: "Caffeine is a stimulant with mixed PD effects; test its short-window association with tremor.",
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
@@ -197,6 +220,7 @@ enum InsightRegistry {
             id: "taichi-tremor",
             exposure: .workout(.taiChi), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
             rationale: "Tai Chi is well-supported in the PD literature for reducing tremor and improving balance.",
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
@@ -204,6 +228,7 @@ enum InsightRegistry {
             id: "boxing-tremor",
             exposure: .workout(.boxing), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
             rationale: "Non-contact boxing (Rock Steady–style) is a common PD exercise program; test its post-session tremor effect.",
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
@@ -211,6 +236,7 @@ enum InsightRegistry {
             id: "yoga-tremor",
             exposure: .workout(.yoga), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
             rationale: "Yoga is associated with reduced rigidity and stress in PD; test its post-session tremor effect.",
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
@@ -218,6 +244,7 @@ enum InsightRegistry {
             id: "cycling-tremor",
             exposure: .workout(.cycling), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
             rationale: "Forced-rate aerobic cycling has notable PD motor evidence; test its post-session tremor effect.",
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
@@ -225,6 +252,7 @@ enum InsightRegistry {
             id: "walking-tremor",
             exposure: .workout(.walking), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
             rationale: "Aerobic walking is the most accessible PD exercise; test its post-session tremor effect.",
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
@@ -232,6 +260,7 @@ enum InsightRegistry {
             id: "strength-tremor",
             exposure: .workout(.functionalStrengthTraining), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
             rationale: "Resistance training improves PD motor scores; test its post-session tremor effect.",
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
@@ -239,6 +268,7 @@ enum InsightRegistry {
             id: "tabletennis-tremor",
             exposure: .workout(.tableTennis), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
             rationale: "Table tennis demands rapid aiming, reaction, and footwork; anecdotal and emerging evidence suggests benefit for PD motor symptoms.",
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
@@ -246,6 +276,7 @@ enum InsightRegistry {
             id: "pickleball-tremor",
             exposure: .workout(.pickleball), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
             rationale: "Pickleball combines aerobic movement, agility, and social engagement; anecdotally reported to help PD symptoms.",
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
@@ -253,6 +284,7 @@ enum InsightRegistry {
             id: "tango-tremor",
             exposure: .workout(.socialDance), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
             rationale: "Argentine tango has documented PD benefits for balance and gait (partner dance maps to HealthKit social dance); test its post-session tremor effect.",
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
@@ -260,6 +292,7 @@ enum InsightRegistry {
             id: "mindfulness-tremor",
             exposure: .mindfulSession, outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
             rationale: "Mental stillness lowers sympathetic arousal, which can amplify tremor; test the post-session effect.",
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
@@ -299,6 +332,7 @@ enum InsightRegistry {
             id: "gait-speed-trend",
             exposure: .calendarTime, outcome: .gaitSpeed,
             primitive: .longTermTrend,
+            renderer: .gaitComposite,
             rationale: "Walking speed is a sensitive PD progression marker; a multi-month trend tracks mobility over time.",
             source: .curated, safety: .clinicalReferral, minN: 6),
     ]

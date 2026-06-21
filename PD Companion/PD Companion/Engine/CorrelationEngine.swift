@@ -138,32 +138,32 @@ nonisolated enum CorrelationEngine {
             .compactMap { run($0, samples: samples, doses: doses, gait: gait, workouts: workouts) }
     }
 
-    /// Dispatch one registry entry to the analysis that answers it.
+    /// Dispatch one registry entry to the renderer that draws it.
     ///
-    /// TRANSITIONAL: the three validated analyses are still bespoke functions, so
-    /// they're routed explicitly by `entry.id`. As each generic primitive lands
-    /// (windowed-effect, overnight-lag, …) these explicit routes collapse into a
-    /// real dispatch keyed on `entry.primitive` over catalog-extracted shapes —
-    /// at which point a new exercise entry needs no code here, only its registry line.
-    /// `workouts` is now plumbed in (the adapter is live); the windowed-effect
-    /// primitive that consumes it is the next step.
+    /// Dispatch keys on `entry.renderer` — the self-describing display axis — NOT on
+    /// the id (the old transitional shim is gone) and NOT on the primitive alone
+    /// (which can't distinguish the gait *composite* renderer from a future
+    /// single-metric trend that shares `.longTermTrend`). Each renderer reads its
+    /// statistical parameters from `entry.primitive`, so a new question over a built
+    /// renderer + primitive needs no code here — only its registry line. A nil
+    /// renderer (or a primitive that doesn't match) = registered but dormant.
     static func run(_ entry: RegistryEntry, samples: [TremorPoint], doses: [Dose],
                     gait: [GaitMetric: [GaitSample]], workouts: [WorkoutEvent]) -> Insight? {
-        // The three validated analyses are still bespoke functions (transitional,
-        // routed by id). Everything else dispatches generically on the primitive —
-        // a new registry line over a built primitive needs no code here.
-        switch entry.id {
-        case "dose-tremor-by-tod":      return afternoonDoseInsight(samples: samples, doses: doses)
-        case "dose-tremor-wearing-off": return wearingOffInsight(samples: samples, doses: doses)
-        case "gait-speed-trend":        return gaitInsight(series: gait)
-        default:                        break
-        }
-        switch entry.primitive {
-        case .windowedEffect(let preMin, let postMin):
+        switch entry.renderer {
+        case .doseResponse:
+            guard case .doseResponseByTimeOfDay(let preMin, let postMin) = entry.primitive else { return nil }
+            return afternoonDoseInsight(samples: samples, doses: doses, preMin: preMin, postMin: postMin)
+        case .wearingOff:
+            guard case .survivalDuration(let onThreshold) = entry.primitive else { return nil }
+            return wearingOffInsight(samples: samples, doses: doses, onThreshold: onThreshold)
+        case .gaitComposite:
+            return gaitInsight(series: gait)
+        case .windowedEffect:
+            guard case .windowedEffect(let preMin, let postMin) = entry.primitive else { return nil }
             return windowedEffectInsight(entry: entry, samples: samples,
                                          workouts: workouts, preMin: preMin, postMin: postMin)
-        default:
-            return nil   // primitive not yet implemented
+        case .none:
+            return nil   // no renderer wired yet — registered but dormant
         }
     }
 
@@ -434,19 +434,41 @@ nonisolated extension CorrelationEngine {
         return Double(c.hour ?? 0) + Double(c.minute ?? 0) / 60.0
     }
 
-    /// Build one trace per dose that has adequate tremor coverage.
-    static func buildTraces(samples: [TremorPoint], doses: [Dose]) -> [DoseTrace] {
-        let series = samples.sorted { $0.timestamp < $1.timestamp }
-        let ds = doses.sorted { $0.timestamp < $1.timestamp }
+    /// Result of the dose-response-by-time-of-day PRIMITIVE: one response trace per
+    /// event with adequate coverage, plus the onset latency aggregated into time-of-day
+    /// buckets. The renderer (`afternoonDoseInsight`) gates this and draws the card —
+    /// mirroring how `gaitInsight` renders `longTermTrend`. `buildTraces` is the
+    /// tremor/dose adapter over this; the test pins it for parity.
+    struct DoseResponseByToD {
+        let traces: [DoseTrace]
+        /// Mean onset latency (t½, the 50%-of-drop time) + contributing dose count
+        /// for one time-of-day bucket. Doses whose drop never reached 50% (`tHalf`
+        /// NaN) are excluded, as in the lab.
+        func onset(_ bucket: Bucket) -> (mean: Double, n: Int) {
+            let xs = traces.filter { $0.bucket == bucket && !$0.tHalf.isNaN }.map(\.tHalf)
+            return (CorrelationEngine.nanmean(xs), xs.count)
+        }
+    }
+
+    /// The dose-response-by-time-of-day PRIMITIVE, generic over the two canonical
+    /// shapes: a continuous `signal` and discrete `events`. For each event it builds
+    /// a baseline-corrected post-event trajectory (truncated at the next event),
+    /// keeps only events with adequate coverage, and tags each by time-of-day bucket.
+    /// Variable-agnostic by construction — tremor-vs-dose today, any signal-vs-event
+    /// tomorrow. `preMin`/`postMin` come from the registry entry.
+    static func doseResponseByTimeOfDay(
+        signal: [(time: Date, value: Double)], events: [Date],
+        preMin: Double, postMin: Double
+    ) -> DoseResponseByToD {
+        let series = signal.sorted { $0.time < $1.time }
+        let ds = events.sorted()
         var traces: [DoseTrace] = []
 
-        for (i, dose) in ds.enumerated() {
-            let t0 = dose.timestamp
-
-            // Guard 1: truncate the post window at the next dose.
+        for (i, t0) in ds.enumerated() {
+            // Guard 1: truncate the post window at the next event.
             let postEff: Double
             if i + 1 < ds.count {
-                let gap = ds[i + 1].timestamp.timeIntervalSince(t0) / 60.0
+                let gap = ds[i + 1].timeIntervalSince(t0) / 60.0
                 postEff = min(postMin, max(0, gap))
             } else {
                 postEff = postMin
@@ -454,11 +476,11 @@ nonisolated extension CorrelationEngine {
 
             let lo = t0.addingTimeInterval(-preMin * 60)
             let hi = t0.addingTimeInterval(postEff * 60)
-            let win = series.filter { $0.timestamp >= lo && $0.timestamp <= hi }
+            let win = series.filter { $0.time >= lo && $0.time <= hi }
             if win.count < 3 { continue }
 
-            let rel = win.map { $0.timestamp.timeIntervalSince(t0) / 60.0 }
-            let vals = win.map { $0.tremorScore }
+            let rel = win.map { $0.time.timeIntervalSince(t0) / 60.0 }
+            let vals = win.map { $0.value }
             let (centers, binnedVals) = binned(rel: rel, vals: vals, lo: -preMin, hi: postMin)
 
             // Coverage in the clinically key [0, min(keyWindow, postEff)] window.
@@ -513,19 +535,33 @@ nonisolated extension CorrelationEngine {
                 binValues: binnedVals
             ))
         }
-        return traces
+        return DoseResponseByToD(traces: traces)
+    }
+
+    /// Tremor/dose adapter over the generic primitive. Kept as the parity surface the
+    /// test pins; uses the dose-response window constants (= the registry's params).
+    static func buildTraces(samples: [TremorPoint], doses: [Dose]) -> [DoseTrace] {
+        doseResponseByTimeOfDay(
+            signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
+            events: doses.map(\.timestamp),
+            preMin: preMin, postMin: postMin
+        ).traces
     }
 
     /// The afternoon-dose finding, or nil if the pattern doesn't clear the gate.
-    static func afternoonDoseInsight(samples: [TremorPoint], doses: [Dose]) -> Insight? {
-        let traces = buildTraces(samples: samples, doses: doses)
+    /// The bespoke RENDERER over the `doseResponseByTimeOfDay` primitive: it runs the
+    /// primitive, gates on the afternoon-vs-morning onset gap, and composes the card.
+    static func afternoonDoseInsight(samples: [TremorPoint], doses: [Dose],
+                                     preMin: Double = CorrelationEngine.preMin,
+                                     postMin: Double = CorrelationEngine.postMin) -> Insight? {
+        let dr = doseResponseByTimeOfDay(
+            signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
+            events: doses.map(\.timestamp),
+            preMin: preMin, postMin: postMin)
+        let traces = dr.traces
 
-        func onset(_ bucket: Bucket) -> (mean: Double, n: Int) {
-            let xs = traces.filter { $0.bucket == bucket && !$0.tHalf.isNaN }.map { $0.tHalf }
-            return (nanmean(xs), xs.count)
-        }
-        let aft = onset(.afternoon)
-        let morn = onset(.morning)
+        let aft = dr.onset(.afternoon)
+        let morn = dr.onset(.morning)
 
         // Surfacing gate (logic-based; see Insights design): need enough afternoon
         // doses, a morning comparator, and a meaningfully slower afternoon onset.
@@ -602,24 +638,40 @@ nonisolated extension CorrelationEngine {
         let binValues: [Double]
     }
 
-    static func analyzeWearingOff(samples: [TremorPoint], doses: [Dose]) -> [DoseDuration] {
-        let series = samples.sorted { $0.timestamp < $1.timestamp }
-        let ds = doses.sorted { $0.timestamp < $1.timestamp }
+    /// Result of the survival/ON-duration PRIMITIVE: per-dose durations (observed or
+    /// right-censored) plus the Kaplan–Meier median and the observed-event count. The
+    /// renderer (`wearingOffInsight`) gates and draws the card; `analyzeWearingOff` is
+    /// the tremor/dose adapter the parity test pins.
+    struct SurvivalDuration {
+        let durations: [DoseDuration]
+        let kmMedian: Double        // KM median ON-duration (.nan if not estimable)
+        let observedCount: Int      // doses observed to wear off before the next dose
+    }
+
+    /// The survival / ON-duration PRIMITIVE, generic over a continuous `signal` and
+    /// discrete `events`. For each event: build the post-event trajectory, find when
+    /// the signal sustains a return above `onThreshold` (OFF-return) — or right-censor
+    /// at the next event — then estimate the Kaplan–Meier median duration. Variable-
+    /// agnostic; the threshold comes from the registry entry.
+    static func survivalDuration(
+        signal: [(time: Date, value: Double)], events: [Date], onThreshold: Double
+    ) -> SurvivalDuration {
+        let series = signal.sorted { $0.time < $1.time }
+        let ds = events.sorted()
         var results: [DoseDuration] = []
 
-        for (i, dose) in ds.enumerated() {
-            let t0 = dose.timestamp
+        for (i, t0) in ds.enumerated() {
             var interval = Double.nan
-            if i + 1 < ds.count { interval = ds[i + 1].timestamp.timeIntervalSince(t0) / 60.0 }
+            if i + 1 < ds.count { interval = ds[i + 1].timeIntervalSince(t0) / 60.0 }
             let isolated = interval.isNaN || interval >= gapIso
 
             let lo = t0.addingTimeInterval(-preMin * 60)
             let hi = t0.addingTimeInterval(maxWindow * 60)
-            let win = series.filter { $0.timestamp >= lo && $0.timestamp <= hi }
+            let win = series.filter { $0.time >= lo && $0.time <= hi }
             if win.count < 4 { continue }
 
-            let rel = win.map { $0.timestamp.timeIntervalSince(t0) / 60.0 }
-            let vals = win.map { $0.tremorScore }
+            let rel = win.map { $0.time.timeIntervalSince(t0) / 60.0 }
+            let vals = win.map { $0.value }
             let (centers, rawBins) = binned(rel: rel, vals: vals, lo: -preMin, hi: maxWindow)
             let sm = smooth(rawBins)
 
@@ -640,7 +692,7 @@ nonisolated extension CorrelationEngine {
 
             // Observation horizon: truncate at the next dose.
             let horizon = interval.isNaN ? maxWindow : min(maxWindow, interval)
-            let (duration, observed) = offReturn(centers: centers, sm: sm, horizon: horizon, thr: offThreshold)
+            let (duration, observed) = offReturn(centers: centers, sm: sm, horizon: horizon, thr: onThreshold)
 
             let hour = hourOfDay(t0)
             results.append(DoseDuration(
@@ -650,7 +702,19 @@ nonisolated extension CorrelationEngine {
                 binValues: sm   // smoothed series → canonical curve (Python parity)
             ))
         }
-        return results
+        let km = kmMedian(durations: results.map(\.durationMin), observed: results.map(\.observed))
+        return SurvivalDuration(
+            durations: results, kmMedian: km,
+            observedCount: results.filter { $0.observed }.count)
+    }
+
+    /// Tremor/dose adapter over the survival primitive. The parity surface the test
+    /// pins; uses the engine's OFF threshold (= the registry entry's `onThreshold`).
+    static func analyzeWearingOff(samples: [TremorPoint], doses: [Dose]) -> [DoseDuration] {
+        survivalDuration(
+            signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
+            events: doses.map(\.timestamp), onThreshold: offThreshold
+        ).durations
     }
 
     /// Time from dose to a sustained OFF-return after control is achieved; else
@@ -702,11 +766,18 @@ nonisolated extension CorrelationEngine {
     }
 
     /// The wearing-off insight (the "discuss with your neurologist" card), or nil.
-    static func wearingOffInsight(samples: [TremorPoint], doses: [Dose]) -> Insight? {
-        let results = analyzeWearingOff(samples: samples, doses: doses)
+    /// The bespoke RENDERER over the `survivalDuration` primitive: it runs the
+    /// primitive, gates on dose count + the gap-exceeds-duration condition, and
+    /// composes the clinical-discussion card.
+    static func wearingOffInsight(samples: [TremorPoint], doses: [Dose],
+                                  onThreshold: Double = CorrelationEngine.offThreshold) -> Insight? {
+        let surv = survivalDuration(
+            signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
+            events: doses.map(\.timestamp), onThreshold: onThreshold)
+        let results = surv.durations
         guard results.count >= 20 else { return nil }
 
-        let km = kmMedian(durations: results.map(\.durationMin), observed: results.map(\.observed))
+        let km = surv.kmMedian
         guard !km.isNaN else { return nil }
 
         // Daytime inter-dose gaps (exclude overnight gaps > 600 min).
@@ -722,7 +793,7 @@ nonisolated extension CorrelationEngine {
         let gapH = String(format: "%.0f", medInterval / 60)
         let kmMin = Int(km.rounded())
         let gapMin = Int(medInterval.rounded())
-        let observedCount = results.filter { $0.observed }.count
+        let observedCount = surv.observedCount
         let days = Set(results.map { calendar.startOfDay(for: $0.t0) }).count
         let confidence: Insight.Confidence = gate(Self.wearingOffGate, n: results.count) ?? .moderate
 

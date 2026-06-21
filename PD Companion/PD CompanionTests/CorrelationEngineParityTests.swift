@@ -190,6 +190,35 @@ struct CorrelationEngineParityTests {
 
         // Net read: nothing significantly worsening → the reassuring verdict.
         #expect(prog.anySignificantWorsening == false, "no significant gait decline")
+
+        // --- End-to-end dispatch (registry → run() → renderer) ---
+        // The blocks above call each renderer directly. This exercises the seam they
+        // skip: the registry-driven path, where `generateInsights` iterates the entries
+        // and dispatches each on its `renderer` (no id-switch). With no workouts passed,
+        // the exercise/diet/sleep/HRV entries stay dormant, so exactly the three built
+        // medication + gait cards fire — and they must match the direct-call results.
+        let surfaced = CorrelationEngine.generateInsights(
+            samples: samples, doses: doses, gait: Self.loadGait(), workouts: [])
+        #expect(surfaced.count == 3, "only the three built cards fire when no workouts are supplied")
+
+        let doseCard = try #require(
+            surfaced.first { $0.title.localizedCaseInsensitiveContains("afternoon dose") },
+            "afternoon-dose card should surface via the .doseResponse renderer")
+        #expect(doseCard.confidence == .strong)
+        #expect(doseCard.stage == .hypothesis)
+
+        let wearCard = try #require(
+            surfaced.first { $0.stage == .clinicalDiscussion },
+            "wearing-off card should surface via the .wearingOff renderer")
+        #expect(wearCard.confidence == .strong)
+        #expect(wearCard.title.localizedCaseInsensitiveContains("spaced wider"))
+
+        // Keyed on stage, not title: .verdict uniquely identifies the gait composite
+        // (dose = .hypothesis, wearing-off = .clinicalDiscussion), so the assertion
+        // doesn't break if the card's copy is reworded.
+        _ = try #require(
+            surfaced.first { $0.stage == .verdict },
+            "gait card should surface via the .gaitComposite renderer")
     }
 
     // MARK: - Minimal CSV loaders (test-only; the app writes CSV, never reads it)
