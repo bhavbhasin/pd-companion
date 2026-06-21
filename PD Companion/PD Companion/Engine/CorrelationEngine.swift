@@ -116,17 +116,30 @@ nonisolated enum CorrelationEngine {
     // Entry point: run every module, return the surfaced insights.
     static func generateInsights(samples: [TremorPoint], doses: [Dose],
                                  gait: [GaitMetric: [GaitSample]] = [:]) -> [Insight] {
-        var out: [Insight] = []
-        if let afternoon = afternoonDoseInsight(samples: samples, doses: doses) {
-            out.append(afternoon)
+        // The registry now DRIVES execution: walk the active questions in order
+        // and dispatch each to its analysis. Entries whose primitive isn't built
+        // yet (the exercise / sleep / diet cluster) return nil and stay dormant —
+        // the "ship the question, light up when the data earns it" model.
+        InsightRegistry.starter
+            .filter { $0.status == .active }
+            .compactMap { run($0, samples: samples, doses: doses, gait: gait) }
+    }
+
+    /// Dispatch one registry entry to the analysis that answers it.
+    ///
+    /// TRANSITIONAL: the three validated analyses are still bespoke functions, so
+    /// they're routed explicitly by `entry.id`. As each generic primitive lands
+    /// (windowed-effect, overnight-lag, …) these explicit routes collapse into a
+    /// real dispatch keyed on `entry.primitive` over catalog-extracted shapes —
+    /// at which point a new exercise entry needs no code here, only its registry line.
+    static func run(_ entry: RegistryEntry, samples: [TremorPoint], doses: [Dose],
+                    gait: [GaitMetric: [GaitSample]]) -> Insight? {
+        switch entry.id {
+        case "dose-tremor-by-tod":      return afternoonDoseInsight(samples: samples, doses: doses)
+        case "dose-tremor-wearing-off": return wearingOffInsight(samples: samples, doses: doses)
+        case "gait-speed-trend":        return gaitInsight(series: gait)
+        default:                        return nil   // primitive not yet implemented
         }
-        if let wearingOff = wearingOffInsight(samples: samples, doses: doses) {
-            out.append(wearingOff)
-        }
-        if let g = gaitInsight(series: gait) {
-            out.append(g)
-        }
-        return out
     }
 }
 
