@@ -210,10 +210,14 @@ nonisolated enum CorrelationEngine {
         let finding = "From \(eff.n) \(lower) session\(eff.n == 1 ? "" : "s") over \(days) day\(days == 1 ? "" : "s"): tremor \(eased ? "down" : "up") ~\(pct) in the \(hours)h after vs. the \(Int(preMin)) min before. An association in your own data — a hypothesis to test, not proof."
         let mechanism = "Exercise can shift PD motor symptoms for a while afterward, but daily tremor has many drivers — sleep, stress, and medication timing among them. Treat this as a lead to test, not a conclusion."
 
-        return Insight(
+        var insight = Insight(
             title: title, summary: summary, stage: .hypothesis,
             finding: finding, mechanism: mechanism,
             confidence: confidence, evidenceDays: days)
+        insight.chart = windowedEffectChart(
+            events: events, signal: signal, preMin: preMin, postMin: postMin,
+            activityLabel: activity)
+        return insight
     }
 }
 
@@ -833,11 +837,50 @@ nonisolated extension CorrelationEngine {
         let higherIsWorse: Bool     // axis/caption semantics (false for speed)
     }
 
+    /// Plot-ready payload for a windowed-effect (exercise) card: the mean tremor
+    /// trajectory in the window AFTER each session, against the pre-session baseline.
+    /// Reuses `CurvePoint` so the view machinery matches the dose curves.
+    struct WindowedEffectChart {
+        let activityLabel: String   // "Boxing"
+        let curve: [CurvePoint]     // mean tremor vs minutes after session end
+        let baseline: Double        // pre-session mean tremor (horizontal reference)
+        let postMin: Double         // x-axis upper bound (minutes)
+    }
+
     /// Plot-ready payload attached to an `Insight`. Each case maps to one chart view.
     enum InsightChart {
         case doseResponse(DoseResponseChart)
         case wearingOff(WearingOffChart)
         case gaitTrend(GaitTrendChart)
+        case windowedEffect(WindowedEffectChart)
+    }
+
+    /// Mean post-session tremor trajectory across events, on a shared [0, postMin]
+    /// grid, plus the pre-session baseline — built with the same bin/smooth/aggregate
+    /// machinery as the dose curves. nil if no session has post-window coverage.
+    static func windowedEffectChart(
+        events: [(start: Date, end: Date)], signal: [(time: Date, value: Double)],
+        preMin: Double, postMin: Double, activityLabel: String
+    ) -> InsightChart? {
+        var series: [[Double]] = []
+        var preMeans: [Double] = []
+        for ev in events {
+            let postHi = ev.end.addingTimeInterval(postMin * 60)
+            let post = signal.filter { $0.time > ev.end && $0.time <= postHi }
+            guard !post.isEmpty else { continue }
+            let rel = post.map { $0.time.timeIntervalSince(ev.end) / 60.0 }
+            let (_, raw) = binned(rel: rel, vals: post.map(\.value), lo: 0, hi: postMin)
+            series.append(smooth(raw))
+
+            let preLo = ev.start.addingTimeInterval(-preMin * 60)
+            let pre = signal.filter { $0.time >= preLo && $0.time < ev.start }.map(\.value)
+            if !pre.isEmpty { preMeans.append(pre.reduce(0, +) / Double(pre.count)) }
+        }
+        guard !series.isEmpty else { return nil }
+        let curve = aggregateCurve(series: series, centers: binCenters(lo: 0, hi: postMin))
+        let baseline = preMeans.isEmpty ? .nan : preMeans.reduce(0, +) / Double(preMeans.count)
+        return .windowedEffect(WindowedEffectChart(
+            activityLabel: activityLabel, curve: curve, baseline: baseline, postMin: postMin))
     }
 
     /// Build the hero gait chart from a metric's trend: its monthly medians plus the

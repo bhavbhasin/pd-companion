@@ -469,10 +469,11 @@ private struct InsightCard: View {
 
         // The engine's plot-ready curve, rendered inside the expanded card.
         switch insight.chart {
-        case .doseResponse(let dr): DoseResponseChartView(chart: dr)
-        case .wearingOff(let wo):   WearingOffChartView(chart: wo)
-        case .gaitTrend(let g):     GaitTrendChartView(chart: g)
-        case .none:                 EmptyView()
+        case .doseResponse(let dr):   DoseResponseChartView(chart: dr)
+        case .wearingOff(let wo):     WearingOffChartView(chart: wo)
+        case .gaitTrend(let g):       GaitTrendChartView(chart: g)
+        case .windowedEffect(let w):  WindowedEffectChartView(chart: w)
+        case .none:                   EmptyView()
         }
 
         // Gait only: when more than one device fed the data, let the user confirm which
@@ -863,6 +864,84 @@ private struct DoseResponseChartView: View {
     }
 }
 
+// MARK: - Windowed-effect chart
+//
+// Mean tremor in the window AFTER each session (x=0 is when the session ends),
+// against the dashed pre-session baseline. A curve sitting below the baseline means
+// less tremor after the activity. Same "lower is better" reading as the dose curves.
+
+private struct WindowedEffectChartView: View {
+    let chart: CorrelationEngine.WindowedEffectChart
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Chart {
+                // Pre-session baseline — the level the curve is judged against.
+                if !chart.baseline.isNaN {
+                    RuleMark(y: .value("Before", chart.baseline))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                        .foregroundStyle(.secondary.opacity(0.5))
+                        .annotation(position: .top, alignment: .trailing, spacing: 2) {
+                            Text("before").font(.caption2).foregroundStyle(.secondary)
+                        }
+                }
+
+                // The session ends at x=0; the curve is the recovery after it.
+                RuleMark(x: .value("Session ends", 0))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                    .foregroundStyle(.secondary.opacity(0.3))
+                    .annotation(position: .top, alignment: .leading, spacing: 2) {
+                        Text("ends").font(.caption2).foregroundStyle(.tertiary)
+                    }
+
+                ForEach(plottable, id: \.minute) { pt in
+                    LineMark(
+                        x: .value("Minutes after", pt.minute),
+                        y: .value("Tremor", pt.value)
+                    )
+                    .foregroundStyle(Insight.brandBlue)
+                    .interpolationMethod(.catmullRom)
+                    .lineStyle(StrokeStyle(lineWidth: 2))
+                }
+            }
+            .chartXScale(domain: 0...chart.postMin)
+            .chartYScale(domain: 0...yMax)
+            .chartXAxis {
+                AxisMarks(values: xValues) { value in
+                    AxisGridLine(); AxisTick()
+                    AxisValueLabel {
+                        if let m = value.as(Int.self) { Text("\(m)m").font(.caption2) }
+                    }
+                }
+            }
+            .chartYAxis {
+                AxisMarks { AxisGridLine(); AxisTick(); AxisValueLabel() }
+            }
+            .frame(height: 180)
+            .accessibilityLabel("Tremor in the window after each \(chart.activityLabel) session, versus the before-session level")
+
+            Text("Lower is better. A curve below the dashed “before” line means less tremor after \(chart.activityLabel.lowercased()).")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    private var plottable: [CorrelationEngine.CurvePoint] {
+        chart.curve.filter { !$0.value.isNaN && $0.minute >= 0 && $0.minute <= chart.postMin }
+    }
+
+    private var yMax: Double {
+        var vals = chart.curve.map(\.value).filter { !$0.isNaN }
+        if !chart.baseline.isNaN { vals.append(chart.baseline) }
+        let m = vals.max() ?? 1.5
+        return max(1.5, (m * 2).rounded(.up) / 2)
+    }
+
+    private var xValues: [Int] {
+        Array(stride(from: 0, through: Int(chart.postMin), by: 30))
+    }
+}
+
 // MARK: - Wearing-off chart
 //
 // The canonical single-dose response, pooled across isolated doses: tremor starts at
@@ -1061,9 +1140,10 @@ private struct PDFChartCard: View {
     var body: some View {
         Group {
             switch chart {
-            case .doseResponse(let dr): DoseResponseChartView(chart: dr)
-            case .wearingOff(let wo):   WearingOffChartView(chart: wo)
-            case .gaitTrend(let g):     GaitTrendChartView(chart: g)
+            case .doseResponse(let dr):   DoseResponseChartView(chart: dr)
+            case .wearingOff(let wo):     WearingOffChartView(chart: wo)
+            case .gaitTrend(let g):       GaitTrendChartView(chart: g)
+            case .windowedEffect(let w):  WindowedEffectChartView(chart: w)
             }
         }
         .padding(14)
