@@ -1,0 +1,283 @@
+import Foundation
+import HealthKit
+
+// MARK: - Insight Registry
+//
+// The list of QUESTIONS the engine is allowed to ask. Pure configuration: each
+// entry wires one `exposure` → one `outcome` through one `primitive`, plus the
+// rationale that admitted it and the gate's sufficiency floor (`minN`).
+//
+// This is the substrate the LLM proposes over and the human approves INTO.
+// Adding a question is a one-line diff in `starter` below — not new statistical
+// code. A NEW primitive or a NEW adapter is code (and a real build); a new
+// question over an existing primitive + already-adapted variable is config.
+// Full design: docs/intelligence-architecture.md.
+//
+// STATUS: this file is the SCHEMA + the starter "pre-wired 80%". It is inert
+// until the engine refactor (extract trend-regression primitive + the unified
+// confidence gate — the next task) teaches `CorrelationEngine` to DISPATCH on
+// it. During that refactor, `Variable`'s gait cases reconcile with the engine's
+// `GaitMetric`, and the three bespoke cards become the first three primitives.
+//
+// ⚠ Add to the iOS app target ONLY. Until the engine reads it, it compiles but
+// does nothing — adding the file will not disturb a build.
+
+// MARK: Variables — everything reduces to two canonical shapes
+
+/// A variable in the catalog, in one of the two shapes a primitive understands.
+enum Variable: Hashable {
+    // — Continuous signals (a value over time) —
+    case tremor
+    case dyskinesia
+    case hrv                       // SDNN, timestamped
+    case restingHeartRate
+    case gaitSpeed
+    case gaitStepLength
+    case gaitAsymmetry
+    case gaitDoubleSupport
+
+    // — Discrete events (a thing at a timestamp) —
+    case levodopaDose
+    case workout(HKWorkoutActivityType)
+    case mindfulSession
+    case meal(MealFilter)
+    case caffeine
+    case sleep(SleepFacet)
+
+    // — Implicit predictors (for trend / circadian questions) —
+    case timeOfDay                 // hour-of-day axis (circadian)
+    case calendarTime              // long-term progression axis
+}
+
+/// Narrows a meal event to a PD-relevant subset (we never need exact grams).
+enum MealFilter: Hashable { case any, proteinRich, large }
+
+/// A facet of a night's sleep, used as an overnight predictor.
+enum SleepFacet: Hashable { case duration, deep, rem, interruptions }
+
+// MARK: Primitives — reusable methods over the two shapes (built once)
+
+/// A statistical method that operates on *shapes*, not specific variables.
+/// One primitive serves many registry entries — that is the whole point.
+enum Primitive: Hashable {
+    /// Effect of an event on a signal in the window after it (baseline-corrected).
+    case windowedEffect(preMin: Double, postMin: Double)
+    /// Onset latency + completeness of a dose, split by time-of-day bucket.
+    case doseResponseByTimeOfDay(preMin: Double, postMin: Double)
+    /// Kaplan–Meier ON-duration / wearing-off with right-censoring.
+    case survivalDuration(onThreshold: Double)
+    /// Periodic within-day baseline of a signal across hour-of-day.
+    case circadianBaseline
+    /// Regression of a signal over monthly medians (long-term direction).
+    case longTermTrend
+    /// Prior-night facet → next-day signal.
+    case overnightLag
+    /// Within-day association between two co-occurring signals.
+    case withinDayAssociation
+    /// How an event's timing relative to a dose modulates that dose's onset.
+    case mealTimingCompetition(windowMin: Double)
+}
+
+// MARK: Provenance + safety + lifecycle
+
+/// Where a hypothesis came from — the provenance trail a health app must keep.
+enum HypothesisSource: Hashable {
+    case curated                       // human-authored, literature/mechanism-motivated
+    case llmProposed(model: String)    // proposed by the hypothesis layer, human-approved
+}
+
+/// Governs how a validated finding may be PRESENTED. The medication line is
+/// non-negotiable — Kampa never issues a dosing instruction.
+enum SafetyClass: Hashable {
+    /// Patient-controllable behavior — a finding may propose an experiment.
+    case lifestyleExperiment
+    /// Touches the medication regimen or disease progression — surface the
+    /// observation and refer to the neurologist. Never prescribe or instruct.
+    case clinicalReferral
+}
+
+enum RegistryStatus: Hashable {
+    case active        // shipped; the engine runs it (may still be gated-hidden per user)
+    case candidate     // proposed; awaiting human approval into the engine
+    case disabled
+}
+
+/// One question. Configuration, not code.
+struct RegistryEntry: Identifiable, Hashable {
+    let id: String
+    let exposure: Variable
+    let outcome: Variable
+    let primitive: Primitive
+    let rationale: String          // why this hypothesis exists — preserved as provenance
+    let source: HypothesisSource
+    let safety: SafetyClass
+    let minN: Int                  // sufficiency floor the gate enforces before showing anything
+    var status: RegistryStatus = .active
+}
+
+// MARK: - The pre-wired 80%
+
+enum InsightRegistry {
+
+    /// The shipped, curated question set. Every entry is mechanism- or
+    /// literature-motivated (NOT every possible pair — that would be a
+    /// false-discovery machine). Entries the user hasn't "earned" yet (e.g. an
+    /// activity they don't do) simply never clear the gate until their own data
+    /// supports them — Tai Chi can light up for one user and stay dark for another.
+    static let starter: [RegistryEntry] = [
+
+        // ───────────── Medication (strongest, already-validated methods) ─────────────
+        RegistryEntry(
+            id: "dose-tremor-by-tod",
+            exposure: .levodopaDose, outcome: .tremor,
+            primitive: .doseResponseByTimeOfDay(preMin: 30, postMin: 180),
+            rationale: "Levodopa onset latency and completeness vary by time of day; afternoon doses observed slower and less complete.",
+            source: .curated, safety: .clinicalReferral, minN: 5),
+
+        RegistryEntry(
+            id: "dose-tremor-wearing-off",
+            exposure: .levodopaDose, outcome: .tremor,
+            primitive: .survivalDuration(onThreshold: 0.5),
+            rationale: "ON-duration per dose (Kaplan–Meier) reveals wearing-off; daytime dose gaps can exceed the effect window.",
+            source: .curated, safety: .clinicalReferral, minN: 5),
+
+        RegistryEntry(
+            id: "dose-dyskinesia-peak",
+            exposure: .levodopaDose, outcome: .dyskinesia,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            rationale: "Peak-dose dyskinesia: involuntary movement can RISE 30–120 min post-dose (inverse of the tremor benefit).",
+            source: .curated, safety: .clinicalReferral, minN: 5),
+
+        // ───────────── Diet ↔ medication (your 3 PM question) ─────────────
+        RegistryEntry(
+            id: "protein-meal-dose-onset",
+            exposure: .meal(.proteinRich), outcome: .tremor,
+            primitive: .mealTimingCompetition(windowMin: 90),
+            rationale: "Dietary protein competes with levodopa absorption; a protein meal near a dose may slow or blunt its onset.",
+            source: .curated, safety: .lifestyleExperiment, minN: 8),
+
+        RegistryEntry(
+            id: "meal-fullness-dose-onset",
+            exposure: .meal(.large), outcome: .tremor,
+            primitive: .mealTimingCompetition(windowMin: 90),
+            rationale: "A full stomach slows gastric emptying; a large meal near a dose may delay onset versus an empty-stomach dose.",
+            source: .curated, safety: .lifestyleExperiment, minN: 8),
+
+        RegistryEntry(
+            id: "caffeine-tremor",
+            exposure: .caffeine, outcome: .tremor,
+            primitive: .windowedEffect(preMin: 15, postMin: 120),
+            rationale: "Caffeine is a stimulant with mixed PD effects; test its short-window association with tremor.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        // ───────────── Exercise cluster (ONE primitive, many activity types) ─────────────
+        RegistryEntry(
+            id: "taichi-tremor",
+            exposure: .workout(.taiChi), outcome: .tremor,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            rationale: "Tai Chi is well-supported in the PD literature for reducing tremor and improving balance.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        RegistryEntry(
+            id: "boxing-tremor",
+            exposure: .workout(.boxing), outcome: .tremor,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            rationale: "Non-contact boxing (Rock Steady–style) is a common PD exercise program; test its post-session tremor effect.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        RegistryEntry(
+            id: "yoga-tremor",
+            exposure: .workout(.yoga), outcome: .tremor,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            rationale: "Yoga is associated with reduced rigidity and stress in PD; test its post-session tremor effect.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        RegistryEntry(
+            id: "cycling-tremor",
+            exposure: .workout(.cycling), outcome: .tremor,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            rationale: "Forced-rate aerobic cycling has notable PD motor evidence; test its post-session tremor effect.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        RegistryEntry(
+            id: "walking-tremor",
+            exposure: .workout(.walking), outcome: .tremor,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            rationale: "Aerobic walking is the most accessible PD exercise; test its post-session tremor effect.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        RegistryEntry(
+            id: "strength-tremor",
+            exposure: .workout(.functionalStrengthTraining), outcome: .tremor,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            rationale: "Resistance training improves PD motor scores; test its post-session tremor effect.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        RegistryEntry(
+            id: "tabletennis-tremor",
+            exposure: .workout(.tableTennis), outcome: .tremor,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            rationale: "Table tennis demands rapid aiming, reaction, and footwork; anecdotal and emerging evidence suggests benefit for PD motor symptoms.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        RegistryEntry(
+            id: "pickleball-tremor",
+            exposure: .workout(.pickleball), outcome: .tremor,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            rationale: "Pickleball combines aerobic movement, agility, and social engagement; anecdotally reported to help PD symptoms.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        RegistryEntry(
+            id: "tango-tremor",
+            exposure: .workout(.socialDance), outcome: .tremor,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            rationale: "Argentine tango has documented PD benefits for balance and gait (partner dance maps to HealthKit social dance); test its post-session tremor effect.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        RegistryEntry(
+            id: "mindfulness-tremor",
+            exposure: .mindfulSession, outcome: .tremor,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            rationale: "Mental stillness lowers sympathetic arousal, which can amplify tremor; test the post-session effect.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        // ───────────── Sleep (overnight → next day) ─────────────
+        RegistryEntry(
+            id: "sleep-duration-next-day-tremor",
+            exposure: .sleep(.duration), outcome: .tremor,
+            primitive: .overnightLag,
+            rationale: "Sleep deprivation worsens PD motor control; test prior-night duration against next-day tremor.",
+            source: .curated, safety: .lifestyleExperiment, minN: 14),
+
+        RegistryEntry(
+            id: "sleep-deep-next-day-tremor",
+            exposure: .sleep(.deep), outcome: .tremor,
+            primitive: .overnightLag,
+            rationale: "Restorative deep sleep may matter more than raw duration; test prior-night deep sleep against next-day tremor.",
+            source: .curated, safety: .lifestyleExperiment, minN: 14),
+
+        // ───────────── Autonomic state ─────────────
+        RegistryEntry(
+            id: "hrv-tremor-within-day",
+            exposure: .hrv, outcome: .tremor,
+            primitive: .withinDayAssociation,
+            rationale: "HRV indexes autonomic/stress state; low-HRV stretches may co-occur with higher tremor within a day.",
+            source: .curated, safety: .lifestyleExperiment, minN: 8),
+
+        // ───────────── Circadian baseline ─────────────
+        RegistryEntry(
+            id: "circadian-tremor-baseline",
+            exposure: .timeOfDay, outcome: .tremor,
+            primitive: .circadianBaseline,
+            rationale: "Medication control drifts across the day; an hour-of-day tremor baseline shows when control is weakest.",
+            source: .curated, safety: .clinicalReferral, minN: 10),
+
+        // ───────────── Long-term progression ─────────────
+        RegistryEntry(
+            id: "gait-speed-trend",
+            exposure: .calendarTime, outcome: .gaitSpeed,
+            primitive: .longTermTrend,
+            rationale: "Walking speed is a sensitive PD progression marker; a multi-month trend tracks mobility over time.",
+            source: .curated, safety: .clinicalReferral, minN: 6),
+    ]
+}

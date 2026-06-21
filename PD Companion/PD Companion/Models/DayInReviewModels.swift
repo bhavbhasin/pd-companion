@@ -107,7 +107,7 @@ enum DayEvent: Identifiable {
                 return "figure.strengthtraining.traditional"
             case .highIntensityIntervalTraining: return "figure.highintensity.intervaltraining"
             case .boxing, .martialArts:    return "figure.boxing"
-            case .dance:                   return "figure.dance"
+            case .dance, .socialDance, .cardioDance: return "figure.dance"
             default:                       return "figure.run"
             }
         }

@@ -21,6 +21,8 @@ extension HKWorkoutActivityType {
         case .flexibility: return "Flexibility"
         case .mindAndBody: return "Mind & Body"
         case .dance: return "Dance"
+        case .socialDance: return "Social Dance"
+        case .cardioDance: return "Cardio Dance"
         case .boxing: return "Boxing"
         case .martialArts: return "Martial Arts"
         case .rowing: return "Rowing"
