@@ -7,7 +7,7 @@ struct LogEntrySheet: View {
     @Environment(\.dismiss) private var dismiss
     let onLogged: (Date) -> Void
 
-    enum Destination: Hashable { case food, meditation }
+    enum Destination: Hashable { case food }
     @State private var path: [Destination] = []
 
     var body: some View {
@@ -17,11 +17,6 @@ struct LogEntrySheet: View {
                     icon: "fork.knife", iconBg: Color.brown.opacity(0.15), iconColor: .brown,
                     title: "Food", subtitle: "A meal, snack, or drink"
                 ) { path.append(.food) }
-
-                menuRow(
-                    icon: "figure.mind.and.body", iconBg: Color.cyan.opacity(0.15), iconColor: .cyan,
-                    title: "Meditation", subtitle: "Mindfulness or breathing"
-                ) { path.append(.meditation) }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Log entry")
@@ -35,8 +30,6 @@ struct LogEntrySheet: View {
                 switch dest {
                 case .food:
                     LogFoodScreen { date in onLogged(date); dismiss() }
-                case .meditation:
-                    LogMeditationScreen { date in onLogged(date); dismiss() }
                 }
             }
         }
@@ -115,98 +108,6 @@ struct LogFoodScreen: View {
                 }
                 .fontWeight(.semibold)
                 .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-    }
-}
-
-// MARK: - Log meditation screen
-
-struct LogMeditationScreen: View {
-    @EnvironmentObject var healthKit: HealthKitManager
-    let onSaved: (Date) -> Void
-
-    @State private var timestamp: Date = .now
-    @State private var durationMinutes: Int = 10
-    @State private var isSaving = false
-    @State private var errorMessage: String?
-
-    private let quickPicks = [5, 10, 15, 20, 30, 45, 60]
-
-    var body: some View {
-        Form {
-            Section(header: Text("When")) {
-                DatePicker("Date & time", selection: $timestamp, in: ...Date.now,
-                           displayedComponents: [.date, .hourAndMinute])
-                    .datePickerStyle(.compact)
-                    .labelsHidden()
-            }
-
-            Section(header: Text("Duration")) {
-                HStack {
-                    Button {
-                        if durationMinutes > 1 { durationMinutes -= 1 }
-                    } label: {
-                        Image(systemName: "minus")
-                            .frame(width: 36, height: 36)
-                    }
-                    .buttonStyle(.bordered)
-
-                    Spacer()
-                    Text("\(durationMinutes) min")
-                        .font(.title2.bold())
-                        .monospacedDigit()
-                    Spacer()
-
-                    Button { durationMinutes += 1 } label: {
-                        Image(systemName: "plus")
-                            .frame(width: 36, height: 36)
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(.vertical, 4)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(quickPicks, id: \.self) { mins in
-                            Button("\(mins) min") { durationMinutes = mins }
-                                .buttonStyle(.bordered)
-                                .tint(durationMinutes == mins ? .cyan : .secondary)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-            }
-
-            if let error = errorMessage {
-                Section {
-                    Text(error).foregroundStyle(.red).font(.caption)
-                }
-            }
-        }
-        .navigationTitle("Log meditation")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Save") { save() }
-                    .fontWeight(.semibold)
-                    .disabled(isSaving)
-            }
-        }
-    }
-
-    private func save() {
-        isSaving = true
-        Task {
-            do {
-                try await healthKit.writeMindfulSession(
-                    start: timestamp,
-                    duration: TimeInterval(durationMinutes * 60)
-                )
-                onSaved(timestamp)
-            } catch {
-                errorMessage = "Could not save: \(error.localizedDescription)"
-                isSaving = false
             }
         }
     }

@@ -647,12 +647,6 @@ class HealthKitManager: ObservableObject {
         }
     }
 
-    func writeMindfulSession(start: Date, duration: TimeInterval) async throws {
-        let type = HKObjectType.categoryType(forIdentifier: .mindfulSession)!
-        let sample = HKCategorySample(type: type, value: 0, start: start, end: start.addingTimeInterval(duration))
-        try await store.save(sample)
-    }
-
     func deleteMindfulSession(start: Date, duration: TimeInterval) async throws {
         let type = HKObjectType.categoryType(forIdentifier: .mindfulSession)!
         let end = start.addingTimeInterval(duration)

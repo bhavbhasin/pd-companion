@@ -94,9 +94,10 @@ enum DayEvent: Identifiable {
         case .food:                        return "fork.knife"
         case .workout(_, _, _, let type):
             switch type {
-            case .taiChi, .yoga:           return "figure.yoga"
-            case .mindAndBody, .pilates, .flexibility:
-                return "figure.flexibility"
+            case .yoga:                    return "figure.yoga"
+            case .taiChi, .mindAndBody:    return "figure.mind.and.body"
+            case .pilates:                 return "figure.pilates"
+            case .flexibility:             return "figure.flexibility"
             case .pickleball, .tennis, .tableTennis: return "figure.tennis"
             case .running:                 return "figure.run"
             case .walking, .hiking:        return "figure.walk"

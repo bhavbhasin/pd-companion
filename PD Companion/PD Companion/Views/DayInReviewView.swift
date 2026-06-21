@@ -397,19 +397,19 @@ private struct TremorTimelinePanel: View {
             Image(systemName: "pill.fill")
                 .symbolRenderingMode(.palette)
                 .foregroundStyle(.red, .yellow)
-                .font(.system(size: 12))
+                .font(.system(size: 16))
         case .workout:
             Image(systemName: event.iconName)
                 .foregroundStyle(.green)
-                .font(.system(size: 12))
+                .font(.system(size: 16))
         case .mindfulness:
             Image(systemName: "figure.mind.and.body")
                 .foregroundStyle(.cyan)
-                .font(.system(size: 12))
+                .font(.system(size: 16))
         case .food:
             Image(systemName: "fork.knife")
                 .foregroundStyle(Color.brown)
-                .font(.system(size: 12))
+                .font(.system(size: 16))
         }
     }
 
@@ -445,62 +445,72 @@ private struct TremorTimelinePanel: View {
         onEventTap(nearest)
     }
 
-    private var hasMedEvents: Bool {
-        chartEvents.contains { if case .medication = $0 { return true } else { return false } }
-    }
-    private var hasWorkoutEvents: Bool {
-        chartEvents.contains { if case .workout = $0 { return true } else { return false } }
-    }
-    private var hasMindfulEvents: Bool {
-        chartEvents.contains { if case .mindfulness = $0 { return true } else { return false } }
-    }
-    private var hasFoodEvents: Bool {
-        chartEvents.contains { if case .food = $0 { return true } else { return false } }
-    }
-
     @ViewBuilder
     private var legendRow: some View {
-        HStack(spacing: 12) {
-            if hasMedEvents {
-                legendItem(systemImage: "pill.fill", palette: (.red, .yellow), label: "Medication")
-            }
-            if hasWorkoutEvents {
-                legendItem(systemImage: "figure.run", solid: .green, label: "Workout")
-            }
-            if hasMindfulEvents {
-                legendItem(systemImage: "figure.mind.and.body", solid: .cyan, label: "Meditation")
-            }
-            if hasFoodEvents {
-                legendItem(systemImage: "fork.knife", solid: .brown, label: "Food")
+        FlowLayout(spacing: 14, lineSpacing: 6) {
+            ForEach(legendEntries) { entry in
+                legendItem(entry: entry)
             }
         }
-        .font(.caption2)
+        .font(.caption)
         .foregroundStyle(.secondary)
     }
 
+    /// One chip per distinct glyph drawn on the chart today, in order of first
+    /// appearance. Workouts and mindfulness dedupe by activity type (two boxing
+    /// sessions -> a single "Boxing" chip); medication and food collapse to one
+    /// category chip regardless of dose name or meal description.
+    private var legendEntries: [LegendEntry] {
+        var seen = Set<String>()
+        var result: [LegendEntry] = []
+        for event in chartEvents {
+            let entry = legendEntry(for: event)
+            if seen.insert(entry.id).inserted {
+                result.append(entry)
+            }
+        }
+        return result
+    }
+
+    private func legendEntry(for event: DayEvent) -> LegendEntry {
+        switch event {
+        case .medication:
+            return LegendEntry(icon: "pill.fill", label: "Medication", palette: true, color: .red)
+        case .food:
+            return LegendEntry(icon: "fork.knife", label: "Food", palette: false, color: .brown)
+        case .mindfulness:
+            return LegendEntry(icon: "figure.mind.and.body", label: "Meditation", palette: false, color: .cyan)
+        case .workout(_, _, _, let type):
+            return LegendEntry(icon: event.iconName, label: type.displayName, palette: false, color: .green)
+        }
+    }
+
     @ViewBuilder
-    private func legendItem(
-        systemImage: String,
-        palette: (Color, Color)? = nil,
-        solid: Color? = nil,
-        label: String
-    ) -> some View {
+    private func legendItem(entry: LegendEntry) -> some View {
         HStack(spacing: 4) {
             Group {
-                if let palette {
-                    Image(systemName: systemImage)
+                if entry.palette {
+                    Image(systemName: entry.icon)
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(palette.0, palette.1)
-                } else if let solid {
-                    Image(systemName: systemImage).foregroundStyle(solid)
+                        .foregroundStyle(.red, .yellow)
+                } else {
+                    Image(systemName: entry.icon).foregroundStyle(entry.color)
                 }
             }
-            .font(.system(size: 10))
-            Text(label)
+            .font(.system(size: 12))
+            Text(entry.label)
         }
     }
 
     private struct HourBucket { let hour: Date; let value: Double }
+
+    private struct LegendEntry: Identifiable {
+        let icon: String
+        let label: String
+        let palette: Bool
+        let color: Color
+        var id: String { icon + "|" + label }
+    }
 
     private var chartEvents: [DayEvent] { events }
 
@@ -667,5 +677,47 @@ private struct SleepStagesPanel: View {
         let hours = Int(h); let minutes = Int((h - Double(hours)) * 60)
         if hours == 0 { return "\(minutes)m" }
         return minutes == 0 ? "\(hours)h" : "\(hours)h \(minutes)m"
+    }
+}
+
+// MARK: - Flow layout
+
+/// Left-to-right layout that wraps to the next line when it runs out of width,
+/// so the legend grows gracefully on a busy day instead of clipping.
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 14
+    var lineSpacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0, maxLineWidth: CGFloat = 0
+        for sub in subviews {
+            let size = sub.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                y += lineHeight + lineSpacing
+                x = 0
+                lineHeight = 0
+            }
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+            maxLineWidth = max(maxLineWidth, x - spacing)
+        }
+        return CGSize(width: maxWidth.isFinite ? maxWidth : maxLineWidth, height: y + lineHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0
+        for sub in subviews {
+            let size = sub.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > bounds.width {
+                y += lineHeight + lineSpacing
+                x = 0
+                lineHeight = 0
+            }
+            sub.place(at: CGPoint(x: bounds.minX + x, y: bounds.minY + y),
+                      anchor: .topLeading, proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
     }
 }
