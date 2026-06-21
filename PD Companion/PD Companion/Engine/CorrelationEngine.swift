@@ -229,6 +229,85 @@ extension CorrelationEngine {
         floor:    GateBar(minN: 6))
 }
 
+// MARK: - Windowed-effect primitive (event → signal change in the window after)
+//
+// The workhorse for the exercise/diet cluster. Variable-agnostic by construction:
+// it takes event intervals and a continuous signal and asks "did the signal move
+// in the window after each event, vs the window before?" — the SAME math whether
+// the event is a Tai Chi session, a coffee, or a dose. The dispatch layer supplies
+// the events (workouts filtered by type) and the signal (tremor); this never knows
+// which variable it's looking at. That's why one primitive serves every exercise
+// registry line. See InsightRegistry.swift + docs/intelligence-architecture.md.
+
+extension CorrelationEngine {
+
+    /// Aggregated per-event baseline (pre-window mean) vs response (post-window
+    /// mean). A negative `delta` means the signal fell after the event (e.g. tremor
+    /// dropped after exercise). `pValue` is a two-sided one-sample t-test of the
+    /// per-event deltas against zero — the honest "is this distinguishable from no
+    /// effect?" the gate consumes.
+    struct WindowedEffect: Sendable {
+        let n: Int                 // events with usable before AND after data
+        let meanBefore: Double
+        let meanAfter: Double
+        let delta: Double          // meanAfter − meanBefore (signed)
+        let pctChange: Double      // 100·delta / meanBefore (NaN if baseline ≈ 0)
+        let pValue: Double?
+        let perEvent: [Double]     // per-event (after − before), for stability / split-half
+    }
+
+    /// For each event, mean signal in `[start − preMin, start)` vs
+    /// `(end, end + postMin]`, baseline-corrected per event then averaged. Events
+    /// lacking signal on either side are skipped. nil if no event has usable data.
+    static func windowedEffect(
+        events: [(start: Date, end: Date)],
+        signal: [(time: Date, value: Double)],
+        preMin: Double, postMin: Double,
+        minPrePoints: Int = 1, minPostPoints: Int = 1
+    ) -> WindowedEffect? {
+        var befores: [Double] = [], afters: [Double] = [], deltas: [Double] = []
+        for ev in events {
+            let preLo = ev.start.addingTimeInterval(-preMin * 60)
+            let postHi = ev.end.addingTimeInterval(postMin * 60)
+            var preSum = 0.0, preN = 0, postSum = 0.0, postN = 0
+            for p in signal {
+                if p.time >= preLo && p.time < ev.start { preSum += p.value; preN += 1 }
+                else if p.time > ev.end && p.time <= postHi { postSum += p.value; postN += 1 }
+            }
+            guard preN >= minPrePoints, postN >= minPostPoints else { continue }
+            let before = preSum / Double(preN), after = postSum / Double(postN)
+            befores.append(before); afters.append(after); deltas.append(after - before)
+        }
+        guard !deltas.isEmpty else { return nil }
+        let nD = Double(deltas.count)
+        let meanBefore = befores.reduce(0, +) / nD
+        let meanAfter = afters.reduce(0, +) / nD
+        let delta = deltas.reduce(0, +) / nD
+        let pct = meanBefore != 0 ? 100 * delta / meanBefore : .nan
+        return WindowedEffect(
+            n: deltas.count, meanBefore: meanBefore, meanAfter: meanAfter,
+            delta: delta, pctChange: pct,
+            pValue: oneSampleTTestP(deltas), perEvent: deltas)
+    }
+
+    /// Two-sided p for a one-sample t-test of `xs` mean vs 0 (the paired test across
+    /// per-event deltas). Reuses the same t-distribution tail (regularized incomplete
+    /// beta) as `linregress`, so significance is computed consistently engine-wide.
+    static func oneSampleTTestP(_ xs: [Double]) -> Double? {
+        let n = xs.count
+        guard n >= 2 else { return nil }
+        let nD = Double(n)
+        let mean = xs.reduce(0, +) / nD
+        let ss = xs.reduce(0.0) { $0 + ($1 - mean) * ($1 - mean) }
+        let variance = ss / (nD - 1)
+        guard variance > 0 else { return mean == 0 ? 1.0 : 0.0 }
+        let se = (variance / nD).squareRoot()
+        let t = mean / se
+        let df = nD - 1
+        return regularizedIncompleteBeta(a: df / 2, b: 0.5, x: df / (df + t * t))
+    }
+}
+
 // MARK: - Dose-response (port of analysis/src/dose_response.py)
 
 nonisolated extension CorrelationEngine {
