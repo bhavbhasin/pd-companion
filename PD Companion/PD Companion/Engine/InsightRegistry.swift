@@ -55,6 +55,28 @@ enum MealFilter: Hashable { case any, proteinRich, large }
 /// A facet of a night's sleep, used as an overnight predictor.
 enum SleepFacet: Hashable { case duration, deep, rem, interruptions }
 
+// Bridges that let the (HealthKit-free) engine match a registry entry's variables
+// without importing HealthKit — the HealthKit knowledge stays here, in the config
+// layer, and the engine only ever sees plain values (UInt, String, Bool).
+extension Variable {
+    /// HealthKit raw value if this is a workout exposure, else nil.
+    var workoutRawValue: UInt? {
+        if case .workout(let t) = self { return t.rawValue }
+        return nil
+    }
+    /// Human label for a workout exposure ("Boxing", "Tai Chi", "Social Dance").
+    var workoutDisplayName: String? {
+        if case .workout(let t) = self { return t.displayName }
+        return nil
+    }
+    /// True when this is the tremor signal — the only outcome wired into the
+    /// windowed-effect path today.
+    var isTremor: Bool {
+        if case .tremor = self { return true }
+        return false
+    }
+}
+
 // MARK: Primitives — reusable methods over the two shapes (built once)
 
 /// A statistical method that operates on *shapes*, not specific variables.

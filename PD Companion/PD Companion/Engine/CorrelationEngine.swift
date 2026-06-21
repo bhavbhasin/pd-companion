@@ -149,12 +149,71 @@ nonisolated enum CorrelationEngine {
     /// primitive that consumes it is the next step.
     static func run(_ entry: RegistryEntry, samples: [TremorPoint], doses: [Dose],
                     gait: [GaitMetric: [GaitSample]], workouts: [WorkoutEvent]) -> Insight? {
+        // The three validated analyses are still bespoke functions (transitional,
+        // routed by id). Everything else dispatches generically on the primitive —
+        // a new registry line over a built primitive needs no code here.
         switch entry.id {
         case "dose-tremor-by-tod":      return afternoonDoseInsight(samples: samples, doses: doses)
         case "dose-tremor-wearing-off": return wearingOffInsight(samples: samples, doses: doses)
         case "gait-speed-trend":        return gaitInsight(series: gait)
-        default:                        return nil   // primitive not yet implemented
+        default:                        break
         }
+        switch entry.primitive {
+        case .windowedEffect(let preMin, let postMin):
+            return windowedEffectInsight(entry: entry, samples: samples,
+                                         workouts: workouts, preMin: preMin, postMin: postMin)
+        default:
+            return nil   // primitive not yet implemented
+        }
+    }
+
+    /// Render a windowed-effect registry entry into a card. Today only the
+    /// workout → tremor path is wired (workouts are adapted in; tremor is in the
+    /// snapshot). Other exposures/outcomes return nil until their adapters land —
+    /// the entries stay registered but dormant.
+    static func windowedEffectInsight(
+        entry: RegistryEntry, samples: [TremorPoint], workouts: [WorkoutEvent],
+        preMin: Double, postMin: Double
+    ) -> Insight? {
+        guard let raw = entry.exposure.workoutRawValue, entry.outcome.isTremor else { return nil }
+        let events = workouts
+            .filter { $0.activityRawValue == raw }
+            .map { (start: $0.start, end: $0.start.addingTimeInterval($0.duration)) }
+        guard !events.isEmpty else { return nil }
+        let signal = samples.map { (time: $0.timestamp, value: $0.tremorScore) }
+        guard let eff = windowedEffect(events: events, signal: signal,
+                                       preMin: preMin, postMin: postMin) else { return nil }
+        guard let confidence = gate(Self.windowedEffectGate, n: eff.n,
+                                    effect: abs(eff.delta), p: eff.pValue) else { return nil }
+
+        let activity = entry.exposure.workoutDisplayName ?? "this activity"
+        let lower = activity.lowercased()
+        let hours = max(1, Int((postMin / 60).rounded()))
+        let pct = abs(eff.pctChange).isFinite ? String(format: "%.0f%%", abs(eff.pctChange)) : "—"
+        let days = Set(events.map { calendar.startOfDay(for: $0.start) }).count
+        let significant = confidence != .emerging
+        let eased = eff.delta < 0
+
+        let title: String, summary: String
+        switch (significant, eased) {
+        case (true, true):
+            title = "\(activity) may ease your tremor"
+            summary = "In the \(hours)h after \(lower), your tremor ran about \(pct) lower than the stretch just before."
+        case (true, false):
+            title = "\(activity) may stir your tremor"
+            summary = "In the \(hours)h after \(lower), your tremor ran about \(pct) higher than the stretch just before."
+        default:
+            title = "\(activity): no clear tremor effect yet"
+            summary = "Across \(eff.n) sessions, the before-vs-after difference is still within the noise. Keeping watch."
+        }
+
+        let finding = "From \(eff.n) \(lower) session\(eff.n == 1 ? "" : "s") over \(days) day\(days == 1 ? "" : "s"): tremor \(eased ? "down" : "up") ~\(pct) in the \(hours)h after vs. the \(Int(preMin)) min before. An association in your own data — a hypothesis to test, not proof."
+        let mechanism = "Exercise can shift PD motor symptoms for a while afterward, but daily tremor has many drivers — sleep, stress, and medication timing among them. Treat this as a lead to test, not a conclusion."
+
+        return Insight(
+            title: title, summary: summary, stage: .hypothesis,
+            finding: finding, mechanism: mechanism,
+            confidence: confidence, evidenceDays: days)
     }
 }
 
@@ -227,6 +286,14 @@ extension CorrelationEngine {
         strong:   GateBar(minN: 24, maxP: 0.01),
         moderate: GateBar(minN: 12, maxP: 0.05),
         floor:    GateBar(minN: 6))
+
+    /// Windowed-effect (exercise / diet): significance (paired t-test p) + n sessions.
+    /// Floor n=5 ⇒ nothing shows until five sessions; at five-plus but not significant
+    /// the card surfaces as "no clear effect yet" (an honest null, not a hidden one).
+    static let windowedEffectGate = GateSpec(
+        strong:   GateBar(minN: 10, maxP: 0.01),
+        moderate: GateBar(minN: 5,  maxP: 0.05),
+        floor:    GateBar(minN: 5))
 }
 
 // MARK: - Windowed-effect primitive (event → signal change in the window after)

@@ -8,6 +8,7 @@
 //
 
 import Foundation
+import HealthKit
 import Testing
 @testable import PD_Companion
 
@@ -67,5 +68,35 @@ struct WindowedEffectTests {
         let farSignal = [(time: Self.t0.addingTimeInterval(100 * Self.hour), value: 1.0)]
         #expect(CorrelationEngine.windowedEffect(
             events: lonelyEvent, signal: farSignal, preMin: 30, postMin: 60) == nil)
+    }
+
+    /// End-to-end dispatch: 8 boxing sessions with a real post-session tremor drop,
+    /// fed through `generateInsights`, should surface the boxing card from its
+    /// registry line alone — and an activity the user never did stays silent.
+    @Test func registrySurfacesExerciseCard() throws {
+        let boxingRaw = HKWorkoutActivityType.boxing.rawValue
+        var workouts: [WorkoutEvent] = []
+        var samples: [TremorPoint] = []
+        for i in 0..<8 {
+            let start = Self.t0.addingTimeInterval(Double(i) * 24 * Self.hour + 12 * Self.hour)
+            let end = start.addingTimeInterval(Self.hour)
+            workouts.append(WorkoutEvent(start: start, duration: Self.hour, activityRawValue: boxingRaw))
+            for m in stride(from: 60.0, through: 10.0, by: -10.0) {
+                samples.append(TremorPoint(timestamp: start.addingTimeInterval(-m * 60), tremorScore: 2.0))
+            }
+            // Slight per-session variation so the t-test runs on real variance.
+            for m in stride(from: 10.0, through: 90.0, by: 10.0) {
+                samples.append(TremorPoint(timestamp: end.addingTimeInterval(m * 60),
+                                           tremorScore: i % 2 == 0 ? 1.0 : 1.1))
+            }
+        }
+        let insights = CorrelationEngine.generateInsights(
+            samples: samples, doses: [], gait: [:], workouts: workouts)
+
+        let boxing = try #require(insights.first { $0.title.localizedCaseInsensitiveContains("Boxing") })
+        #expect(boxing.title.localizedCaseInsensitiveContains("ease"))   // tremor dropped
+        #expect(boxing.confidence == .moderate)                          // n=8 ≥ 5, p ≤ 0.05
+        // An activity with no sessions never produces a card.
+        #expect(!insights.contains { $0.title.localizedCaseInsensitiveContains("Tango") })
     }
 }
