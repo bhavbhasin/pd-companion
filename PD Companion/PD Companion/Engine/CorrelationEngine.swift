@@ -130,6 +130,77 @@ nonisolated enum CorrelationEngine {
     }
 }
 
+// MARK: - Confidence gate (one shared function, per-hypothesis thresholds)
+//
+// Different analyses speak different statistical languages: autocorrelated
+// within-person series (dose-response, wearing-off) lean on n + effect size;
+// independent monthly gait medians can honestly use a slope p-value. So the
+// gate LOGIC is shared, but the THRESHOLDS and which axes apply are per-
+// hypothesis config — a universal threshold set would be statistically wrong.
+// `nil` = gate not cleared = "watching" / hidden (NOT a 4th tier).
+// Each primitive can ship a default spec; a registry entry may override it.
+// See docs/intelligence-architecture.md + InsightRegistry.swift.
+
+extension CorrelationEngine {
+
+    /// One tier's bar. The tier is met when ALL specified axes pass; unspecified
+    /// (nil) axes are ignored. `minEffect` is compared SIGNED — callers pass a
+    /// magnitude (abs) when only size, not direction, should matter.
+    struct GateBar {
+        var minN: Int? = nil
+        var minEffect: Double? = nil
+        var maxP: Double? = nil
+        var minStability: Double? = nil
+    }
+
+    /// Tiered thresholds for one hypothesis. Highest met tier wins; if not even
+    /// `floor` is met the result is nil (hidden).
+    struct GateSpec {
+        var strong: GateBar
+        var moderate: GateBar
+        var floor: GateBar
+    }
+
+    /// The shared gate. Evidence in (n / effect / significance / stability),
+    /// a confidence tier or nil out.
+    static func gate(_ spec: GateSpec, n: Int, effect: Double? = nil,
+                     p: Double? = nil, stability: Double? = nil) -> Insight.Confidence? {
+        func meets(_ bar: GateBar) -> Bool {
+            if let m = bar.minN, n < m { return false }
+            if let e = bar.minEffect { guard let effect, effect >= e else { return false } }
+            if let mp = bar.maxP { guard let p, p <= mp else { return false } }
+            if let ms = bar.minStability { guard let stability, stability >= ms else { return false } }
+            return true
+        }
+        if meets(spec.strong) { return .strong }
+        if meets(spec.moderate) { return .moderate }
+        if meets(spec.floor) { return .emerging }
+        return nil
+    }
+
+    // Per-hypothesis specs. The first two reproduce the previously-inline gates
+    // exactly; the gait spec finally uses the t-test p-value the trend already
+    // computes (it was hard-coded .moderate, discarding that p).
+
+    /// Afternoon-dose: n (afternoon doses) + effect (afternoon−morning onset min, signed).
+    static let doseResponseGate = GateSpec(
+        strong:   GateBar(minN: 20, minEffect: 25),
+        moderate: GateBar(minN: 10, minEffect: 20),
+        floor:    GateBar(minN: 5,  minEffect: 15))
+
+    /// Wearing-off: n (doses) only — a survival estimate has no single effect/p axis.
+    static let wearingOffGate = GateSpec(
+        strong:   GateBar(minN: 40),
+        moderate: GateBar(minN: 1),
+        floor:    GateBar(minN: 1))
+
+    /// Gait trend: significance (slope t-test p) + n (months of medians).
+    static let gaitTrendGate = GateSpec(
+        strong:   GateBar(minN: 24, maxP: 0.01),
+        moderate: GateBar(minN: 12, maxP: 0.05),
+        floor:    GateBar(minN: 6))
+}
+
 // MARK: - Dose-response (port of analysis/src/dose_response.py)
 
 nonisolated extension CorrelationEngine {
@@ -277,13 +348,11 @@ nonisolated extension CorrelationEngine {
 
         // Surfacing gate (logic-based; see Insights design): need enough afternoon
         // doses, a morning comparator, and a meaningfully slower afternoon onset.
-        guard aft.n >= 5, morn.n >= 3, !aft.mean.isNaN, !morn.mean.isNaN else { return nil }
+        guard morn.n >= 3, !aft.mean.isNaN, !morn.mean.isNaN else { return nil }
         let delta = aft.mean - morn.mean
-        guard delta >= 15 else { return nil }
-
-        let confidence: Insight.Confidence =
-            (aft.n >= 20 && delta >= 25) ? .strong :
-            (aft.n >= 10 && delta >= 20) ? .moderate : .emerging
+        // Gate on afternoon-dose count + the signed onset gap. The floor
+        // (n≥5, delta≥15) subsumes the old explicit guards: nil = don't surface.
+        guard let confidence = gate(Self.doseResponseGate, n: aft.n, effect: delta) else { return nil }
 
         let scored = traces.filter { !$0.tHalf.isNaN }.count
         let days = Set(traces.map { calendar.startOfDay(for: $0.t0) }).count
@@ -474,7 +543,7 @@ nonisolated extension CorrelationEngine {
         let gapMin = Int(medInterval.rounded())
         let observedCount = results.filter { $0.observed }.count
         let days = Set(results.map { calendar.startOfDay(for: $0.t0) }).count
-        let confidence: Insight.Confidence = results.count >= 40 ? .strong : .moderate
+        let confidence: Insight.Confidence = gate(Self.wearingOffGate, n: results.count) ?? .moderate
 
         let summary = "Daytime gaps (~\(gapH) h) exceed how long each dose lasts (~\(durH) h), opening predictable OFF windows."
         let finding = "Each dose holds for a median of \(kmMin) min (about \(durH) h), but your daytime doses are spaced ~\(gapH) h apart — so tremor returns before the next dose. From \(results.count) doses over \(days) days."
@@ -747,6 +816,11 @@ nonisolated extension CorrelationEngine {
         let others = [GaitMetric.stepLength, .doubleSupport, .asymmetry]
             .compactMap(phrase).joined(separator: " · ")
 
+        // Confidence now flows from the hero metric's actual slope p-value + month
+        // count (was hard-coded .moderate). Floor (n≥6) always holds here, since the
+        // card already requires nMonths≥12, so the card never disappears.
+        let confidence = gate(Self.gaitTrendGate, n: speed.nMonths, p: speed.pValue) ?? .emerging
+
         var insight = Insight(
             title: declining ? "Your walking shows some change" : "Your walking hasn't declined",
             summary: declining
@@ -755,7 +829,7 @@ nonisolated extension CorrelationEngine {
             stage: .verdict,
             finding: "Walking speed \(speedPct) over \(years)y; \(others). Monthly medians from Apple mobility metrics (\(speed.nMonths) months).",
             mechanism: "Multi-year mobility metrics are noisy and shift with footwear, walking surface, phone placement, and device — read the direction, not the decimals. Not a clinical assessment.",
-            confidence: .moderate,
+            confidence: confidence,
             evidenceDays: Int(prog.spanYears * 365.25),
             verdict: Verdict(
                 outcome: declining ? .inconclusive : .worked,
