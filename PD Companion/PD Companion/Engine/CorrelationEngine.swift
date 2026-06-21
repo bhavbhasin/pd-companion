@@ -194,20 +194,23 @@ nonisolated enum CorrelationEngine {
         let significant = confidence != .emerging
         let eased = eff.delta < 0
 
-        let title: String, summary: String
+        // Summary = the takeaway; finding = sample size + hedge. No field restates
+        // another's numbers (summary carries the effect, finding carries the n/days).
+        let title: String, summary: String, finding: String
         switch (significant, eased) {
         case (true, true):
             title = "\(activity) may ease your tremor"
-            summary = "In the \(hours)h after \(lower), your tremor ran about \(pct) lower than the stretch just before."
+            summary = "In the \(hours)h after \(lower), your tremor ran about \(pct) lower than just before."
+            finding = "Seen across \(eff.n) sessions over \(days) days — an association in your own data, a hypothesis to test, not proof."
         case (true, false):
             title = "\(activity) may stir your tremor"
-            summary = "In the \(hours)h after \(lower), your tremor ran about \(pct) higher than the stretch just before."
+            summary = "In the \(hours)h after \(lower), your tremor ran about \(pct) higher than just before."
+            finding = "Seen across \(eff.n) sessions over \(days) days — an association in your own data, a hypothesis to test, not proof."
         default:
             title = "\(activity): no clear tremor effect yet"
-            summary = "Across \(eff.n) sessions, the before-vs-after difference is still within the noise. Keeping watch."
+            summary = "Across \(eff.n) sessions, any before-and-after difference stays within normal day-to-day swing."
+            finding = "The point estimate is about \(pct) \(eased ? "lower" : "higher") afterward, but over \(days) days that's within the noise — not a real effect yet. Still watching."
         }
-
-        let finding = "From \(eff.n) \(lower) session\(eff.n == 1 ? "" : "s") over \(days) day\(days == 1 ? "" : "s"): tremor \(eased ? "down" : "up") ~\(pct) in the \(hours)h after vs. the \(Int(preMin)) min before. An association in your own data — a hypothesis to test, not proof."
         let mechanism = "Exercise can shift PD motor symptoms for a while afterward, but daily tremor has many drivers — sleep, stress, and medication timing among them. Treat this as a lead to test, not a conclusion."
 
         var insight = Insight(
@@ -1039,7 +1042,7 @@ nonisolated extension CorrelationEngine {
         let confidence = gate(Self.gaitTrendGate, n: speed.nMonths, p: speed.pValue) ?? .emerging
 
         var insight = Insight(
-            title: declining ? "Your walking shows some change" : "Your walking hasn't declined",
+            title: declining ? "Your mobility shows some change" : "Your mobility hasn't declined",
             summary: declining
                 ? "Over \(years) years, a gait marker is trending down — worth mentioning to your neurologist."
                 : "Over \(years) years: walking speed \(speedPct), with no measurable decline across your gait markers.",
@@ -1064,10 +1067,31 @@ nonisolated extension CorrelationEngine {
         return insight
     }
 
-    /// Clip → monthly medians (≥20/month) → linear trend for one metric.
-    static func metricTrend(_ metric: GaitMetric, samples: [GaitSample]) -> MetricTrend? {
-        let months = monthlyMedians(samples, clip: metric.clip)
-        guard months.count >= 6 else { return nil }   // need a real span to trust a slope
+    /// A long-term trend fit over a dated signal — the reusable primitive behind the
+    /// gait card. Variable-agnostic: gait metrics today, any slow-moving signal (a
+    /// tremor baseline, a monthly HRV) tomorrow. The gait `MetricTrend` is this plus a
+    /// metric tag; the gait card is the bespoke *renderer* that runs this across four
+    /// metrics and composes one reassurance card.
+    struct TrendResult: Sendable {
+        let nMonths: Int
+        let slopePerYear: Double
+        let intercept: Double
+        let r: Double
+        let pValue: Double
+        let spanYears: Double
+        let pctChange: Double
+        let months: [GaitMonth]
+    }
+
+    /// Clip → monthly medians (≥`minPerMonth`) → OLS slope with a two-sided t-test p,
+    /// over years. nil if fewer than `minMonths` months survive (need a real span to
+    /// trust a slope). The math is exactly what `metricTrend` did inline before.
+    static func longTermTrend(
+        samples: [(date: Date, value: Double)], clip: (lo: Double, hi: Double),
+        minMonths: Int = 6, minPerMonth: Int = 20
+    ) -> TrendResult? {
+        let months = monthlyMedians(samples, clip: clip, minPerMonth: minPerMonth)
+        guard months.count >= minMonths else { return nil }
         let t0 = months[0].month
         let t = months.map { $0.month.timeIntervalSince(t0) / (365.25 * 86_400) }   // years
         let y = months.map(\.median)
@@ -1075,10 +1099,19 @@ nonisolated extension CorrelationEngine {
         let span = (t.last ?? 0) - (t.first ?? 0)
         let total = fit.slope * span
         let pct = fit.intercept != 0 ? 100 * total / fit.intercept : .nan
+        return TrendResult(
+            nMonths: months.count, slopePerYear: fit.slope, intercept: fit.intercept,
+            r: fit.r, pValue: fit.pValue, spanYears: span, pctChange: pct, months: months)
+    }
+
+    /// Gait's per-metric wrapper around the generic `longTermTrend` primitive.
+    static func metricTrend(_ metric: GaitMetric, samples: [GaitSample]) -> MetricTrend? {
+        let dated = samples.map { (date: $0.date, value: $0.value) }
+        guard let t = longTermTrend(samples: dated, clip: metric.clip) else { return nil }
         return MetricTrend(
-            metric: metric, nMonths: months.count, slopePerYear: fit.slope,
-            intercept: fit.intercept, r: fit.r, pValue: fit.pValue,
-            spanYears: span, pctChange: pct, months: months)
+            metric: metric, nMonths: t.nMonths, slopePerYear: t.slopePerYear,
+            intercept: t.intercept, r: t.r, pValue: t.pValue,
+            spanYears: t.spanYears, pctChange: t.pctChange, months: t.months)
     }
 
     /// Month-start anchoring in UTC so month-to-month gaps are exact integer days
@@ -1093,7 +1126,8 @@ nonisolated extension CorrelationEngine {
     /// clock — Pacific in the parity test, the device's zone in the app), keeping only
     /// months with ≥20 samples. The month key is a UTC-anchored first-of-month so the
     /// downstream time axis is DST-free.
-    static func monthlyMedians(_ samples: [GaitSample], clip: (lo: Double, hi: Double)) -> [GaitMonth] {
+    static func monthlyMedians(_ samples: [(date: Date, value: Double)],
+                               clip: (lo: Double, hi: Double), minPerMonth: Int = 20) -> [GaitMonth] {
         var buckets: [Date: [Double]] = [:]
         for s in samples where s.value >= clip.lo && s.value <= clip.hi {
             let comps = calendar.dateComponents([.year, .month], from: s.date)
@@ -1101,7 +1135,7 @@ nonisolated extension CorrelationEngine {
             buckets[m, default: []].append(s.value)
         }
         return buckets.compactMap { month, vals in
-            vals.count >= 20 ? GaitMonth(month: month, median: median(vals), n: vals.count) : nil
+            vals.count >= minPerMonth ? GaitMonth(month: month, median: median(vals), n: vals.count) : nil
         }
         .sorted { $0.month < $1.month }
     }

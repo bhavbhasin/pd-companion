@@ -891,7 +891,7 @@ private struct WindowedEffectChartView: View {
                     .lineStyle(StrokeStyle(lineWidth: 1))
                     .foregroundStyle(.secondary.opacity(0.3))
                     .annotation(position: .top, alignment: .leading, spacing: 2) {
-                        Text("ends").font(.caption2).foregroundStyle(.tertiary)
+                        Text("\(chart.activityLabel.lowercased()) ends").font(.caption2).foregroundStyle(.tertiary)
                     }
 
                 ForEach(plottable, id: \.minute) { pt in
