@@ -335,6 +335,14 @@ enum InsightRegistry {
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
         RegistryEntry(
+            id: "rock-climbing-tremor", category: .exercise,
+            exposure: .workout(.climbing), outcome: .tremor,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
+            rationale: "Climbing demands focus, grip, and full-body coordination; anecdotally reported to ease PD symptoms — test its post-session tremor effect.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        RegistryEntry(
             id: "mindfulness-tremor", category: .stress,
             exposure: .mindfulSession, outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),

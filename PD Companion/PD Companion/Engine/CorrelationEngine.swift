@@ -177,19 +177,53 @@ nonisolated enum CorrelationEngine {
         switch entry.renderer {
         case .doseResponse:
             guard case .doseResponseByTimeOfDay(let preMin, let postMin) = entry.primitive else { return nil }
-            return afternoonDoseInsight(samples: samples, doses: doses, preMin: preMin, postMin: postMin)
+            guard var insight = afternoonDoseInsight(samples: samples, doses: doses, preMin: preMin, postMin: postMin) else { return nil }
+            insight.stage = stage(for: entry)
+            return insight
         case .wearingOff:
             guard case .survivalDuration(let onThreshold) = entry.primitive else { return nil }
-            return wearingOffInsight(samples: samples, doses: doses, onThreshold: onThreshold)
+            guard var insight = wearingOffInsight(samples: samples, doses: doses, onThreshold: onThreshold) else { return nil }
+            insight.stage = stage(for: entry)
+            return insight
         case .gaitComposite:
+            // The one documented exception: gait is a progression readout, not a
+            // lifestyle/medication lever, so its stage isn't safety-derived. It always
+            // renders as `.verdict` and shifts only its COPY by trend direction —
+            // reassuring when stable, "worth mentioning to your neurologist" when a
+            // marker declines. So it sets its own stage and is passed through
+            // unmodified (not routed via stage(for:)).
             return gaitInsight(series: gait)
         case .windowedEffect:
             guard case .windowedEffect(let preMin, let postMin) = entry.primitive else { return nil }
-            return windowedEffectInsight(entry: entry, samples: samples, doses: doses,
-                                         workouts: workouts, food: food,
-                                         preMin: preMin, postMin: postMin, onWindowMin: onWindow)
+            guard var insight = windowedEffectInsight(entry: entry, samples: samples, doses: doses,
+                                                      workouts: workouts, food: food,
+                                                      preMin: preMin, postMin: postMin, onWindowMin: onWindow) else { return nil }
+            insight.stage = stage(for: entry)
+            return insight
         case .none:
             return nil   // no renderer wired yet — registered but dormant
+        }
+    }
+
+    /// Derive a card's STAGE from its question's `SafetyClass` — the single place
+    /// this policy lives. A patient-controllable finding (`.lifestyleExperiment`)
+    /// invites action, so it enters the hypothesis → experiment → verdict track; a
+    /// medication- or progression-related finding (`.clinicalReferral`) refers out
+    /// via a discuss-with-your-neurologist card and never offers an experiment.
+    ///
+    /// Deriving here, not per-renderer, is the fix: a renderer can no longer stamp a
+    /// stage that disagrees with the question's safety class. That decoupling is how
+    /// the afternoon-dose AND dyskinesia-peak cards — both `.clinicalReferral`, but
+    /// both drawn by experiment-offering renderers (`.doseResponse` / `.windowedEffect`)
+    /// — ended up showing a "Try an experiment" button they should never have.
+    ///
+    /// Gait is the one documented exception and is intentionally NOT routed through
+    /// here (see `run()`). The experiment lifecycle (running → `.experiment`,
+    /// concluded → `.verdict`) will hook in here once persisted experiments exist.
+    static func stage(for entry: RegistryEntry) -> Insight.Stage {
+        switch entry.safety {
+        case .lifestyleExperiment: return .hypothesis
+        case .clinicalReferral:    return .clinicalDiscussion
         }
     }
 
@@ -345,8 +379,12 @@ nonisolated enum CorrelationEngine {
             finding = "The point estimate is about \(pct) \(eased ? "lower" : "higher") afterward, but over \(days) days that's within the noise — not a real effect yet. Still watching."
         }
 
+        // Stage is not set here — `run()` derives it from the entry's safety class
+        // via `stage(for:)`. This renderer serves both lifestyle exposures (→ hypothesis)
+        // and the clinical dyskinesia-peak entry (→ clinicalDiscussion), so it cannot
+        // know the right stage on its own — which is exactly why deriving it centrally.
         var insight = Insight(
-            title: title, summary: summary, stage: .hypothesis,
+            title: title, summary: summary,
             finding: finding, mechanism: exposure.mechanism,
             confidence: confidence, evidenceDays: days)
         insight.chart = windowedEffectChart(
@@ -713,15 +751,29 @@ nonisolated extension CorrelationEngine {
         let finding = "It also peaks weaker, while duration stays normal — so the issue is getting the dose *in*, not it wearing off early. From \(scored) scored doses over \(days) days."
         let mechanism = "Levodopa is absorbed in the gut and enters the brain through the same transporter dietary protein uses, so a protein lunch can slow and blunt the dose after it. PD also slows stomach emptying, more after meals and later in the day. Both point to one lever you control: when you eat relative to the dose. Likely, not proven."
 
+        // Stage omitted — `run()` derives it from the entry's safety class. This entry
+        // is .clinicalReferral (a medication-regimen finding), so it renders as a
+        // clinical-discussion card, NOT a hypothesis with an experiment button.
+        // The clinical payload populates BOTH the card's "what your neurologist might
+        // consider" detail and the matching section of the shareable report — without
+        // it the card (and the PDF section) would render bare.
         return Insight(
             title: "Your afternoon dose works slower",
             summary: summary,
-            stage: .hypothesis,
             finding: finding,
             mechanism: mechanism,
             confidence: confidence,
             evidenceDays: days,
-            chart: doseResponseChart(traces: traces)
+            chart: doseResponseChart(traces: traces),
+            clinical: ClinicalDiscussion(
+                whatTheyMightConsider: "A dose that comes on slowly and incompletely — more so later in the day — can stem from absorption, slowed stomach emptying, protein and meal timing around the dose, or the formulation itself. Your neurologist has the levers here that only they can weigh: for example dose timing or amount, a faster- or longer-acting formulation, or guidance on meal timing around the dose. The value is bringing them this pattern, with the data behind it.",
+                bringThisData: [
+                    "Afternoon onset ~\(aftMin) min vs ~\(mornMin) min in the morning",
+                    "Afternoon dose also peaks weaker (shallower ON)",
+                    "Duration stays normal — the issue is onset, not early wearing-off",
+                    "From \(scored) scored doses over \(days) days"
+                ]
+            )
         )
     }
 
@@ -938,10 +990,11 @@ nonisolated extension CorrelationEngine {
             "\(observedCount) of \(results.count) doses observed wearing off before the next dose",
         ]
 
+        // Stage omitted — `run()` derives it from the entry's safety class
+        // (.clinicalReferral → clinical-discussion card).
         return Insight(
             title: "Your doses are spaced wider than they last",
             summary: summary,
-            stage: .clinicalDiscussion,
             finding: finding,
             mechanism: "This is the classic wearing-off pattern: the interval between doses is longer than a single dose lasts.",
             confidence: confidence,

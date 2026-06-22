@@ -34,7 +34,12 @@ nonisolated struct Insight: Identifiable {
     let id = UUID()
     var title: String
     var summary: String          // the one-line takeaway shown when collapsed
-    var stage: Stage
+    // Stage is normally derived from the question's safety class by
+    // `CorrelationEngine.stage(for:)` and assigned in `run()` — engine renderers omit
+    // it. The default is the FAIL-SAFE: if a future code path ever leaves it unset, a
+    // card defaults to a no-action clinical-discussion rather than wrongly offering an
+    // experiment. (Sample-data / preview Insights still set it explicitly.)
+    var stage: Stage = .clinicalDiscussion
 
     // Detail (revealed on expand)
     var finding: String          // the repeatable pattern — the "what", with numbers
@@ -129,13 +134,18 @@ nonisolated struct ClinicalDiscussion {
 extension Insight {
     static var samples: [Insight] {
         [
-            // 1) NEEDS ATTENTION — afternoon dose, behavioral lever, startable experiment.
+            // 1) DISCUSS WITH NEUROLOGIST — afternoon-dose onset is a medication-regimen
+            // finding (.clinicalReferral), so the engine routes it to .clinicalDiscussion:
+            // surface + refer out, NO experiment button. (The meal-timing *lever* the
+            // mechanism hints at lives on its own .lifestyleExperiment card, not here.)
+            // Kept in sync with CorrelationEngine.stage(for:) so the preview matches the
+            // live engine.
             Insight(
                 title: "Your afternoon dose works slower",
                 summary: "Takes ~67 min to kick in vs. ~38 min in the morning — but lasts a normal length.",
-                stage: .hypothesis,
+                stage: .clinicalDiscussion,
                 finding: "It also peaks weaker, while duration stays normal (~3.2 h) — so the issue is getting the dose *in*, not it wearing off early. From 137 scored doses over 40 days.",
-                mechanism: "Levodopa is absorbed in the gut and enters the brain through the same transporter dietary protein uses, so a protein lunch can slow and blunt the dose after it. PD also slows stomach emptying, more after meals and later in the day. Both point to one lever you control: when you eat relative to the dose. Likely, not proven.",
+                mechanism: "Levodopa is absorbed in the gut and enters the brain through the same transporter dietary protein uses, so a protein lunch can slow and blunt the dose after it. PD also slows stomach emptying, more after meals and later in the day. Likely, not proven.",
                 confidence: .strong,
                 evidenceDays: 40,
                 chart: .doseResponse(CorrelationEngine.DoseResponseChart(
@@ -146,7 +156,16 @@ extension Insight {
                                     lo: -30, hi: 180, baseline: 1.3, trough: 0.6, tTrough: 67, recoverBy: nil)
                     ],
                     threshold: 1.0, doseMinute: 0
-                ))
+                )),
+                clinical: ClinicalDiscussion(
+                    whatTheyMightConsider: "A dose that comes on slowly and incompletely — more so later in the day — can stem from absorption, slowed stomach emptying, protein and meal timing around the dose, or the formulation itself. Your neurologist has the levers here that only they can weigh: for example dose timing or amount, a faster- or longer-acting formulation, or guidance on meal timing around the dose. The value is bringing them this pattern, with the data behind it.",
+                    bringThisData: [
+                        "Afternoon onset ~67 min vs ~38 min in the morning",
+                        "Afternoon dose also peaks weaker (shallower ON)",
+                        "Duration normal (~3.2 h) — the issue is onset, not early wearing-off",
+                        "From 137 scored doses over 40 days"
+                    ]
+                )
             ),
 
             // 2) DISCUSS WITH NEUROLOGIST — wearing-off / dose spacing, medical lever.
@@ -267,13 +286,14 @@ struct InsightsView: View {
     @State private var excludedSources: Set<String> = GaitSourcePrefs.excluded
     @State private var showSources = false
     @State private var didLoad = false
+    @State private var isGeneratingPDF = false   // toolbar share shows a spinner while the PDF renders
 
     var body: some View {
         Group {
             if didLoad {
                 // Once computed: either the cards, or the genuine empty state for a
                 // user with no qualifying data (InsightsList decides which).
-                InsightsList(insights: $insights, meds: meds,
+                InsightsList(insights: $insights,
                              gaitSourceCount: gaitSources.count,
                              onReviewSources: { showSources = true })
             } else {
@@ -283,6 +303,25 @@ struct InsightsView: View {
         }
         .navigationTitle("Insights")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // One screen-level share action. The report aggregates EVERY surfaced
+            // insight + meds, so it's a single document — a per-card button produced the
+            // identical PDF on every card. Shown only once there's something to report.
+            if didLoad && !insights.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: shareReport) {
+                        if isGeneratingPDF {
+                            ProgressView().tint(Insight.brandBlue)
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                    }
+                    .disabled(isGeneratingPDF)
+                    .tint(Insight.brandBlue)
+                    .accessibilityLabel("Prepare a summary for your neurologist")
+                }
+            }
+        }
         .sheet(isPresented: $showSources) {
             GaitSourcesView(sources: gaitSources, excluded: $excludedSources) {
                 Task { await reloadGait() }
@@ -319,6 +358,37 @@ struct InsightsView: View {
             }.value
             didLoad = true
         }
+    }
+
+    /// Generate the clinician report (all insights + meds) and present the share sheet.
+    /// Same cold-start handling the per-card button used: acknowledge the tap instantly,
+    /// then defer one frame so SwiftUI paints the spinner before the synchronous PDF
+    /// render (rasterizing charts is the ~3s slow part) blocks the main thread.
+    /// `ClinicalReportPDF.generate` uses ImageRenderer, which requires the main actor —
+    /// this Task inherits the View's MainActor context, so it stays on it.
+    private func shareReport() {
+        guard !isGeneratingPDF else { return }
+        ShareSheetPresenter.tapFeedback()
+        isGeneratingPDF = true
+        Task {
+            try? await Task.sleep(for: .milliseconds(50))
+            if let url = ClinicalReportPDF.generate(insights: insights, meds: meds) {
+                ShareSheetPresenter.present(items: [url])
+            } else {
+                ShareSheetPresenter.present(items: [reportFallbackText()])   // PDF render failed (rare)
+            }
+            isGeneratingPDF = false
+        }
+    }
+
+    /// Plain-text fallback if PDF rendering fails. Lists each finding + an n-of-1
+    /// provenance line so the share still carries the substance.
+    private func reportFallbackText() -> String {
+        var lines = ["Kāmpa — symptom summary for clinical discussion", ""]
+        lines.append(contentsOf: insights.map { "• \($0.title): \($0.summary)" })
+        lines.append("")
+        lines.append("Generated from passive Apple Watch tremor monitoring (Movement Disorder API). One person's own data (n-of-1), shared for discussion — not a diagnosis or treatment recommendation.")
+        return lines.joined(separator: "\n")
     }
 
     /// Re-run just the gait analysis after the user edits which sources are theirs.
@@ -366,7 +436,6 @@ private struct InsightsLoadingState: View {
 // and is trivially testable. Mutations (start/stop experiment) flow back via the binding.
 private struct InsightsList: View {
     @Binding var insights: [Insight]
-    var meds: [ClinicalReportPDF.MedSummary] = []   // for the report's meds block
     var gaitSourceCount: Int = 0                     // >1 → the gait card offers a source review
     var onReviewSources: (() -> Void)? = nil
 
@@ -387,7 +456,7 @@ private struct InsightsList: View {
             if hasInsights {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(orderedInsights, id: \.wrappedValue.id) { $insight in
-                        InsightCard(insight: $insight, allInsights: insights, meds: meds,
+                        InsightCard(insight: $insight,
                                     gaitSourceCount: gaitSourceCount, onReviewSources: onReviewSources)
                     }
                     disclaimerFooter
@@ -418,13 +487,10 @@ private struct InsightsList: View {
 
 private struct InsightCard: View {
     @Binding var insight: Insight
-    let allInsights: [Insight]   // for the full-report PDF
-    var meds: [ClinicalReportPDF.MedSummary] = []   // observed medications, for the PDF meds block
     var gaitSourceCount: Int = 0                     // distinct devices feeding gait (for the review affordance)
     var onReviewSources: (() -> Void)? = nil
     @State private var expanded = false
     @State private var showWhy = false   // second-level disclosure for the mechanism
-    @State private var isGeneratingPDF = false   // share button shows a spinner while the PDF renders
 
     var body: some View {
         VStack(alignment: .leading, spacing: expanded ? 12 : 6) {
@@ -568,70 +634,11 @@ private struct InsightCard: View {
     @ViewBuilder
     private var clinicalDetail: some View {
         if let c = insight.clinical {
-            VStack(alignment: .leading, spacing: 12) {
-                whyBlock(c.whatTheyMightConsider, title: "What your neurologist might consider")
-                // The specific data points (ON-duration, gap, doses-worn-off) are
-                // intentionally NOT listed inline — they duplicate the finding above and
-                // live in the shareable summary below, which is the doctor-facing artifact.
-                Button {
-                    guard !isGeneratingPDF else { return }   // ignore a second tap during the wait
-                    ShareSheetPresenter.tapFeedback()         // instant acknowledgment, even on the cold render
-                    isGeneratingPDF = true
-                    // Defer the work one frame so SwiftUI paints the spinner (and commits
-                    // its animation to the render server, where it keeps spinning) before
-                    // the synchronous PDF render blocks the main thread — rasterizing the
-                    // charts is the ~3s slow part. ImageRenderer requires the main actor,
-                    // so this Task stays on it; the brief sleep just guarantees a frame.
-                    Task {
-                        try? await Task.sleep(for: .milliseconds(50))
-                        let url = ClinicalReportPDF.generate(insights: allInsights, meds: meds)
-                        // Keep the spinner up through the share-sheet presentation too —
-                        // its first-run warmup is part of the cold-start delay, so
-                        // dismissing the spinner before this is what made it look absent.
-                        if let url {
-                            ShareSheetPresenter.present(items: [url])
-                        } else {
-                            ShareSheetPresenter.present(items: [clinicalSummaryText(c)])  // text fallback
-                        }
-                        isGeneratingPDF = false
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        if isGeneratingPDF {
-                            ProgressView().tint(Insight.brandBlue)
-                            Text("Preparing summary…")
-                        } else {
-                            Label("Prepare a summary to share", systemImage: "square.and.arrow.up")
-                        }
-                    }
-                    .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered).tint(Insight.brandBlue)
-                .disabled(isGeneratingPDF)
-                // No safety banner here: the "For your neurologist" header + the
-                // "decisions only your neurologist can make" line above + the list's
-                // global disclaimer already carry it. Three times would be nagging.
-            }
+            // The card carries only the per-finding clinical context. The shareable
+            // report (all findings + meds, identical regardless of card) is a single
+            // screen-level toolbar action in InsightsView — not a per-card button.
+            whyBlock(c.whatTheyMightConsider, title: "What your neurologist might consider")
         }
-    }
-
-    // Builds a clinician-ready text summary for the share sheet. Plain language +
-    // the data points to discuss + an n-of-1 provenance line. The user can email,
-    // AirDrop, or Print → Save as PDF to bring it to the appointment.
-    private func clinicalSummaryText(_ c: ClinicalDiscussion) -> String {
-        var lines: [String] = []
-        lines.append("Kāmpa — symptom summary for clinical discussion")
-        lines.append("")
-        lines.append("Pattern: \(insight.title)")
-        lines.append("Confidence: \(insight.confidence.rawValue) · based on \(daysLabel) of data")
-        lines.append("")
-        lines.append("\(insight.summary) \(insight.finding)")
-        lines.append("")
-        lines.append("For discussion:")
-        lines.append(contentsOf: c.bringThisData.map { "• \($0)" })
-        lines.append("")
-        lines.append("Generated from passive Apple Watch tremor monitoring (Movement Disorder API). This is one person's own data (n-of-1), shared for discussion — not a diagnosis or treatment recommendation.")
-        return lines.joined(separator: "\n")
     }
 
     // MARK: Loop transitions (prototype: in-memory; real version persists)
@@ -694,12 +701,6 @@ private struct InsightCard: View {
         case .verdict:            insight.verdict?.outcome.color ?? .green
         case .clinicalDiscussion: .teal
         }
-    }
-
-    private var daysLabel: String {
-        insight.evidenceDays >= 365
-            ? "\(insight.evidenceDays / 365)+ years"
-            : "\(insight.evidenceDays) days"
     }
 
     private func metaRow(_ icon: String, _ title: String, _ body: String) -> some View {

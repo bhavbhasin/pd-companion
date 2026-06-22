@@ -23,22 +23,22 @@ Read it as **three layers**, each doing only what it is genuinely good at: an LL
 
 ```mermaid
 flowchart TB
-  subgraph L1["① PROPOSE · the imagination  -  LLM · opt-in cloud"]
-    H["3 · Hypothesis generation<br/>LLM (Opus / Sonnet)<br/>proposes variable pairs + which primitive"]
+  subgraph L1["① PROPOSE — the imagination · LLM · opt-in cloud"]
+    H["Hypothesis generation<br/>LLM (Opus / Sonnet)<br/>proposes variable pairs + which primitive"]
   end
 
-  subgraph L2["② JUDGE · the rigor  -  deterministic · 100% on-device"]
+  subgraph L2["② JUDGE — the deterministic engine · 100% on-device"]
     direction TB
-    I["1 · Ingestion<br/>HealthKit + SwiftData + adapters<br/>→ canonical shapes: signals and events"]
-    C["2 · Catalog<br/>variable menu + summary stats<br/><i>(no raw rows)</i>"]
-    R["4 · Registry<br/>candidate analyses<br/>human-authored + LLM-proposed"]
-    J["5 · Engine / Judge ⚖<br/>run primitive → effect size, p, n<br/>significance + sufficiency gate<br/><b>the ONLY layer allowed to claim 'real'</b>"]
-    V["6 · Render<br/>chart + card UI"]
+    I["Ingestion<br/>HealthKit + SwiftData + adapters<br/>→ canonical shapes: signals & events"]
+    C["Catalog<br/>variable menu + summary stats<br/><i>(no raw rows)</i>"]
+    R["Registry<br/>candidate analyses<br/>human-authored + LLM-proposed"]
+    J["Engine / Judge ⚖<br/>de-confound → run primitive → gate<br/>(effect size · n · significance · stability)<br/><b>the ONLY step allowed to claim 'real'</b>"]
+    V["Render<br/>chart + card UI"]
     I --> C --> R --> J --> V
   end
 
-  subgraph L3["③ NARRATE · the voice  -  LLM · opt-in cloud"]
-    N["7 · Narration<br/>LLM (Haiku)<br/>plain, hedged 'why'"]
+  subgraph L3["③ NARRATE — the voice · LLM · opt-in cloud"]
+    N["Narration<br/>LLM (Haiku)<br/>plain, hedged 'why'"]
   end
 
   C -- "variable list + stats only" --> H
@@ -52,7 +52,7 @@ flowchart TB
   class J judge;
 ```
 
-*The three layers are ① Propose, ② Judge, ③ Narrate. Arrows crossing between them show the flow: the Catalog hands the LLM a privacy-safe menu, the LLM's proposals enter the Registry, the Judge's validated result is the only thing narration is allowed to speak.*
+*Read top-to-bottom as **three layers**: **① Propose** — an LLM imagines what's worth testing; **② Judge** — a 100%-on-device deterministic engine (ingest → catalog → registry → judge → render) in which only the gated **Judge** step may ever call a pattern real; **③ Narrate** — an LLM puts the survivor into plain words. The cross arrows are the only data that moves between layers: the Catalog hands the LLM a privacy-safe menu, the LLM's proposals enter the Registry, and the Judge's validated summary is the only thing narration is allowed to speak. (The numbered table below details the steps inside these layers in data-flow order.)*
 
 | # | Layer | Job | Tool | Why this tool |
 |---|---|---|---|---|
@@ -60,7 +60,7 @@ flowchart TB
 | 2 | **Catalog** | "What variables exist + their summary stats" | Code | The privacy-safe menu sent out for ideas |
 | 3 | **Hypothesis generation** | Propose *what's worth testing* — incl. pairings the developer wouldn't think of | **LLM** | Breadth. Knows PD pharmacology; proposes *plausible* hypotheses |
 | 4 | **Registry** | Hold the candidate analyses (human + LLM) | Code (config) | Composable list of questions |
-| 5 | **Engine / Judge** ⚖ | *Actually test* each hypothesis + gate it | **Code only** | The only layer permitted to say a pattern is real |
+| 5 | **Engine / Judge** ⚖ | *De-confound, then test* each hypothesis + gate it | **Code only** | The only layer permitted to say a pattern is real |
 | 6 | **Render** | Draw the chart + card | Code | Domain-specific, clinician-grade visuals |
 | 7 | **Narration** | Explain the survivor in plain, hedged words | **LLM** | Voice. Good at language + framing |
 
@@ -91,14 +91,14 @@ Primitives are written against these two shapes — which is *why* one primitive
 
 ```mermaid
 flowchart TB
-  A["<b>Adapter</b> · caffeine<br/><i>data flows in</i>"]
-  P["<b>Primitive</b> · windowed-effect<br/><i>math runs on it</i>"]
-  E["<b>Registry entry</b> · caffeine ↔ tremor, 4h<br/><i>the question gets asked</i>"]
+  A["Adapter · caffeine<br/><i>data flows in</i>"]
+  P["Primitive · windowed-effect<br/><i>the math</i>"]
+  E["Registry entry · caffeine ↔ tremor, 4h<br/><i>the question</i>"]
   A --> G
   P --> G
   E --> G
-  G["⚖ <b>Engine / Judge</b><br/>gates it against the user's own data"]
-  G --> Card["📈 Card + chart appears  -  <b>only if</b> the data<br/>clears the significance + sufficiency bar"]
+  G["Engine / Judge ⚖<br/>de-confounds, then gates against the user's own data"]
+  G --> Card["Card + chart appears —<br/><b>only if</b> it clears significance + sufficiency"]
   classDef judge fill:#4A8CD6,stroke:#2c5d94,color:#fff;
   class G judge;
 ```
@@ -112,6 +112,7 @@ flowchart TB
 | Step | Automatic? |
 |---|---|
 | Stats run on each user's own data | ✅ |
+| Drop dose-shadowed events before gating (the dose-confound guard) | ✅ |
 | Show / hide per user via the significance gate | ✅ |
 | A serviceable chart (the primitive's default renderer) | ✅ |
 | The numeric "finding" text | ✅ |
@@ -127,6 +128,24 @@ flowchart TB
 
 - **Quality.** The insights we've already built encode domain-specific statistical models a generic scanner could never invent — e.g. dose-response = onset-latency *by time-of-day bucket, truncated at the next dose, baseline-corrected*; wearing-off = *Kaplan-Meier survival with censoring*. Automated discovery only ever produces shallow "X correlates with Y" cards. **The primitives carry clinician-grade quality; the LLM carries breadth.**
 - **Safety.** Scanning every variable pair for "anything significant" is a false-discovery machine — test enough pairs at p<0.05 and chance alone manufactures hits. The LLM's value is as a *prior*: it proposes only *mechanistically plausible* hypotheses, which keeps the number of tests small and each hit more likely to be real. The gate then enforces discipline: multiple-comparison correction, minimum effect size, minimum n, and replication across time windows before anything is shown.
+
+---
+
+## The Judge is confounder-aware (the dose-confound guard)
+
+A windowed-effect primitive, on its own, is **confounder-blind**: it measures the signal in the hours after an event and credits any change to that event. In Parkinson's that is dangerous, because the single most powerful thing that moves the signal — a **levodopa dose** — is correlated with almost everything else the patient does. Coffee gets drunk near doses; exercise happens *because* the patient is already ON. So a naive windowed-effect quietly attributes the *medication's* ON-effect to whatever event happened to share its window.
+
+This is not hypothetical — it surfaced on real data (Jun 21). The caffeine card first read **"Caffeine eases your tremor — Strong — 32% lower."** Almost certainly the levodopa, not the caffeine: coffee is habitually taken near doses, so the post-coffee window rode the dose's ON-effect, and the confounder-blind primitive handed the credit to the coffee. A plausible mechanism in the same direction (caffeine is an adenosine A2A antagonist — the istradefylline target) makes a confounded result *more* seductive, not more proven.
+
+**The fix is a primitive-level guard (`doseCleanEvents`), applied to every non-medication windowed exposure** (food, exercise, mindfulness — the dose-as-exposure dyskinesia path never reaches it and is naturally skipped):
+
+- Before gating, **drop any event whose measurement window is dose-shadowed** — a levodopa dose falling within `[eventStart − onWindow, eventEnd + postWindow]`.
+- `onWindow` is **per-user**, sourced from the *same* Kaplan-Meier median ON-duration the wearing-off card computes (~192 min for this user), with `[90, 360]`-min sanity rails and a fallback. A user whose ON window is shorter gets a tighter shadow.
+- Only events that give a clean read of the exposure's *own* effect survive to the gate.
+
+It is deliberately **conservative**: for an exposure habitually taken near doses, n collapses and the honest output is "can't separate this from your medication" (no card) rather than a confident, wrong claim. On-device this flipped caffeine from **"Strong / −32% / 52 servings"** to **"Emerging / +9% / 13 dose-clean servings."** The **sign flip** (−32% → +9%) once dose-shadowed servings are removed is the proof that the original "benefit" was the medication. Sugar, with fewer than 5 dose-clean servings, correctly surfaces nothing — the gate's n-floor doing its job on the other side.
+
+**Why this lives in the Judge — not the Adapter or the Registry.** Confounding is a property of *the data and the question*, not of how a variable was ingested. So the guard belongs in the deterministic judging layer, alongside the gate that already enforces n / effect / significance / stability. It is a fourth discipline the Judge applies before it will call a pattern real: **de-confound, then gate.** And because the mechanism is reverse causation as much as correlation (you exercise *because* you're ON), the guard is **general across exposures**, not a food-specific patch — which is exactly why it earns a place in the architecture rather than in one card's code.
 
 ---
 
@@ -183,6 +202,12 @@ The architecture is **fully migrated and on-device**, all parity-green: the conf
 **Primitive vs. renderer — the split made explicit.** Decomposing a bespoke card yields two separable things: the **primitive** (the math — always generic) and the **renderer** (the card's display — generic *or* bespoke). The windowed-effect cards use a *generic* renderer. **Gait uses a bespoke composite renderer** — it fuses four mobility markers into one reassurance card — and that is *correct*, not leftover hard-coding. Primitives must be generic; renderers may be bespoke when the card genuinely is.
 
 **The renderer dimension (the mechanism that retired the dispatch shim).** Dispatch cannot key on the primitive alone: `.longTermTrend` does not uniquely identify the gait composite (a future "step-length trend" entry would share the primitive). So each `RegistryEntry` carries a **`renderer`** descriptor (`.windowedEffect` / `.gaitComposite` / `.doseResponse` / `.wearingOff`), and `run()` dispatches on it — deleting the transitional id-switch for *all* bespoke cards at once. This is what lets every entry be fully self-describing (exposure · outcome · primitive · **renderer** · gate) and makes routing data-driven. Status: **built (commit `cf9a400`).** `run()` now switches on `entry.renderer`, reading each renderer's stats params from `entry.primitive`; the id-switch is gone and all four cards share one dispatch. The two dose cards were decomposed the same way the gait card was — generic primitives (`doseResponseByTimeOfDay`, `survivalDuration`) over the (signal, events) shapes, with `buildTraces`/`analyzeWearingOff` kept as thin parity adapters and `afternoonDoseInsight`/`wearingOffInsight` as the bespoke renderers. An end-to-end parity test confirms `generateInsights` surfaces all three built cards through the new dispatch (the seam the direct-call tests skipped), and the change was verified on-device — all four cards render identically.
+
+**Food cluster, the `category` field, and the dose-confound guard (commit `048d46c`).** Three additions land on top of the completed migration:
+
+- **Food cluster** — a generic **`FoodIntakeEvent`** adapter (carrying the detected `FoodAttribute` set) plus a **`.foodAttribute`** exposure mirror the workout adapter exactly. `caffeine ↔ tremor` and `sugar ↔ tremor` are now **one registry line each, with zero new statistics** — the clearest proof yet of the thesis that *a new variable is a registry line, not code*. The `windowedEffect` renderer was generalized so food and exercise diverge in exactly one place (the event stream + mechanism copy); the math, gate, chart, and guard are all shared. No CloudKit change (`FoodEvent` already existed).
+- **`category` field** on every entry (medication / exercise / food / sleep / stress / mobility) — the grouping axis for a future clustered Insights layout. **Semantic category** (on the entry) and **display grouping** (a UI policy) are kept as separate layers, so the field is inert until the layout is built; reassigning a category is a one-line static-config change, no migration. (A horizontal-carousel layout was rejected as tremor- and VoiceOver-hostile in favor of collapsible vertical sections, deferred until 8+ live cards exist to design against.)
+- **Dose-confound guard** — the architecturally significant one; see [The Judge is confounder-aware](#the-judge-is-confounder-aware-the-dose-confound-guard) above. It made the generalized windowed-effect primitive safe to point at exposures habitually taken near a dose, and was verified on-device by the caffeine sign-flip.
 
 ---
 

@@ -201,21 +201,29 @@ struct CorrelationEngineParityTests {
             samples: samples, doses: doses, gait: Self.loadGait(), workouts: [])
         #expect(surfaced.count == 3, "only the three built cards fire when no workouts are supplied")
 
+        // Both medication cards are .clinicalReferral, so the safety-derived stage
+        // (CorrelationEngine.stage(for:)) routes them to .clinicalDiscussion — neither
+        // offers an experiment. This is the fix: the .doseResponse renderer previously
+        // hard-stamped .hypothesis, so the afternoon-dose card wrongly showed a
+        // "Try an experiment" button despite being a medication-regimen finding.
         let doseCard = try #require(
             surfaced.first { $0.title.localizedCaseInsensitiveContains("afternoon dose") },
             "afternoon-dose card should surface via the .doseResponse renderer")
         #expect(doseCard.confidence == .strong)
-        #expect(doseCard.stage == .hypothesis)
+        #expect(doseCard.stage == .clinicalDiscussion, "dose entry is .clinicalReferral → no experiment")
 
+        // Keyed on title, not stage: dose AND wearing-off now both carry
+        // .clinicalDiscussion (both .clinicalReferral), so stage no longer uniquely
+        // identifies this card.
         let wearCard = try #require(
-            surfaced.first { $0.stage == .clinicalDiscussion },
+            surfaced.first { $0.title.localizedCaseInsensitiveContains("spaced wider") },
             "wearing-off card should surface via the .wearingOff renderer")
         #expect(wearCard.confidence == .strong)
-        #expect(wearCard.title.localizedCaseInsensitiveContains("spaced wider"))
+        #expect(wearCard.stage == .clinicalDiscussion)
 
-        // Keyed on stage, not title: .verdict uniquely identifies the gait composite
-        // (dose = .hypothesis, wearing-off = .clinicalDiscussion), so the assertion
-        // doesn't break if the card's copy is reworded.
+        // .verdict still uniquely identifies the gait composite — it's the one card
+        // whose stage is NOT safety-derived (a progression readout, set in gaitInsight),
+        // while the two medication cards are both .clinicalDiscussion.
         _ = try #require(
             surfaced.first { $0.stage == .verdict },
             "gait card should surface via the .gaitComposite renderer")
