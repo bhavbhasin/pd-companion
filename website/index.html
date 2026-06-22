@@ -138,10 +138,10 @@
             justify-content: center;
             padding: 0 56px;
             max-width: var(--max-w);
-            margin: 0 auto;
+            margin: 88px auto 0;
             opacity: 0.18;
         }
-        .wave-divider svg { width: 100%; max-width: 640px; color: var(--blue); }
+        .wave-divider svg { width: 100%; max-width: 320px; color: var(--blue); }
 
         html { scroll-behavior: smooth; }
 
@@ -476,6 +476,27 @@
         }
         @media (max-width: 768px) { .detail-grid { grid-template-columns: 1fr; } }
 
+        /* Insights showcase */
+        .insight-shots {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+        }
+        .insight-shot { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+        .insight-shot img {
+            width: 100%;
+            display: block;
+            border-radius: 18px;
+            border: 1px solid var(--border);
+            background: #000;
+        }
+        .insight-cap { text-align: center; }
+        .insight-cap strong { display: block; font-size: 14px; font-weight: 600; color: var(--text-1); margin-bottom: 3px; }
+        .insight-cap span { font-size: 12.5px; color: var(--text-3); line-height: 1.45; }
+        @media (max-width: 768px) {
+            .insight-shots { grid-template-columns: 1fr; max-width: 340px; margin: 0 auto; gap: 32px; }
+        }
+
         /* Tremor callout */
         .tremor-callout {
             margin-top: 44px;
@@ -519,7 +540,7 @@
             align-items: center;
         }
         blockquote {
-            font-size: clamp(18px, 2.2vw, 25px);
+            font-size: clamp(16px, 1.8vw, 20px);
             font-weight: 380;
             font-style: italic;
             line-height: 1.55;
@@ -840,13 +861,13 @@
         </div>
         <div class="cap-card">
             <div class="cap-icon">🍎</div>
-            <h3 class="cap-title">Deep Apple Health integration</h3>
-            <p class="cap-desc">Reads six Apple Health domains in real time - sleep stages (REM, Core, Deep), heart rate variability, workouts, medications, nutrition, and daylight exposure - cross-correlated against continuous tremor data.</p>
+            <h3 class="cap-title">No logging chore</h3>
+            <p class="cap-desc">Kampa reads what you already track in Apple Health and on your Apple Watch - sleep, HRV, workouts, medications, daylight - and correlates it against continuous tremor. No separate logbook to keep up; the only thing you note in Kampa is food.</p>
         </div>
         <div class="cap-card">
             <div class="cap-icon">✦</div>
-            <h3 class="cap-title">Observations engine</h3>
-            <p class="cap-desc">No dashboards to interpret. The Observations engine reads the day's data and surfaces what actually matters - in plain language, automatically, every day.</p>
+            <h3 class="cap-title">Daily observations &amp; cross-day Insights</h3>
+            <p class="cap-desc">No dashboards to interpret. Kampa reads each day in plain language - and across weeks and months, a separate Insights view surfaces longer patterns, each with an honest confidence level and ready to discuss with your neurologist.</p>
         </div>
     </div>
 </div>
@@ -924,6 +945,52 @@
                 <div class="detail-sub">Avg 2.1 → 0.3 in the 30–90 min window after. No charts to read.</div>
             </div>
         </div>
+
+        <!-- Insights showcase — cross-day patterns -->
+        <p class="section-p" style="margin: 56px 0 26px; max-width: none;">And across weeks and months, the Insights view surfaces the longer patterns - each with an honest confidence level, and only when the data actually supports it.</p>
+        <div class="insight-shots">
+            <div class="insight-shot">
+                <img src="images/insight-overview.jpg" alt="Kampa Insights list - several findings, each labeled with a confidence level">
+                <div class="insight-cap"><strong>Ranked by confidence</strong><span>Emerging, Moderate, or Strong - never overstated</span></div>
+            </div>
+            <div class="insight-shot">
+                <img src="images/insight-experiment.jpg" alt="An insight expanded with a chart and a 'Try an experiment' button">
+                <div class="insight-cap"><strong>A hypothesis you can test</strong><span>Framed as an association to test, not proof</span></div>
+            </div>
+            <div class="insight-shot">
+                <img src="images/insight-dose.jpg" alt="Medication dose-response chart comparing morning, pre-lunch and afternoon doses">
+                <div class="insight-cap"><strong>Worth a doctor's eye</strong><span>Clear enough to bring to your neurologist</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Privacy ── -->
+<div class="section-wrap" id="privacy">
+    <p class="eyebrow">Your health, your data</p>
+    <h2 class="section-h">Privacy isn't a feature.<br>It's the architecture.</h2>
+    <p class="section-p">The data Kampa handles is about as personal as it gets - continuous movement, tremor, sleep, heart rate. For a neurological condition, that can reveal how your day went, whether your medication is working, even how things are changing over time. Data this personal should stay under your control - so Kampa keeps it on your device, backed up to your own private iCloud. <a href="privacy.html" style="color:var(--blue);text-decoration:none;">Read the full privacy policy.</a></p>
+    <div class="cap-grid">
+        <div class="cap-card">
+            <div class="cap-icon">📱</div>
+            <h3 class="cap-title">Processed on your device</h3>
+            <p class="cap-desc">Everything Kampa records is processed and stored on your iPhone and Apple Watch first. Your health data starts and stays with you.</p>
+        </div>
+        <div class="cap-card">
+            <div class="cap-icon">☁️</div>
+            <h3 class="cap-title">Your own private iCloud</h3>
+            <p class="cap-desc">Backup runs through your personal private iCloud (Apple's CloudKit), under your account. No Kampa account to create, no Kampa server.</p>
+        </div>
+        <div class="cap-card">
+            <div class="cap-icon">🔍</div>
+            <h3 class="cap-title">Nothing hidden</h3>
+            <p class="cap-desc">The app shows you exactly what's stored - every record type, count, and the full date range. Lose your phone? Reinstall and it all comes back.</p>
+        </div>
+        <div class="cap-card">
+            <div class="cap-icon">🔒</div>
+            <h3 class="cap-title">Never sold, always yours</h3>
+            <p class="cap-desc">Kampa will never sell or share your health data - not with advertisers, data brokers, or researchers. You control what it's ever used for.</p>
+        </div>
     </div>
 </div>
 
@@ -970,6 +1037,34 @@
         <div class="changelog-item">
             <div class="changelog-date">Jun 2026</div>
             <div>
+                <div class="changelog-title">Cross-day Insights</div>
+                <div class="changelog-desc">A new Insights view looks across weeks and months, not just today - surfacing longer-running patterns like medication response, wearing-off timing, and walking trends. Each comes with an honest confidence level and a clear "discuss with your neurologist" note. It only claims a pattern when the data actually supports it.</div>
+            </div>
+        </div>
+        <div class="changelog-item">
+            <div class="changelog-date">Jun 2026</div>
+            <div>
+                <div class="changelog-title">A pattern engine built for rigor</div>
+                <div class="changelog-desc">Behind the Insights view, Kampa analyzes dose-response by time of day, wearing-off windows, long-term gait trends, and food timing - and guards against confounds, so a meal doesn't get credit for what the medication actually did. When the signal isn't there, it stays quiet.</div>
+            </div>
+        </div>
+        <div class="changelog-item">
+            <div class="changelog-date">Jun 2026</div>
+            <div>
+                <div class="changelog-title">Neurologist-ready report</div>
+                <div class="changelog-desc">Export a clean, plain-language summary of your patterns as a PDF to bring to any appointment - your data, on your terms, ready to discuss with your care team.</div>
+            </div>
+        </div>
+        <div class="changelog-item">
+            <div class="changelog-date">Jun 2026</div>
+            <div>
+                <div class="changelog-title">Kampa enters private testing</div>
+                <div class="changelog-desc">Kampa is now running on real devices beyond the builder's own, with a small, invitation-only group of testers. Interested in joining? Email <a href="mailto:info@kampa.health" style="color:var(--blue);text-decoration:none;">info@kampa.health</a>.</div>
+            </div>
+        </div>
+        <div class="changelog-item">
+            <div class="changelog-date">Jun 2026</div>
+            <div>
                 <div class="changelog-title">Private cloud backup &amp; restore</div>
                 <div class="changelog-desc">Your data backs up to your own private iCloud (Apple's CloudKit) and restores on a new device - lose or replace your phone and your history isn't gone. On-device first; you stay in control of what it's ever used for.</div>
             </div>
@@ -1006,11 +1101,6 @@
     <div class="roadmap-grid">
         <div class="roadmap-item">
             <div class="roadmap-label">In development</div>
-            <div class="roadmap-title">Longitudinal insights</div>
-            <p class="roadmap-desc">Weeks and months of personal baselines - detecting drift before a patient or neurologist would notice. "Your Sinemet effect window has shortened by 12 minutes over the last 30 days."</p>
-        </div>
-        <div class="roadmap-item">
-            <div class="roadmap-label">In development</div>
             <div class="roadmap-title">Predictive nudges</div>
             <p class="roadmap-desc">Proactive wrist alerts built from your own patterns - not generic reminders. "Your typical wear-off is at 4 hours. Your last dose was 3h 50m ago."</p>
         </div>
@@ -1021,18 +1111,13 @@
         </div>
         <div class="roadmap-item">
             <div class="roadmap-label">Roadmap</div>
-            <div class="roadmap-title">Neurologist PDF export</div>
-            <p class="roadmap-desc">Patient-controlled clinical summary - tremor trends, medication adherence, key correlations - exportable as a PDF to share with your care team at any appointment.</p>
-        </div>
-        <div class="roadmap-item">
-            <div class="roadmap-label">Roadmap</div>
             <div class="roadmap-title">Voice-first logging</div>
             <p class="roadmap-desc">"Hey Siri, log Sinemet." App Intents built for tremor-affected hands - no typing required. Designed around how PD patients actually interact with their phones.</p>
         </div>
         <div class="roadmap-item">
-            <div class="roadmap-label">Roadmap</div>
-            <div class="roadmap-title">Small research cohort</div>
-            <p class="roadmap-desc">Expanding beyond a single patient to a small TestFlight group - validating whether the patterns Kampa surfaces are consistent across individuals or deeply personal.</p>
+            <div class="roadmap-label">Now underway</div>
+            <div class="roadmap-title">Small testing group</div>
+            <p class="roadmap-desc">Kampa is now on real devices beyond the builder's own, with a small invitation-only group - validating whether the patterns it surfaces are consistent across individuals or deeply personal.</p>
         </div>
     </div>
 </div>
@@ -1041,7 +1126,7 @@
 <div class="contact-wrap">
     <div class="contact-inner">
         <h2 class="contact-h">Interested in Kampa?</h2>
-        <p class="contact-p">Early access, research collaboration, clinical feedback, or just want to follow what's being built. Reach out directly.</p>
+        <p class="contact-p">Kampa is now in active private testing with a small, invitation-only group. Want testing access, to collaborate on research, share clinical feedback, or just follow along? Reach out directly - access to the beta is by request.</p>
         <a href="mailto:info@kampa.health" class="email-btn">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
             info@kampa.health
