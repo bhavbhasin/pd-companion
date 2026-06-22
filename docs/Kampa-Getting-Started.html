@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Source template for docs/Kampa-Getting-Started.pdf. Render with:
+     chrome --headless --no-pdf-header-footer --allow-file-access-from-files \
+       --print-to-pdf=docs/Kampa-Getting-Started.pdf docs/Kampa-Getting-Started.html
+     Brand spec: see docs/brand-guide.md -->
+<style>
+  @font-face { font-family:'Geist'; font-weight:400;
+    src:url('file:///Users/bhav/documents/ParkinsonsProject/PD%20Companion/PD%20Companion/Fonts/Geist-Regular.ttf'); }
+  @font-face { font-family:'Geist'; font-weight:500;
+    src:url('file:///Users/bhav/documents/ParkinsonsProject/PD%20Companion/PD%20Companion/Fonts/Geist-Medium.ttf'); }
+  @font-face { font-family:'Geist'; font-weight:600;
+    src:url('file:///Users/bhav/documents/ParkinsonsProject/PD%20Companion/PD%20Companion/Fonts/Geist-SemiBold.ttf'); }
+
+  :root{ --blue:#4A8CD6; --ink:#1A1D22; --gray:#6B7280; --line:#E0E0E0; --tint:#F4F8FD; --tint-line:#D9E6F5; }
+  @page{ size:Letter; margin:14mm 16mm; }
+  *{ box-sizing:border-box; }
+  body{ font-family:'Geist',-apple-system,'Helvetica Neue',sans-serif; color:var(--ink);
+    font-size:12.4px; line-height:1.5; margin:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+
+  /* Header — matches the neurologist report: brand-blue wave mark + kāmpa wordmark (ā in brand blue) */
+  .head{ display:flex; align-items:center; justify-content:space-between; padding-bottom:11px; border-bottom:1px solid var(--line); }
+  .lockup{ display:flex; align-items:center; gap:10px; }
+  .wave{ height:32pt; width:auto; display:block; }
+  .wordmark{ font-size:24pt; font-weight:500; letter-spacing:-0.02em; line-height:1; color:var(--ink); }
+  .wordmark .a{ color:var(--blue); }
+  .eyebrow{ text-align:right; }
+  .eyebrow .k{ font-size:11px; font-weight:600; letter-spacing:0.12em; color:var(--blue); text-transform:uppercase; }
+  .eyebrow .s{ font-size:11.5px; color:var(--gray); margin-top:2px; }
+
+  h2{ font-size:14.5px; font-weight:600; color:var(--ink); margin:17px 0 7px; }
+  p{ margin:0 0 8px; }
+  .lead{ font-size:13.4px; color:#33373D; margin:14px 0 4px; }
+  .lead b{ color:var(--ink); font-weight:600; }
+  ol,ul{ margin:4px 0 8px; padding-left:20px; }
+  li{ margin:0 0 5px; }
+  b,strong{ font-weight:600; }
+  em{ color:#42474E; }
+
+  .foot{ margin-top:18px; padding-top:10px; border-top:2px solid var(--blue); }
+  .foot .fine{ font-size:10px; color:var(--gray); line-height:1.55; }
+  .foot .fine b{ color:#4a4f57; }
+  .foot .contact{ font-size:12px; margin-top:7px; }
+  .foot .contact b{ color:var(--blue); }
+  .foot .contact a{ color:var(--ink); text-decoration:none; }
+</style>
+</head>
+<body>
+
+  <div class="head">
+    <div class="lockup">
+      <svg class="wave" viewBox="0 0 240 144" xmlns="http://www.w3.org/2000/svg">
+        <path d="M8 90 C 28 90, 30 30, 56 30 C 78 30, 80 110, 104 95 C 124 82, 126 60, 150 60 C 168 60, 172 78, 192 78 L 232 78"
+              stroke="#4A8CD6" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <circle cx="232" cy="78" r="5" fill="#4A8CD6"/>
+      </svg>
+      <span class="wordmark">k<span class="a">&#257;</span>mpa</span>
+    </div>
+    <div class="eyebrow">
+      <div class="k">Getting Started</div>
+      <div class="s">Your first week with Kampa</div>
+    </div>
+  </div>
+
+  <p class="lead"><b>Kampa watches in the background.</b> Your tremor, sleep, and walking are tracked
+  automatically - no tapping, no daily check-ins. The more context it has - your medications, meals, and
+  workouts - the sharper its insights get. The good news: almost all of that already lives in Apple Health
+  and on your Apple Watch, so there's very little new to keep up.</p>
+
+  <h2>Set up &mdash; 3 steps, once</h2>
+  <ol>
+    <li><b>Install Kampa</b> from the TestFlight email invitation, then open it.</li>
+    <li><b>Allow both permission screens</b> the first time - <b>Health data</b> (tap <em>Turn On All</em>) and
+        <b>Medications</b> (tap <em>Allow</em>). Tapped the wrong one? Fix it in
+        <em>Settings &rsaquo; Apps &rsaquo; Health &rsaquo; Data Access &amp; Devices &rsaquo; Kampa</em>.</li>
+    <li><b>Wear your Apple Watch</b> during the day, and overnight if you track sleep.</li>
+  </ol>
+
+  <h2>Tracked automatically &mdash; you never log these</h2>
+  <p><b>Tremor &amp; dyskinesia</b> from the Apple Watch; <b>walking &amp; gait, sleep, heart rate, and HRV</b>
+  from your iPhone and Watch. Once permissions are on, this happens on its own.</p>
+
+  <h2>The context that sharpens it &mdash; mostly things you already do</h2>
+  <p>Kampa doesn't make you keep a separate logbook. It reads what you already track through Apple Health and
+  your Watch, so you log the way you normally do:</p>
+  <ul>
+    <li><b>Medications</b> &mdash; record your doses in <b>Apple Health &rsaquo; Medications</b> (or its reminders).
+        Kampa reads them automatically - dose timing is one of its most useful insights.</li>
+    <li><b>Workouts</b> &mdash; just start a workout on your <b>Apple Watch</b> as usual. Kampa picks it up. Nothing to add in Kampa.</li>
+    <li><b>Food</b> &mdash; the one thing you note <em>inside Kampa</em>: tap <b>+</b> on the Review screen, then
+        type it plainly ("<em>5 almonds with tea</em>"). No counting.</li>
+  </ul>
+
+  <h2>Reading it</h2>
+  <ul>
+    <li><b>Review</b> (home) &mdash; your day on one timeline: sleep, tremor, and events (&#128138; medication,
+        &#127860; food, &#127939; workout). Use the <b>&lsaquo; &rsaquo;</b> arrows to change days.</li>
+    <li><b>Insights</b> (&#128161; top-right) &mdash; patterns across weeks and months, each with an honest
+        confidence level (<em>Watching &rarr; Emerging &rarr; Strong</em>) and a "discuss with your neurologist"
+        note where it matters. The longer you use Kampa, the more it can tell you.</li>
+  </ul>
+
+  <h2>Telling us what you think</h2>
+  <p>You're one of the first people ever to use Kampa, so your reactions matter. Send feedback right from
+  <b>TestFlight</b> (open TestFlight &rsaquo; Kampa &rsaquo; <b>Send Feedback</b> - you can attach a screenshot),
+  or just message me. No note is too small - "I didn't understand this screen" is gold.</p>
+
+  <div class="foot">
+    <p class="fine"><b>Requirements:</b> iPhone 11 or later (iOS&nbsp;26) and Apple&nbsp;Watch Series&nbsp;4 or later
+    (watchOS&nbsp;10) - the Watch is how Kampa reads tremor. &nbsp;<b>Not medical advice.</b> Kampa shows you your
+    own data (n-of-1); it is not a medical device and does not diagnose or treat. Never change a medication or
+    dose based on the app - always go through your neurologist. A calm day or "no clear pattern yet" is real
+    information, not a failure.</p>
+    <p class="contact"><b>kampa.health</b> &nbsp;&middot;&nbsp; <a href="mailto:info@kampa.health">info@kampa.health</a></p>
+  </div>
+
+</body>
+</html>
