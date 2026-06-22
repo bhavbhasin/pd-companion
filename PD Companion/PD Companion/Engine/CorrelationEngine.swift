@@ -36,6 +36,21 @@ struct WorkoutEvent: Sendable {
     let activityRawValue: UInt
 }
 
+/// A discrete food/drink intake event — the canonical shape the food cluster feeds
+/// into the same windowed-effect primitive the exercise cluster uses. Carries the
+/// detected `FoodAttribute`s as a set (one intake can be caffeine + sugar + fat), so
+/// a registry entry filters by `attributes.contains(attr)` exactly as the exercise
+/// path filters workouts by activity type. Unlike `WorkoutEvent` (which carries a raw
+/// `UInt` to keep the engine HealthKit-free), `FoodAttribute` is a plain app enum, so
+/// it's carried directly. The adapter (`InsightsView`) snapshots SwiftData `FoodEvent`s
+/// into these on the main actor, deriving attributes from the stored field OR
+/// `FoodAttribute.detect` when the ML field is still empty. Instantaneous, so the
+/// windowed-effect primitive treats `timestamp` as a zero-length event.
+struct FoodIntakeEvent: Sendable {
+    let timestamp: Date
+    let attributes: Set<FoodAttribute>
+}
+
 /// A lightweight, `Sendable` snapshot of a tremor reading — only the fields the
 /// engine reads. The app maps its SwiftData `TremorReading`s into these *on the main
 /// actor*, so the engine can run off the main thread without ever touching managed
@@ -128,14 +143,23 @@ nonisolated enum CorrelationEngine {
     // Entry point: run every module, return the surfaced insights.
     static func generateInsights(samples: [TremorPoint], doses: [Dose],
                                  gait: [GaitMetric: [GaitSample]] = [:],
-                                 workouts: [WorkoutEvent] = []) -> [Insight] {
+                                 workouts: [WorkoutEvent] = [],
+                                 food: [FoodIntakeEvent] = []) -> [Insight] {
         // The registry now DRIVES execution: walk the active questions in order
         // and dispatch each to its analysis. Entries whose primitive isn't built
-        // yet (the exercise / sleep / diet cluster) return nil and stay dormant —
-        // the "ship the question, light up when the data earns it" model.
-        InsightRegistry.starter
+        // yet (the sleep cluster, etc.) return nil and stay dormant — the
+        // "ship the question, light up when the data earns it" model.
+        //
+        // Per-user dose-confound ON-window, from the SAME validated KM median the
+        // wearing-off card uses. Computed once here (not per entry); skip the extra
+        // survival pass when there are no non-medication exposures to guard.
+        let onWindow = (workouts.isEmpty && food.isEmpty)
+            ? doseOnWindowFallback
+            : doseOnWindowMinutes(samples: samples, doses: doses)
+        return InsightRegistry.starter
             .filter { $0.status == .active }
-            .compactMap { run($0, samples: samples, doses: doses, gait: gait, workouts: workouts) }
+            .compactMap { run($0, samples: samples, doses: doses, gait: gait,
+                              workouts: workouts, food: food, onWindow: onWindow) }
     }
 
     /// Dispatch one registry entry to the renderer that draws it.
@@ -148,7 +172,8 @@ nonisolated enum CorrelationEngine {
     /// renderer + primitive needs no code here — only its registry line. A nil
     /// renderer (or a primitive that doesn't match) = registered but dormant.
     static func run(_ entry: RegistryEntry, samples: [TremorPoint], doses: [Dose],
-                    gait: [GaitMetric: [GaitSample]], workouts: [WorkoutEvent]) -> Insight? {
+                    gait: [GaitMetric: [GaitSample]], workouts: [WorkoutEvent],
+                    food: [FoodIntakeEvent], onWindow: Double = doseOnWindowFallback) -> Insight? {
         switch entry.renderer {
         case .doseResponse:
             guard case .doseResponseByTimeOfDay(let preMin, let postMin) = entry.primitive else { return nil }
@@ -160,25 +185,131 @@ nonisolated enum CorrelationEngine {
             return gaitInsight(series: gait)
         case .windowedEffect:
             guard case .windowedEffect(let preMin, let postMin) = entry.primitive else { return nil }
-            return windowedEffectInsight(entry: entry, samples: samples,
-                                         workouts: workouts, preMin: preMin, postMin: postMin)
+            return windowedEffectInsight(entry: entry, samples: samples, doses: doses,
+                                         workouts: workouts, food: food,
+                                         preMin: preMin, postMin: postMin, onWindowMin: onWindow)
         case .none:
             return nil   // no renderer wired yet — registered but dormant
         }
     }
 
-    /// Render a windowed-effect registry entry into a card. Today only the
-    /// workout → tremor path is wired (workouts are adapted in; tremor is in the
-    /// snapshot). Other exposures/outcomes return nil until their adapters land —
-    /// the entries stay registered but dormant.
+    /// Resolved inputs for a windowed-effect card: the event stream (filtered from
+    /// whichever cluster this exposure belongs to) plus the copy that varies by
+    /// cluster. This is the ONE place the food and exercise clusters diverge — the
+    /// math (`windowedEffect`), the gate, the chart, and the card shape are all
+    /// shared. Adding a third windowed cluster later = another branch here, not a
+    /// new renderer.
+    struct WindowedExposure {
+        let events: [(start: Date, end: Date)]
+        let displayName: String   // title-case noun ("Tai Chi", "Caffeine")
+        let unitWord: String      // how occurrences are counted ("sessions" / "servings")
+        let mechanism: String     // the cluster-appropriate hedge / explanation
+    }
+
+    /// Map a windowed-effect registry entry to its event stream + copy. Workout
+    /// exposures draw from `workouts` (filtered by activity); food exposures draw
+    /// from `food` (filtered by attribute, each intake a zero-length event). Returns
+    /// nil for an exposure this renderer doesn't serve (it stays dormant).
+    static func windowedExposure(
+        entry: RegistryEntry, workouts: [WorkoutEvent], food: [FoodIntakeEvent]
+    ) -> WindowedExposure? {
+        if let raw = entry.exposure.workoutRawValue {
+            let events = workouts
+                .filter { $0.activityRawValue == raw }
+                .map { (start: $0.start, end: $0.start.addingTimeInterval($0.duration)) }
+            let name = entry.exposure.workoutDisplayName ?? "this activity"
+            return WindowedExposure(
+                events: events, displayName: name, unitWord: "sessions",
+                mechanism: "Exercise can shift PD motor symptoms for a while afterward, but daily tremor has many drivers — sleep, stress, and medication timing among them. Treat this as a lead to test, not a conclusion.")
+        }
+        if let attr = entry.exposure.foodAttribute {
+            let events = food
+                .filter { $0.attributes.contains(attr) }
+                .map { (start: $0.timestamp, end: $0.timestamp) }   // intake is instantaneous
+            return WindowedExposure(
+                events: events, displayName: attr.displayName, unitWord: "servings",
+                mechanism: foodMechanism(attr))
+        }
+        return nil
+    }
+
+    /// Cluster-appropriate hedge for a food exposure. Caffeine's bakes in the
+    /// wearing-off confound (coffee is often taken when a dose is fading), since
+    /// this pooled windowed-effect doesn't control for dose state.
+    static func foodMechanism(_ attr: FoodAttribute) -> String {
+        switch attr {
+        case .caffeine:
+            return "Caffeine's effect on Parkinson's tremor is genuinely mixed. It blocks adenosine A2A receptors — the same target as some PD medications — and higher caffeine intake is linked to lower PD risk, which leans toward benefit; but as a stimulant it can also nudge tremor up in some people, and no clear acute effect is established. Servings near a dose are set aside first, so what's left leans toward caffeine on its own — a lead to test, not proof."
+        case .sugar:
+            return "A sugar load drives a glucose spike and crash, and glucose swings may track with how steady your symptoms feel. The link is indirect with many other drivers — treat this as a lead to test, not a conclusion."
+        default:
+            return "This is an association in your own data with many possible drivers — treat it as a lead to test, not a conclusion."
+        }
+    }
+
+    /// Conservative default ON-window (minutes) used when the per-user KM median isn't
+    /// estimable. ≈ the validated median ON-duration (~192 min).
+    static let doseOnWindowFallback: Double = 190
+
+    /// The dose-confound guard's ON-window, sourced from the SAME validated KM median
+    /// ON-duration the wearing-off card computes — so the guard adapts per user instead
+    /// of using a magic constant (someone with a shorter ON-duration gets a tighter
+    /// shadow). Falls back when the median isn't yet estimable (too few doses) or is
+    /// physiologically implausible; the [90, 360]-min rails only catch degenerate
+    /// estimates from sparse early data (sanity bounds, not tuning).
+    static func doseOnWindowMinutes(samples: [TremorPoint], doses: [Dose]) -> Double {
+        guard !doses.isEmpty else { return doseOnWindowFallback }
+        let surv = survivalDuration(
+            signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
+            events: doses.map(\.timestamp), onThreshold: offThreshold)
+        let km = surv.kmMedian
+        guard km.isFinite, km >= 90, km <= 360 else { return doseOnWindowFallback }
+        return km
+    }
+
+    /// Dose-confound guard. Drops events whose measurement window could be contaminated
+    /// by levodopa's ON-effect, so a non-medication exposure (food, exercise) isn't
+    /// credited with the dose's tremor reduction. An event is kept ("dose-clean") only
+    /// if NO dose falls within `[eventStart − onWindowMin, eventEnd + postMin]`: a dose
+    /// up to ~ON-duration before the event may still be modulating tremor during
+    /// measurement, and any dose during/after directly contaminates the post-window.
+    /// Deliberately conservative — for an exposure habitually taken near doses
+    /// (caffeine) it collapses n toward zero, and the honest result is "can't separate
+    /// from your medication" (no card) rather than a confounded claim. `onWindowMin`
+    /// from the validated ON duration (~192 min). General: every non-medication
+    /// windowed exposure uses it (food + exercise + mindfulness); the dose-as-exposure
+    /// entry never reaches this path. Reverse causation matters for exercise too —
+    /// sessions done only while ON would otherwise read as "exercise lowered tremor."
+    static func doseCleanEvents(
+        _ events: [(start: Date, end: Date)], doses: [Dose],
+        postMin: Double, onWindowMin: Double = 190
+    ) -> [(start: Date, end: Date)] {
+        guard !doses.isEmpty else { return events }
+        let doseTimes = doses.map(\.timestamp)
+        return events.filter { ev in
+            let shadowStart = ev.start.addingTimeInterval(-onWindowMin * 60)
+            let shadowEnd = ev.end.addingTimeInterval(postMin * 60)
+            return !doseTimes.contains { $0 >= shadowStart && $0 <= shadowEnd }
+        }
+    }
+
+    /// Render a windowed-effect registry entry into a card. The exposure resolver
+    /// supplies the event stream + cluster copy (workout or food); everything below
+    /// — primitive, gate, chart, card shape — is shared across clusters. Other
+    /// exposures/outcomes return nil until their adapters land (dormant).
     static func windowedEffectInsight(
-        entry: RegistryEntry, samples: [TremorPoint], workouts: [WorkoutEvent],
-        preMin: Double, postMin: Double
+        entry: RegistryEntry, samples: [TremorPoint], doses: [Dose] = [],
+        workouts: [WorkoutEvent], food: [FoodIntakeEvent],
+        preMin: Double, postMin: Double, onWindowMin: Double = doseOnWindowFallback
     ) -> Insight? {
-        guard let raw = entry.exposure.workoutRawValue, entry.outcome.isTremor else { return nil }
-        let events = workouts
-            .filter { $0.activityRawValue == raw }
-            .map { (start: $0.start, end: $0.start.addingTimeInterval($0.duration)) }
+        guard entry.outcome.isTremor,
+              let exposure = windowedExposure(entry: entry, workouts: workouts, food: food),
+              !exposure.events.isEmpty else { return nil }
+        // Dose-confound guard: a non-medication exposure must not be credited with the
+        // levodopa ON-effect. Drop dose-shadowed events; if nothing clean survives,
+        // there's no honest read — return nil rather than a confounded claim.
+        let events = doseCleanEvents(exposure.events, doses: doses,
+                                     postMin: postMin, onWindowMin: onWindowMin)
         guard !events.isEmpty else { return nil }
         let signal = samples.map { (time: $0.timestamp, value: $0.tremorScore) }
         guard let eff = windowedEffect(events: events, signal: signal,
@@ -186,11 +317,13 @@ nonisolated enum CorrelationEngine {
         guard let confidence = gate(Self.windowedEffectGate, n: eff.n,
                                     effect: abs(eff.delta), p: eff.pValue) else { return nil }
 
-        let activity = entry.exposure.workoutDisplayName ?? "this activity"
-        let lower = activity.lowercased()
+        let name = exposure.displayName
+        let lower = name.lowercased()
+        let unit = exposure.unitWord
         let hours = max(1, Int((postMin / 60).rounded()))
         let pct = abs(eff.pctChange).isFinite ? String(format: "%.0f%%", abs(eff.pctChange)) : "—"
         let days = Set(events.map { calendar.startOfDay(for: $0.start) }).count
+        let doseNote = doses.isEmpty ? "" : " clear of your dose windows"
         let significant = confidence != .emerging
         let eased = eff.delta < 0
 
@@ -199,27 +332,26 @@ nonisolated enum CorrelationEngine {
         let title: String, summary: String, finding: String
         switch (significant, eased) {
         case (true, true):
-            title = "\(activity) may ease your tremor"
+            title = "\(name) may ease your tremor"
             summary = "In the \(hours)h after \(lower), your tremor ran about \(pct) lower than just before."
-            finding = "Seen across \(eff.n) sessions over \(days) days — an association in your own data, a hypothesis to test, not proof."
+            finding = "Seen across \(eff.n) \(unit)\(doseNote) over \(days) days — an association in your own data, a hypothesis to test, not proof."
         case (true, false):
-            title = "\(activity) may stir your tremor"
+            title = "\(name) may stir your tremor"
             summary = "In the \(hours)h after \(lower), your tremor ran about \(pct) higher than just before."
-            finding = "Seen across \(eff.n) sessions over \(days) days — an association in your own data, a hypothesis to test, not proof."
+            finding = "Seen across \(eff.n) \(unit)\(doseNote) over \(days) days — an association in your own data, a hypothesis to test, not proof."
         default:
-            title = "\(activity): no clear tremor effect yet"
-            summary = "Across \(eff.n) sessions, any before-and-after difference stays within normal day-to-day swing."
+            title = "\(name): no clear tremor effect yet"
+            summary = "Across \(eff.n) \(unit)\(doseNote), any before-and-after difference stays within normal day-to-day swing."
             finding = "The point estimate is about \(pct) \(eased ? "lower" : "higher") afterward, but over \(days) days that's within the noise — not a real effect yet. Still watching."
         }
-        let mechanism = "Exercise can shift PD motor symptoms for a while afterward, but daily tremor has many drivers — sleep, stress, and medication timing among them. Treat this as a lead to test, not a conclusion."
 
         var insight = Insight(
             title: title, summary: summary, stage: .hypothesis,
-            finding: finding, mechanism: mechanism,
+            finding: finding, mechanism: exposure.mechanism,
             confidence: confidence, evidenceDays: days)
         insight.chart = windowedEffectChart(
             events: events, signal: signal, preMin: preMin, postMin: postMin,
-            activityLabel: activity)
+            activityLabel: name)
         return insight
     }
 }

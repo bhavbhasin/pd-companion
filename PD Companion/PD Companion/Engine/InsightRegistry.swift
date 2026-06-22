@@ -39,7 +39,7 @@ enum Variable: Hashable {
     case workout(HKWorkoutActivityType)
     case mindfulSession
     case meal(MealFilter)
-    case caffeine
+    case foodAttribute(FoodAttribute)   // caffeine, sugar, … — the food cluster; mirrors .workout(type)
     case sleep(SleepFacet)
 
     // — Implicit predictors (for trend / circadian questions) —
@@ -65,6 +65,13 @@ extension Variable {
     /// Human label for a workout exposure ("Boxing", "Tai Chi", "Social Dance").
     var workoutDisplayName: String? {
         if case .workout(let t) = self { return t.displayName }
+        return nil
+    }
+    /// The food attribute if this is a food-cluster exposure, else nil. Mirrors
+    /// `workoutRawValue` — the bridge the windowed-effect renderer uses to resolve
+    /// which event stream (food vs workout) an entry draws from.
+    var foodAttribute: FoodAttribute? {
+        if case .foodAttribute(let a) = self { return a }
         return nil
     }
     /// True when this is the tremor signal — the only outcome wired into the
@@ -139,9 +146,30 @@ enum RegistryStatus: Hashable {
     case disabled
 }
 
+/// The domain a question belongs to — the SEMANTIC home of the variable, set once
+/// per entry. This is the grouping axis the Insights screen clusters on, and it is
+/// INDEPENDENT of `primitive`/`renderer` (the math + card) and of `safety` (clinical
+/// vs lifestyle): mindfulness and walking share a primitive but sit in different
+/// categories; gait and dose are both clinical but different categories. A new case
+/// is added only when a real entry needs it (no speculative empty categories) —
+/// glucose/CGM, environment, GI, etc. each get a case when their first entry lands.
+/// Cheap to reassign or split later: it's static config, never persisted — no
+/// CloudKit migration. The UI applies a separate display policy on top (e.g. fold
+/// single-card categories into a shared section), so an entry's category can be
+/// honest without forcing an ugly one-item header.
+enum InsightCategory: Hashable {
+    case medication    // dose response, wearing-off, dyskinesia, circadian control
+    case exercise      // the workout cluster (any activity type)
+    case food          // caffeine, sugar, protein / meal-timing
+    case sleep         // overnight → next-day
+    case stress        // autonomic + mental state: HRV, mindfulness / meditation
+    case mobility      // long-term gait / progression
+}
+
 /// One question. Configuration, not code.
 struct RegistryEntry: Identifiable, Hashable {
     let id: String
+    let category: InsightCategory   // semantic home — the Insights screen's grouping axis
     let exposure: Variable
     let outcome: Variable
     let primitive: Primitive
@@ -168,7 +196,7 @@ enum InsightRegistry {
 
         // ───────────── Medication (strongest, already-validated methods) ─────────────
         RegistryEntry(
-            id: "dose-tremor-by-tod",
+            id: "dose-tremor-by-tod", category: .medication,
             exposure: .levodopaDose, outcome: .tremor,
             primitive: .doseResponseByTimeOfDay(preMin: 30, postMin: 180),
             renderer: .doseResponse,
@@ -176,7 +204,7 @@ enum InsightRegistry {
             source: .curated, safety: .clinicalReferral, minN: 5),
 
         RegistryEntry(
-            id: "dose-tremor-wearing-off",
+            id: "dose-tremor-wearing-off", category: .medication,
             exposure: .levodopaDose, outcome: .tremor,
             // onThreshold matches the engine's offThreshold (tremor ≥ this = OFF).
             primitive: .survivalDuration(onThreshold: 1.0),
@@ -185,7 +213,7 @@ enum InsightRegistry {
             source: .curated, safety: .clinicalReferral, minN: 5),
 
         RegistryEntry(
-            id: "dose-dyskinesia-peak",
+            id: "dose-dyskinesia-peak", category: .medication,
             exposure: .levodopaDose, outcome: .dyskinesia,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
             renderer: .windowedEffect,
@@ -194,30 +222,48 @@ enum InsightRegistry {
 
         // ───────────── Diet ↔ medication (your 3 PM question) ─────────────
         RegistryEntry(
-            id: "protein-meal-dose-onset",
+            id: "protein-meal-dose-onset", category: .food,
             exposure: .meal(.proteinRich), outcome: .tremor,
             primitive: .mealTimingCompetition(windowMin: 90),
             rationale: "Dietary protein competes with levodopa absorption; a protein meal near a dose may slow or blunt its onset.",
             source: .curated, safety: .lifestyleExperiment, minN: 8),
 
         RegistryEntry(
-            id: "meal-fullness-dose-onset",
+            id: "meal-fullness-dose-onset", category: .food,
             exposure: .meal(.large), outcome: .tremor,
             primitive: .mealTimingCompetition(windowMin: 90),
             rationale: "A full stomach slows gastric emptying; a large meal near a dose may delay onset versus an empty-stomach dose.",
             source: .curated, safety: .lifestyleExperiment, minN: 8),
 
+        // Food cluster. Both .active, but PROTECTED by the dose-confound guard
+        // (CorrelationEngine.doseCleanEvents): caffeine/sugar are habitually consumed
+        // near doses, so the naive windowed-effect would credit the levodopa ON-effect
+        // to the food (the observed false "Caffeine eases tremor / Strong / −32%" card).
+        // The guard drops dose-shadowed servings, so a card surfaces ONLY if a
+        // de-confounded signal still clears the gate — otherwise the honest result is
+        // silence ("can't separate from your medication"). The gate, not the status
+        // flag, decides visibility from here. PD caffeine evidence is itself mixed /
+        // possibly-beneficial (A2A-antagonist; istradefylline) — a plausible mechanism
+        // makes a confounded result more seductive, not more proven, hence the guard.
         RegistryEntry(
-            id: "caffeine-tremor",
-            exposure: .caffeine, outcome: .tremor,
+            id: "caffeine-tremor", category: .food,
+            exposure: .foodAttribute(.caffeine), outcome: .tremor,
             primitive: .windowedEffect(preMin: 15, postMin: 120),
             renderer: .windowedEffect,
-            rationale: "Caffeine is a stimulant with mixed PD effects; test its short-window association with tremor.",
+            rationale: "Caffeine has mixed/possibly-beneficial PD effects (A2A-antagonist mechanism; istradefylline precedent); test its short-window association with tremor — dose-confound guarded, since intake co-times with doses.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        RegistryEntry(
+            id: "sugar-tremor", category: .food,
+            exposure: .foodAttribute(.sugar), outcome: .tremor,
+            primitive: .windowedEffect(preMin: 15, postMin: 120),
+            renderer: .windowedEffect,
+            rationale: "A sugar load drives a glucose spike-and-crash; glucose swings may track with symptom steadiness. Second food-cluster entry — same primitive + renderer as caffeine, one registry line. Same dose-confound guard applies.",
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
         // ───────────── Exercise cluster (ONE primitive, many activity types) ─────────────
         RegistryEntry(
-            id: "taichi-tremor",
+            id: "taichi-tremor", category: .exercise,
             exposure: .workout(.taiChi), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
             renderer: .windowedEffect,
@@ -225,7 +271,7 @@ enum InsightRegistry {
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
         RegistryEntry(
-            id: "boxing-tremor",
+            id: "boxing-tremor", category: .exercise,
             exposure: .workout(.boxing), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
             renderer: .windowedEffect,
@@ -233,7 +279,7 @@ enum InsightRegistry {
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
         RegistryEntry(
-            id: "yoga-tremor",
+            id: "yoga-tremor", category: .exercise,
             exposure: .workout(.yoga), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
             renderer: .windowedEffect,
@@ -241,7 +287,7 @@ enum InsightRegistry {
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
         RegistryEntry(
-            id: "cycling-tremor",
+            id: "cycling-tremor", category: .exercise,
             exposure: .workout(.cycling), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
             renderer: .windowedEffect,
@@ -249,7 +295,7 @@ enum InsightRegistry {
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
         RegistryEntry(
-            id: "walking-tremor",
+            id: "walking-tremor", category: .exercise,
             exposure: .workout(.walking), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
             renderer: .windowedEffect,
@@ -257,7 +303,7 @@ enum InsightRegistry {
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
         RegistryEntry(
-            id: "strength-tremor",
+            id: "strength-tremor", category: .exercise,
             exposure: .workout(.functionalStrengthTraining), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
             renderer: .windowedEffect,
@@ -265,7 +311,7 @@ enum InsightRegistry {
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
         RegistryEntry(
-            id: "tabletennis-tremor",
+            id: "tabletennis-tremor", category: .exercise,
             exposure: .workout(.tableTennis), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
             renderer: .windowedEffect,
@@ -273,7 +319,7 @@ enum InsightRegistry {
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
         RegistryEntry(
-            id: "pickleball-tremor",
+            id: "pickleball-tremor", category: .exercise,
             exposure: .workout(.pickleball), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
             renderer: .windowedEffect,
@@ -281,7 +327,7 @@ enum InsightRegistry {
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
         RegistryEntry(
-            id: "tango-tremor",
+            id: "tango-tremor", category: .exercise,
             exposure: .workout(.socialDance), outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
             renderer: .windowedEffect,
@@ -289,7 +335,7 @@ enum InsightRegistry {
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
         RegistryEntry(
-            id: "mindfulness-tremor",
+            id: "mindfulness-tremor", category: .stress,
             exposure: .mindfulSession, outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
             renderer: .windowedEffect,
@@ -298,14 +344,14 @@ enum InsightRegistry {
 
         // ───────────── Sleep (overnight → next day) ─────────────
         RegistryEntry(
-            id: "sleep-duration-next-day-tremor",
+            id: "sleep-duration-next-day-tremor", category: .sleep,
             exposure: .sleep(.duration), outcome: .tremor,
             primitive: .overnightLag,
             rationale: "Sleep deprivation worsens PD motor control; test prior-night duration against next-day tremor.",
             source: .curated, safety: .lifestyleExperiment, minN: 14),
 
         RegistryEntry(
-            id: "sleep-deep-next-day-tremor",
+            id: "sleep-deep-next-day-tremor", category: .sleep,
             exposure: .sleep(.deep), outcome: .tremor,
             primitive: .overnightLag,
             rationale: "Restorative deep sleep may matter more than raw duration; test prior-night deep sleep against next-day tremor.",
@@ -313,7 +359,7 @@ enum InsightRegistry {
 
         // ───────────── Autonomic state ─────────────
         RegistryEntry(
-            id: "hrv-tremor-within-day",
+            id: "hrv-tremor-within-day", category: .stress,
             exposure: .hrv, outcome: .tremor,
             primitive: .withinDayAssociation,
             rationale: "HRV indexes autonomic/stress state; low-HRV stretches may co-occur with higher tremor within a day.",
@@ -321,7 +367,7 @@ enum InsightRegistry {
 
         // ───────────── Circadian baseline ─────────────
         RegistryEntry(
-            id: "circadian-tremor-baseline",
+            id: "circadian-tremor-baseline", category: .medication,
             exposure: .timeOfDay, outcome: .tremor,
             primitive: .circadianBaseline,
             rationale: "Medication control drifts across the day; an hour-of-day tremor baseline shows when control is weakest.",
@@ -329,7 +375,7 @@ enum InsightRegistry {
 
         // ───────────── Long-term progression ─────────────
         RegistryEntry(
-            id: "gait-speed-trend",
+            id: "gait-speed-trend", category: .mobility,
             exposure: .calendarTime, outcome: .gaitSpeed,
             primitive: .longTermTrend,
             renderer: .gaitComposite,

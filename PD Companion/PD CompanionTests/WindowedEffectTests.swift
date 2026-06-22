@@ -99,4 +99,102 @@ struct WindowedEffectTests {
         // An activity with no sessions never produces a card.
         #expect(!insights.contains { $0.title.localizedCaseInsensitiveContains("Tango") })
     }
+
+    /// The food cluster's RENDERER path: 8 caffeine intakes with a real post-intake
+    /// tremor rise, fed through the caffeine registry entry's windowed-effect renderer,
+    /// produce a card — proving the renderer serves food through the generic exposure
+    /// resolver, not just workouts (one adapter + one registry line, zero new stats).
+    /// Calls `windowedEffectInsight` directly rather than `generateInsights`, so the
+    /// test stays valid independent of governance `status`: caffeine is `.candidate`
+    /// (dormant) until the dose-confound guard lands, and `status` gates *execution*,
+    /// not *renderer capability* — which is what this test is actually about.
+    @Test func foodRendererProducesCard() throws {
+        let entry = try #require(
+            InsightRegistry.starter.first { $0.id == "caffeine-tremor" },
+            "caffeine entry should exist in the registry")
+        var food: [FoodIntakeEvent] = []
+        var samples: [TremorPoint] = []
+        for i in 0..<8 {
+            let t = Self.t0.addingTimeInterval(Double(i) * 24 * Self.hour + 12 * Self.hour)
+            food.append(FoodIntakeEvent(timestamp: t, attributes: [.caffeine]))
+            // Pre-window (within the 15-min lead-in): low tremor.
+            for m in stride(from: 12.0, through: 2.0, by: -2.0) {
+                samples.append(TremorPoint(timestamp: t.addingTimeInterval(-m * 60), tremorScore: 1.0))
+            }
+            // Post-window (within 120 min after): elevated, slight per-event variance
+            // so the t-test runs on real variance.
+            for m in stride(from: 10.0, through: 90.0, by: 10.0) {
+                samples.append(TremorPoint(timestamp: t.addingTimeInterval(m * 60),
+                                           tremorScore: i % 2 == 0 ? 2.0 : 2.1))
+            }
+        }
+        let card = try #require(CorrelationEngine.windowedEffectInsight(
+            entry: entry, samples: samples, workouts: [], food: food,
+            preMin: 15, postMin: 120))
+        #expect(card.title.localizedCaseInsensitiveContains("Caffeine"))
+        #expect(card.title.localizedCaseInsensitiveContains("stir"))   // tremor rose
+        #expect(card.confidence == .moderate)                          // n=8 ≥ 5, p ≤ 0.05
+        // No food events for the attribute → the renderer yields nil (no card).
+        #expect(CorrelationEngine.windowedEffectInsight(
+            entry: entry, samples: samples, workouts: [], food: [],
+            preMin: 15, postMin: 120) == nil)
+    }
+
+    /// The per-user ON-window wrapper: with no doses there's nothing to estimate from,
+    /// so it returns the conservative fallback. (The KM-median path itself is covered by
+    /// the wearing-off parity test; its end-to-end effect is verified on device.)
+    @Test func doseOnWindowFallsBackWithoutDoses() {
+        #expect(CorrelationEngine.doseOnWindowMinutes(samples: [], doses: [])
+                == CorrelationEngine.doseOnWindowFallback)
+    }
+
+    /// The guard primitive in isolation: an event is dropped iff a dose falls in its
+    /// shadow window [start − onWindowMin, end + postMin].
+    @Test func doseCleanEventsDropsShadowedEvents() {
+        let t = Self.t0
+        let events = [(start: t, end: t)]
+        // Dose 30 min before → inside the ~190-min lead shadow → dropped.
+        #expect(CorrelationEngine.doseCleanEvents(
+            events, doses: [Dose(timestamp: t.addingTimeInterval(-30 * 60), name: "Sinemet")],
+            postMin: 120).isEmpty)
+        // Dose 10 h before → outside the shadow → kept.
+        #expect(CorrelationEngine.doseCleanEvents(
+            events, doses: [Dose(timestamp: t.addingTimeInterval(-10 * 3600), name: "Sinemet")],
+            postMin: 120).count == 1)
+        // No doses logged → nothing to control for → kept.
+        #expect(CorrelationEngine.doseCleanEvents(events, doses: [], postMin: 120).count == 1)
+    }
+
+    /// THE dose-confound guard, end-to-end: the same caffeine "rise," but now every
+    /// serving is taken shortly after a levodopa dose (as Bhav's real coffee is). The
+    /// guard drops all dose-shadowed servings → nothing clean survives → no card,
+    /// instead of a confounded claim. This is the fix for the real "Caffeine eases
+    /// your tremor / Strong" card that was actually the medication. With no doses
+    /// logged (control), the same data does produce a card.
+    @Test func doseConfoundGuardSuppressesDoseAdjacentFood() throws {
+        let entry = try #require(InsightRegistry.starter.first { $0.id == "caffeine-tremor" })
+        var food: [FoodIntakeEvent] = []
+        var samples: [TremorPoint] = []
+        var doses: [Dose] = []
+        for i in 0..<8 {
+            let t = Self.t0.addingTimeInterval(Double(i) * 24 * Self.hour + 12 * Self.hour)
+            food.append(FoodIntakeEvent(timestamp: t, attributes: [.caffeine]))
+            doses.append(Dose(timestamp: t.addingTimeInterval(-20 * 60), name: "Sinemet")) // 20 min before
+            for m in stride(from: 12.0, through: 2.0, by: -2.0) {
+                samples.append(TremorPoint(timestamp: t.addingTimeInterval(-m * 60), tremorScore: 1.0))
+            }
+            for m in stride(from: 10.0, through: 90.0, by: 10.0) {
+                samples.append(TremorPoint(timestamp: t.addingTimeInterval(m * 60),
+                                           tremorScore: i % 2 == 0 ? 2.0 : 2.1))
+            }
+        }
+        // Every serving dose-shadowed → guard drops all → no honest card.
+        #expect(CorrelationEngine.windowedEffectInsight(
+            entry: entry, samples: samples, doses: doses, workouts: [], food: food,
+            preMin: 15, postMin: 120) == nil)
+        // Control: same data, no doses logged → guard keeps everything → card surfaces.
+        #expect(CorrelationEngine.windowedEffectInsight(
+            entry: entry, samples: samples, doses: [], workouts: [], food: food,
+            preMin: 15, postMin: 120) != nil)
+    }
 }

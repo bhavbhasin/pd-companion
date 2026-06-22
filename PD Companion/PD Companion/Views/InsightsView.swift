@@ -260,6 +260,7 @@ enum GaitSourcePrefs {
 struct InsightsView: View {
     @EnvironmentObject private var healthKit: HealthKitManager
     @Query(sort: \TremorReading.timestamp, order: .forward) private var allReadings: [TremorReading]
+    @Query(sort: \FoodEvent.timestamp, order: .forward) private var allFood: [FoodEvent]
     @State private var insights: [Insight] = []
     @State private var meds: [ClinicalReportPDF.MedSummary] = []
     @State private var gaitSources: [GaitSourceInfo] = []
@@ -302,9 +303,19 @@ struct InsightsView: View {
             gaitSources = await healthKit.fetchGaitSources()
             let gait = await healthKit.fetchGaitSeries(excludedSources: excludedSources)
             let workouts = await healthKit.fetchWorkoutEvents()
+            // Adapt SwiftData FoodEvents → engine intake events here on the main actor.
+            // Attributes come from the ML field, or FoodAttribute.detect as a fallback
+            // while that field is still empty (mirrors ObservationsPanel) — without this
+            // fallback the food cluster would find nothing on real data.
+            let food = allFood.map { ev -> FoodIntakeEvent in
+                let attrs = ev.attributes.isEmpty
+                    ? FoodAttribute.detect(in: ev.userDescription ?? "")
+                    : ev.attributes
+                return FoodIntakeEvent(timestamp: ev.timestamp, attributes: Set(attrs))
+            }
 
             insights = await Task.detached(priority: .userInitiated) {
-                CorrelationEngine.generateInsights(samples: samples, doses: doses, gait: gait, workouts: workouts)
+                CorrelationEngine.generateInsights(samples: samples, doses: doses, gait: gait, workouts: workouts, food: food)
             }.value
             didLoad = true
         }
