@@ -203,7 +203,7 @@ private struct GlanceCard: View {
             }
             HStack(spacing: 16) {
                 stat(icon: "bolt.heart.fill", color: .purple,
-                     value: hrvValue, sub: "HRV")
+                     value: hrvValue, sub: hrvLabel)
                 stat(icon: "waveform.path", color: dyskinesiaColor,
                      value: dyskinesiaValue, sub: dyskinesiaLabel)
             }
@@ -242,7 +242,7 @@ private struct GlanceCard: View {
     }
 
     private var tremorLabel: String {
-        guard let v = avgTremor else { return "No tremor data" }
+        guard let v = avgTremor else { return "No Apple Watch data" }
         switch v {
         case ..<0.5: return "Tremor avg: None"
         case ..<1.5: return "Tremor avg: Slight"
@@ -267,6 +267,13 @@ private struct GlanceCard: View {
         return "\(Int(hrv)) ms"
     }
 
+    // SDNN HRV is sampled by the Apple Watch (opportunistically during the day,
+    // heavily during sleep). An empty tile means no watch reading for the day,
+    // not a broken metric — say so explicitly.
+    private var hrvLabel: String {
+        hrv == nil ? "No Apple Watch data" : "HRV"
+    }
+
     private var avgDyskinesia: Double? {
         guard !tremorReadings.isEmpty else { return nil }
         return tremorReadings.reduce(0.0) { $0 + $1.dyskinesiaScore } / Double(tremorReadings.count)
@@ -278,7 +285,7 @@ private struct GlanceCard: View {
     }
 
     private var dyskinesiaLabel: String {
-        guard let v = avgDyskinesia else { return "No movement data" }
+        guard let v = avgDyskinesia else { return "No Apple Watch data" }
         switch v {
         case ..<0.5: return "Dyskinesia: None"
         case ..<1.5: return "Dyskinesia: Slight"
