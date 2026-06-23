@@ -364,8 +364,14 @@ class HealthKitManager: ObservableObject {
                     continuation.resume(returning: .empty)
                     return
                 }
+                // Keep the whole nocturnal window. The fetch predicate already
+                // bounds the lower end at windowStart (~6 PM the prior evening),
+                // so requiring endDate >= startOfDay (midnight) was wrong: it
+                // discarded every sleep segment that ended before midnight,
+                // dropping the pre-midnight portion of the night for anyone who
+                // falls asleep before 12 AM (e.g. a 10 PM bedtime lost ~2h).
                 let relevant = samples.filter {
-                    $0.endDate >= startOfDay && $0.endDate < windowEnd
+                    $0.endDate > windowStart && $0.endDate < windowEnd
                 }
 
                 let chosen = Self.dedupeSleepBySource(relevant)
