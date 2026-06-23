@@ -376,50 +376,28 @@ class HealthKitManager: ObservableObject {
 
                 let chosen = Self.dedupeSleepBySource(relevant)
 
+                // Flatten overlapping samples to one stage-per-moment timeline so
+                // duplicated/overlapping sleep is counted once (see flattenSleepStages).
+                let segments = Self.flattenSleepStages(chosen)
+
                 var deep = 0.0, rem = 0.0, core = 0.0, awake = 0.0
-                var asleepStarts: [Date] = []
-                var asleepEnds: [Date] = []
-                var awakeSamples: [HKCategorySample] = []
-                var segments: [SleepStageSegment] = []
-                for sample in chosen {
-                    let dur = sample.endDate.timeIntervalSince(sample.startDate)
-                    let stage: SleepStage?
-                    switch sample.value {
-                    case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
-                        deep += dur
-                        asleepStarts.append(sample.startDate)
-                        asleepEnds.append(sample.endDate)
-                        stage = .deep
-                    case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
-                        rem += dur
-                        asleepStarts.append(sample.startDate)
-                        asleepEnds.append(sample.endDate)
-                        stage = .rem
-                    case HKCategoryValueSleepAnalysis.asleepCore.rawValue,
-                         HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue:
-                        core += dur
-                        asleepStarts.append(sample.startDate)
-                        asleepEnds.append(sample.endDate)
-                        stage = .core
-                    case HKCategoryValueSleepAnalysis.awake.rawValue:
-                        awake += dur
-                        awakeSamples.append(sample)
-                        stage = .awake
-                    default:
-                        stage = nil
-                    }
-                    if let stage {
-                        segments.append(SleepStageSegment(
-                            stage: stage, start: sample.startDate, end: sample.endDate
-                        ))
+                for seg in segments {
+                    let dur = seg.end.timeIntervalSince(seg.start)
+                    switch seg.stage {
+                    case .deep:  deep += dur
+                    case .rem:   rem += dur
+                    case .core:  core += dur
+                    case .awake: awake += dur
                     }
                 }
-                let bedtime = asleepStarts.min()
-                let wakeTime = asleepEnds.max()
+
+                let asleepSegments = segments.filter { $0.stage != .awake }
+                let bedtime = asleepSegments.first?.start
+                let wakeTime = asleepSegments.last?.end
                 let interruptions: Int
                 if let bedtime, let wakeTime {
-                    interruptions = awakeSamples.filter {
-                        $0.startDate > bedtime && $0.endDate < wakeTime
+                    interruptions = segments.filter {
+                        $0.stage == .awake && $0.start > bedtime && $0.end < wakeTime
                     }.count
                 } else {
                     interruptions = 0
@@ -433,7 +411,7 @@ class HealthKitManager: ObservableObject {
                     interruptions: interruptions,
                     bedtime: bedtime,
                     wakeTime: wakeTime,
-                    stages: segments.sorted { $0.start < $1.start }
+                    stages: segments
                 )
                 continuation.resume(returning: breakdown)
             }
@@ -463,6 +441,62 @@ class HealthKitManager: ObservableObject {
         ]
         return samples.reduce(0.0) { acc, s in
             asleepValues.contains(s.value) ? acc + s.endDate.timeIntervalSince(s.startDate) : acc
+        }
+    }
+
+    /// Collapses overlapping sleep samples into one non-overlapping timeline so each
+    /// moment is counted exactly once. Summing raw sample durations double-counts any
+    /// overlap: some sources (e.g. Oura) re-write a night's stages across multiple
+    /// syncs that all persist in HealthKit, and two devices can both log the same night.
+    /// One tester's Oura layered the same night ~2x, so the old sum reported 10h16m for
+    /// a 7h38m night with 60 "interruptions". At each instant the deepest covering stage
+    /// wins and any asleep stage outranks awake; the result matches Apple Health to within
+    /// a few minutes. A no-op on clean, non-overlapping data (union == sum).
+    private nonisolated static func flattenSleepStages(_ samples: [HKCategorySample]) -> [SleepStageSegment] {
+        let staged: [(start: Date, end: Date, stage: SleepStage)] = samples.compactMap {
+            guard let stage = sleepStage(for: $0.value), $0.endDate > $0.startDate else { return nil }
+            return ($0.startDate, $0.endDate, stage)
+        }
+        guard !staged.isEmpty else { return [] }
+
+        let bounds = Set(staged.flatMap { [$0.start, $0.end] }).sorted()
+        var segments: [SleepStageSegment] = []
+        for i in 0..<(bounds.count - 1) {
+            let a = bounds[i], b = bounds[i + 1]
+            let mid = a.addingTimeInterval(b.timeIntervalSince(a) / 2)
+            let winner = staged
+                .filter { $0.start <= mid && mid < $0.end }
+                .map(\.stage)
+                .max { stagePriority($0) < stagePriority($1) }
+            guard let winner else { continue }
+            if let last = segments.last, last.stage == winner, last.end == a {
+                segments[segments.count - 1] = SleepStageSegment(stage: winner, start: last.start, end: b)
+            } else {
+                segments.append(SleepStageSegment(stage: winner, start: a, end: b))
+            }
+        }
+        return segments
+    }
+
+    private nonisolated static func sleepStage(for value: Int) -> SleepStage? {
+        switch value {
+        case HKCategoryValueSleepAnalysis.asleepDeep.rawValue: return .deep
+        case HKCategoryValueSleepAnalysis.asleepREM.rawValue:  return .rem
+        case HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+             HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue: return .core
+        case HKCategoryValueSleepAnalysis.awake.rawValue: return .awake
+        default: return nil
+        }
+    }
+
+    /// Higher wins when stages overlap. Any asleep stage outranks awake so a stray
+    /// awake layer never carves a hole in real sleep.
+    private nonisolated static func stagePriority(_ stage: SleepStage) -> Int {
+        switch stage {
+        case .deep:  return 4
+        case .rem:   return 3
+        case .core:  return 2
+        case .awake: return 0
         }
     }
 
