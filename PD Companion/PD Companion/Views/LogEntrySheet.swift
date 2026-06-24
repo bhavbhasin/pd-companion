@@ -5,10 +5,12 @@ import SwiftData
 
 struct LogEntrySheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     let onLogged: (Date) -> Void
 
     enum Destination: Hashable { case food }
     @State private var path: [Destination] = []
+    @State private var showMedInfo = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -17,8 +19,19 @@ struct LogEntrySheet: View {
                     icon: "fork.knife", iconBg: Color.brown.opacity(0.15), iconColor: .brown,
                     title: "Food", subtitle: "A meal, snack, or drink"
                 ) { path.append(.food) }
+                menuRow(
+                    icon: "pills.fill", iconBg: Color.pink.opacity(0.15), iconColor: .pink,
+                    title: "Medication", subtitle: "Logged in Apple Health",
+                    trailing: "arrow.up.forward.app"
+                ) { showMedInfo = true }
             }
             .listStyle(.insetGrouped)
+            .alert("Logging your medications", isPresented: $showMedInfo) {
+                Button("Open Apple Health") { openMedications() }
+                Button("Not now", role: .cancel) { }
+            } message: {
+                Text("🔍 → Medications")
+            }
             .navigationTitle("Log entry")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -38,6 +51,7 @@ struct LogEntrySheet: View {
     private func menuRow(
         icon: String, iconBg: Color, iconColor: Color,
         title: String, subtitle: String,
+        trailing: String = "chevron.right",
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -55,11 +69,25 @@ struct LogEntrySheet: View {
                     Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Image(systemName: "chevron.right").foregroundStyle(.tertiary).font(.subheadline)
+                Image(systemName: trailing).foregroundStyle(.tertiary).font(.subheadline)
             }
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+    }
+
+    // Deep-links straight to the Health app's Medications screen. The scheme is
+    // undocumented but verified on device (x-apple-health://Medications). Falls back to
+    // opening Health's home if the path ever stops resolving, so the row never dead-ends.
+    private func openMedications() {
+        let medications = URL(string: "x-apple-health://Medications")!
+        openURL(medications) { accepted in
+            if !accepted, let health = URL(string: "x-apple-health://") {
+                openURL(health) { _ in dismiss() }
+            } else {
+                dismiss()
+            }
+        }
     }
 }
 

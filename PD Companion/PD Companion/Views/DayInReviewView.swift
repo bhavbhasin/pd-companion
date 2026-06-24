@@ -30,6 +30,7 @@ struct DayInReviewView: View {
                     )
                     TremorTimelinePanel(
                         readings: dayReadings,
+                        hasEverHadData: !allReadings.isEmpty,
                         events: allDayEvents,
                         dayStart: dayStart,
                         dayEnd: dayEnd,
@@ -347,6 +348,7 @@ private struct GlanceCard: View {
 
 private struct TremorTimelinePanel: View {
     let readings: [TremorReading]
+    let hasEverHadData: Bool
     let events: [DayEvent]
     let dayStart: Date
     let dayEnd: Date
@@ -356,7 +358,7 @@ private struct TremorTimelinePanel: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Tremor").font(.headline)
             if hourlyBuckets.isEmpty {
-                emptyState("No tremor data captured for this day.")
+                emptyStateView
             } else {
                 Chart {
                     ForEach(chartEvents) { event in
@@ -597,9 +599,35 @@ private struct TremorTimelinePanel: View {
         }
     }
 
-    private func emptyState(_ text: String) -> some View {
-        Text(text).font(.subheadline).foregroundStyle(.secondary)
-            .frame(height: 120).frame(maxWidth: .infinity)
+    // The sync hint (and its Watch glyph) only makes sense when today's data exists on the
+    // Watch but hasn't reached the phone yet — never for a warming-up new user or an old day.
+    private var isSyncHint: Bool {
+        hasEverHadData && Calendar.current.isDateInToday(dayStart)
+    }
+
+    // Empty-state copy depends on *why* there's no data.
+    private var emptyMessage: String {
+        if !hasEverHadData {
+            return "Kampa is warming up. Tremor tracking begins after about a day of Watch wear."
+        }
+        if isSyncHint {
+            return "No tremor data yet today.\nOpen Kampa on your Apple Watch for about 30 seconds, with your iPhone nearby, to sync."
+        }
+        return "No tremor data captured for this day."
+    }
+
+    private var emptyStateView: some View {
+        VStack(spacing: 8) {
+            if isSyncHint {
+                Image(systemName: "applewatch.radiowaves.left.and.right")
+                    .font(.system(size: 28))
+                    .foregroundStyle(Insight.brandBlue)
+            }
+            Text(emptyMessage)
+                .font(.subheadline).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(height: 120).frame(maxWidth: .infinity)
     }
 }
 
