@@ -14,6 +14,7 @@ struct DayInReviewView: View {
     // today reads as a bug. Today's data is partial (the chart fills as the day goes),
     // which is honest; the date chevrons still reach yesterday for a complete-day review.
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
+    @State private var showingDatePicker = false
     @State private var showingLogSheet = false
     @State private var selectedEvent: DayEvent?
     @State private var showingBackup = false
@@ -94,6 +95,32 @@ struct DayInReviewView: View {
             .sheet(isPresented: $showingBackup) {
                 BackupSheet()
             }
+            .sheet(isPresented: $showingDatePicker) {
+                NavigationStack {
+                    DatePicker(
+                        "Select a date",
+                        selection: $selectedDate,
+                        in: ...Calendar.current.startOfDay(for: Date()),
+                        displayedComponents: [.date]
+                    )
+                    .datePickerStyle(.graphical)
+                    .padding()
+                    .navigationTitle("Jump to date")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Today") {
+                                selectedDate = Calendar.current.startOfDay(for: Date())
+                                showingDatePicker = false
+                            }
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { showingDatePicker = false }
+                        }
+                    }
+                }
+                .presentationDetents([.medium, .large])
+            }
             .task(id: selectedDate) {
                 await healthKit.fetchDayInReview(for: selectedDate)
             }
@@ -135,12 +162,22 @@ struct DayInReviewView: View {
 
             Spacer()
 
-            VStack(spacing: 2) {
-                Text(selectedDate.formatted(.dateTime.weekday(.wide).month().day()))
-                    .font(.headline)
-                Text(syncStatusText)
-                    .font(.caption2).foregroundStyle(syncStatusColor)
+            Button {
+                showingDatePicker = true
+            } label: {
+                VStack(spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(selectedDate.formatted(.dateTime.weekday(.wide).month().day()))
+                            .font(.headline)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Text(syncStatusText)
+                        .font(.caption2).foregroundStyle(syncStatusColor)
+                }
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Selected day: \(selectedDate.formatted(.dateTime.weekday(.wide).month().day())). Tap to pick a date.")
 
             Spacer()
 
