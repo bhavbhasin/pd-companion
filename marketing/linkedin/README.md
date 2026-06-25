@@ -45,6 +45,7 @@ when feature traction warrants it — cadence follows the building, not a fixed 
 - **Movement Disorder API deep-dive** — technical credibility for the research/clinical audience.
 - **Data portability** — CSV export of everything you've tracked ("your data, take it anywhere").
 - **Food / nutrition logging** — once correlated with symptoms, a "what you eat vs how you feel" story.
+- **On-device food understanding (USDA DB, no API, global cuisines)** — the engineering/architecture companion to the food↔symptom angle above, in the tone of the intelligence-architecture post. Kampa ships a USDA food database *inside* the app (no network, no third-party API, fully private) + a tiny hand-grown vocabulary map for regional/global foods, so it understands what you eat on-device. Honest-engineering beat: the spike that proved a US food DB *alone* covers only ~50% of a chai-and-dal diet, and the clean fix. NEVER discloses founder PD. See `docs/food-classification.md`. — `needs-feature` (classifier not shipped; attribute-correctness redesign pending).
 
 ---
 
