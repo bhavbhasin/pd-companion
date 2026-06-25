@@ -263,7 +263,7 @@ struct EditFoodScreen: View {
         guard let record = try? modelContext.fetch(descriptor).first else { return }
         record.userDescription = trimmed
         record.timestamp = timestamp
-        record.attributes = FoodAttribute.detect(in: trimmed)
+        record.attributes = FoodAttributeClassifier.shared.classify(trimmed)
         onSaved()
     }
 }

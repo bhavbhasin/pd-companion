@@ -129,7 +129,7 @@ struct LogFoodScreen: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
                     let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let attrs = FoodAttribute.detect(in: trimmed)
+                    let attrs = FoodAttributeClassifier.shared.classify(trimmed)
                     let event = FoodEvent(timestamp: timestamp, userDescription: trimmed, attributes: attrs)
                     modelContext.insert(event)
                     onSaved(timestamp)
