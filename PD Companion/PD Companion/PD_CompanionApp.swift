@@ -62,6 +62,12 @@ struct PD_CompanionApp: App {
                 .environmentObject(healthKit)
                 .environmentObject(connectivity)
                 .task {
+                    // Warm the food classifier off the main thread so the first food
+                    // save doesn't pay the one-time index-build cost on the UI.
+                    Task.detached(priority: .utility) { _ = FoodAttributeClassifier.shared }
+                    // Backfill of existing entries still disabled — re-enabled next, to
+                    // run off the main thread now that per-classify is ~milliseconds.
+                    // FoodAttributeBackfill.runIfNeeded(AppContainer.shared.mainContext)
                     connectivity.cleanupDuplicates()
                     await healthKit.requestAuthorization()
                     await healthKit.fetchTodaySnapshot()

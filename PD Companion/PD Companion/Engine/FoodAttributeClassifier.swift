@@ -38,6 +38,14 @@ final class FoodAttributeClassifier {
 
     private let foods: [FoodRecord]
     private let aliases: [Alias]
+    /// Inverted index: food-name token → indices of foods whose name contains it.
+    /// Turns matching from an O(all foods) scan into posting-list lookups + a small
+    /// intersection, so a classify is sub-millisecond instead of ~0.6s.
+    private let postings: [String: [Int]]
+    /// Unique food tokens bucketed by character length, for the fuzzy (plural/typo)
+    /// fallback — only tokens within ±2 length can clear the similarity cutoff, so
+    /// we never Levenshtein against the whole vocabulary.
+    private let vocabByLength: [Int: [String]]
 
     // MARK: - Vocabulary (mirrors scripts/food/spike_food_db.py + classify_food.py)
 
@@ -73,9 +81,16 @@ final class FoodAttributeClassifier {
     // MARK: - Init / loading
 
     private init() {
-        self.foods = Self.loadFoods()
+        let loaded = Self.loadFoods()
+        self.foods = loaded
         self.aliases = Self.loadAliases()
-        if foods.isEmpty {
+        var postings: [String: [Int]] = [:]
+        for (i, f) in loaded.enumerated() {
+            for t in f.tokenSet { postings[t, default: []].append(i) }
+        }
+        self.postings = postings
+        self.vocabByLength = Dictionary(grouping: postings.keys, by: { $0.count })
+        if loaded.isEmpty {
             // The Resources/Food files aren't in the app bundle yet (Xcode target
             // membership). classify() degrades to [] until they are.
             assertionFailure("FoodDB.json not found in bundle — add Resources/Food to the target.")
@@ -169,24 +184,41 @@ final class FoodAttributeClassifier {
         return out
     }
 
+    /// Food indices whose name contains a token matching `qt` — exactly (posting
+    /// lookup) or fuzzily (plural/typo, only against same-length-ish vocabulary).
+    /// Equivalent to the old per-food `tokenSet.contains || fuzzyContains`, but via
+    /// the index instead of a full scan.
+    private func candidateIndices(for qt: String) -> Set<Int> {
+        var result = Set(postings[qt] ?? [])
+        let len = qt.count
+        for l in max(1, len - 2)...(len + 2) {
+            guard let bucket = vocabByLength[l] else { continue }
+            for vt in bucket where vt != qt && Self.similarity(qt, vt) >= Self.fuzzyCutoff {
+                if let idx = postings[vt] { result.formUnion(idx) }
+            }
+        }
+        return result
+    }
+
     /// The representative DB food for a canonical phrase. A food is a candidate if
-    /// every query token is one of its name tokens (exact, or a close fuzzy match
-    /// for plural/typo). Among candidates prefer: the food LED by the queried word,
-    /// then a raw/plain form over a processed one, then the generic NFS/NS entry,
-    /// then fewest extra tokens, then the shorter name.
+    /// every query token matches one of its name tokens (exact or fuzzy) — computed
+    /// as the intersection of the per-token candidate sets. Among candidates prefer:
+    /// the food LED by the queried word, then a raw/plain form over a processed one,
+    /// then the generic NFS/NS entry, then fewest extra tokens, then the shorter name.
     private func bestFood(_ query: String) -> FoodRecord? {
         let qtoks = Self.tokens(query)
         guard !qtoks.isEmpty else { return nil }
         let qset = Set(qtoks)
 
-        let candidates = foods.filter { food in
-            qtoks.allSatisfy { qt in
-                food.tokenSet.contains(qt) || Self.fuzzyContains(qt, in: food.tokens)
-            }
+        var candidates: Set<Int>?
+        for qt in qtoks {
+            let s = candidateIndices(for: qt)
+            candidates = candidates.map { $0.intersection(s) } ?? s
+            if candidates!.isEmpty { return nil }
         }
-        guard !candidates.isEmpty else { return nil }
+        guard let idx = candidates, !idx.isEmpty else { return nil }
 
-        return candidates.min { a, b in
+        return idx.map { foods[$0] }.min { a, b in
             Self.rank(a, qset).lexicographicallyPrecedes(Self.rank(b, qset))
         }
     }
@@ -200,10 +232,6 @@ final class FoodAttributeClassifier {
             f.tokens.count - qset.count,                                  // fewest extra tokens
             f.name.count,                                                 // plainer (shorter) name
         ]
-    }
-
-    private static func fuzzyContains(_ token: String, in foodTokens: [String]) -> Bool {
-        foodTokens.contains { similarity(token, $0) >= fuzzyCutoff }
     }
 
     /// Similarity in [0, 1]. Cheap plural shortcut first, then a Levenshtein-based
