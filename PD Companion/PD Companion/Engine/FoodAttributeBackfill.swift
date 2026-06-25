@@ -15,7 +15,10 @@ import SwiftData
 /// attribute *set* actually changed, to avoid needless CloudKit churn.
 enum FoodAttributeBackfill {
     private static let versionKey = "foodAttributeBackfillVersion"
-    private static let currentVersion = 1
+    // Bump whenever the classifier or alias map changes in a way that should re-tag
+    // existing history. v2: diet-soda aliases (Diet Coke / Coke Zero / Diet Pepsi)
+    // now resolve to caffeine-only instead of picking up regular cola's sugar.
+    private static let currentVersion = 2
 
     /// Runs once, entirely off the main thread on its own background `ModelContext`,
     /// so the bulk re-classification never blocks the UI. (An earlier main-thread
