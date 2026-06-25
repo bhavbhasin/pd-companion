@@ -17,24 +17,31 @@ enum FoodAttributeBackfill {
     private static let versionKey = "foodAttributeBackfillVersion"
     private static let currentVersion = 1
 
-    @MainActor
-    static func runIfNeeded(_ context: ModelContext) {
+    /// Runs once, entirely off the main thread on its own background `ModelContext`,
+    /// so the bulk re-classification never blocks the UI. (An earlier main-thread
+    /// version hung launch into a watchdog SIGKILL; with the indexed classifier each
+    /// call is ~ms, and this keeps it off the UI thread regardless.) The flag is set
+    /// only on success, so a failure simply retries next launch — harmless and idempotent.
+    static func runIfNeeded(container: ModelContainer) {
         guard UserDefaults.standard.integer(forKey: versionKey) < currentVersion else { return }
-        do {
-            let events = try context.fetch(FetchDescriptor<FoodEvent>())
-            var changed = 0
-            for event in events {
-                let newAttrs = FoodAttributeClassifier.shared.classify(event.userDescription)
-                if Set(newAttrs) != Set(event.attributes) {
-                    event.attributes = newAttrs
-                    changed += 1
+        Task.detached(priority: .utility) {
+            let context = ModelContext(container)
+            do {
+                let events = try context.fetch(FetchDescriptor<FoodEvent>())
+                var changed = 0
+                for event in events {
+                    let newAttrs = FoodAttributeClassifier.shared.classify(event.userDescription)
+                    if Set(newAttrs) != Set(event.attributes) {
+                        event.attributes = newAttrs
+                        changed += 1
+                    }
                 }
+                if context.hasChanges { try context.save() }
+                UserDefaults.standard.set(currentVersion, forKey: versionKey)
+                print("[backfill] food attributes re-classified: \(changed)/\(events.count) entries updated")
+            } catch {
+                print("[backfill] food attribute backfill failed: \(error)")
             }
-            if context.hasChanges { try context.save() }
-            UserDefaults.standard.set(currentVersion, forKey: versionKey)
-            print("[backfill] food attributes re-classified: \(changed)/\(events.count) entries updated")
-        } catch {
-            print("[backfill] food attribute backfill failed: \(error)")
         }
     }
 }
