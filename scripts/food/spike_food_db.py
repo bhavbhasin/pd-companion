@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Spike: can a CLEAN, no-alias-table match against an on-device food DB cover
-Bhav's real logged foods?
+the real-world test set of logged foods?
 
-The question this answers (and ONLY this): for each food description he has
-actually typed, does a deterministic fuzzy match find a plausible entry in a
+The question this answers (and ONLY this): for each food description in the test
+log, does a deterministic fuzzy match find a plausible entry in a
 candidate database WITHOUT any hand-maintained alias/synonym table? If yes for
 some DB, that DB + this matcher is the whole classifier design. If USDA-clean
 is too low, we try a broader USDA set, then Open Food Facts.

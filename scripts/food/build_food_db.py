@@ -73,8 +73,8 @@ ATTRS = ("protein", "fat", "sugar", "fiber", "caffeine")
 
 # Whole fruit ALWAYS counts as fiber, below the 3g bar. Per-100g, fruit is modest
 # (apple 2.1, orange 2.0, banana 1.7) so it misses the generic threshold - but it's
-# eaten in large portions and is the canonical motility/constipation lever (a strong
-# personal n-of-1: an apple after dinner reliably moves the next morning). Keyed off
+# eaten in large portions and is a canonical motility/constipation lever for people
+# with Parkinson's, so whole fruit earns the flag despite the modest number. Keyed off
 # USDA's fruit categories, NOT names, and JUICE/drinks are excluded (juice strips the
 # fiber out). FNDDS WWEIA whole-fruit block = 6002..6024 (apples, bananas, grapes,
 # berries, citrus, melons, dried, pears, pineapple, mango...), which sits cleanly below

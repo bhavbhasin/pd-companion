@@ -32,7 +32,7 @@ A **two-file, on-device design**:
 |---|---|---|
 | What | USDA FoodData Central (FNDDS + Foundation): food names + nutrients → coarse attributes | colloquial/regional term → canonical DB word(s) |
 | Carries | **nutrition (the only place)** | **vocabulary only — no nutrition** |
-| Owner | `build_food_db.py` (generated, never hand-edited) | **Bhav, by hand** |
+| Owner | `build_food_db.py` (generated, never hand-edited) | **maintained by hand** |
 | Format | binary SQLite, read-only, bundled in app | small human-editable JSON, in git, bundled |
 | Changes | almost never | often early, then asymptotes |
 
@@ -62,9 +62,9 @@ USDA bulk data is public domain, versioned, and free — perfect for bundling.
 
 ## Why DB + a small alias map (the evidence)
 
-A clean **DB-only** design (no alias list) was tested against Bhav's real 86
-logged food descriptions via `analysis/spike_food_db.py` (token-containment match
-against USDA FNDDS+Foundation, normalized):
+A clean **DB-only** design (no alias list) was tested against a real-world set of
+86 logged food descriptions via `scripts/food/spike_food_db.py` (token-containment
+match against USDA FNDDS+Foundation, normalized):
 
 - **Clean DB-only coverage = 50%.**
 - The failure is **chai-shaped**: `chai` is the *sole* missing word in 26 of 43
@@ -187,13 +187,13 @@ built now.
 
 **Python slice built; COVERAGE *and* ATTRIBUTE CORRECTNESS both solved.**
 
-- ✅ `analysis/build_food_db.py` → `FoodDB.sqlite` (5,901 foods, 0.6 MB). Caught+fixed
+- ✅ `scripts/food/build_food_db.py` → `FoodDB.sqlite` (5,901 foods, 0.6 MB). Caught+fixed
   a real bug: FNDDS uses legacy SR nutrient numbers, Foundation uses FDC ids, so the
   first build silently zeroed all FNDDS attributes incl. caffeine. Now resolved
   per-dataset from `nutrient.csv` (keyed on both id schemes).
-- ✅ `analysis/food-aliases.json` + `spike_food_db.py --map`.
+- ✅ `food-aliases.json` + `scripts/food/spike_food_db.py --map`.
   **Coverage on the real 86 foods: 50% (DB-only) → 100% (with map).**
-- ✅ **`analysis/classify_food.py` — attribute resolution redesigned to FOOD-NAME-level
+- ✅ **`scripts/food/classify_food.py` — attribute resolution redesigned to FOOD-NAME-level
   matching.** The earlier word→attribute index was unreliable (ambiguous words grabbed
   unrepresentative foods: "black" → black *tea* → phantom caffeine on black-eyed peas;
   "rice" → phantom sugar; "tea" → herbal → `chai` LOST caffeine). The new model:
@@ -221,8 +221,8 @@ built now.
     pharmacology), so it's worth getting right.
   - **Whole fruit always counts as fiber** (overrides the 3g bar). Per-100g, fruit is
     modest (apple 2.1, orange 2.0, banana 1.7) and misses the generic threshold — but it's
-    eaten in large portions and is the canonical motility/constipation lever (strong
-    personal n-of-1: an apple after dinner reliably moves the next morning). Keyed off
+    eaten in large portions and is a canonical motility/constipation lever for people with
+    Parkinson's, so whole fruit earns the flag despite the modest number. Keyed off
     USDA's fruit *categories*, not names — FNDDS WWEIA whole-fruit block 6002–6024 — and
     **juice/drinks are excluded** (juice strips the fiber out): `Apple, raw` → fiber,
     `Apple juice` → not. The base fiber bar stays 3.0g for everything else (lowering it
