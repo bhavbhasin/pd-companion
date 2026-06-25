@@ -18,6 +18,7 @@ Inputs (already staged, gitignored): data/FoodData_Central_*_csv_*/{food,food_nu
 from __future__ import annotations
 
 import csv
+import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -28,7 +29,9 @@ from pathlib import Path
 #   PD Companion/.../Resources/Food/FoodDB.sqlite - the bundled output (tracked)
 REPO = Path(__file__).resolve().parents[2]
 DATA = REPO / "analysis" / "data"
-OUT = REPO / "PD Companion" / "PD Companion" / "Resources" / "Food" / "FoodDB.sqlite"
+RES = REPO / "PD Companion" / "PD Companion" / "Resources" / "Food"
+OUT = RES / "FoodDB.sqlite"          # queried by the Python tooling (spike/classify)
+JSON_OUT = RES / "FoodDB.json"       # bundled by the iOS app (Codable, no SQLite dep)
 
 # Datasets to ingest: (label, dir, set of food.csv data_types that are real foods)
 DATASETS = [
@@ -157,6 +160,17 @@ def main() -> None:
         n = con.execute(f"SELECT COUNT(*) FROM food WHERE {a}=1").fetchone()[0]
         print(f"    {a:9s} {n:>5}  (>= {THRESHOLD[a]} per 100g)")
     con.close()
+
+    # JSON twin for the iOS app: {name, attrs[]} per food, sorted for clean diffs.
+    # The app loads this with Codable and matches in-memory (the SQLite is only for
+    # the Python tooling, which queries it). Same data, two consumers.
+    foods_json = sorted(
+        ({"name": name, "attrs": [a for a, f in zip(ATTRS, flags) if f]}
+         for (_fid, _src, name, *flags) in all_rows),
+        key=lambda d: d["name"],
+    )
+    JSON_OUT.write_text(json.dumps({"foods": foods_json}, ensure_ascii=False, indent=0))
+    print(f"Wrote {JSON_OUT}  ({JSON_OUT.stat().st_size/1e6:.1f} MB, {len(foods_json):,} foods)")
 
 
 if __name__ == "__main__":
