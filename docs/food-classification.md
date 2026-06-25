@@ -185,35 +185,54 @@ built now.
 
 ## Build status (Jun 24, 2026)
 
-**Python slice built; COVERAGE solved, ATTRIBUTE CORRECTNESS not yet.**
+**Python slice built; COVERAGE *and* ATTRIBUTE CORRECTNESS both solved.**
 
 - ✅ `analysis/build_food_db.py` → `FoodDB.sqlite` (5,901 foods, 0.6 MB). Caught+fixed
   a real bug: FNDDS uses legacy SR nutrient numbers, Foundation uses FDC ids, so the
   first build silently zeroed all FNDDS attributes incl. caffeine. Now resolved
   per-dataset from `nutrient.csv` (keyed on both id schemes).
-- ✅ `analysis/food-aliases.json` (24 seed entries) + `spike_food_db.py --map`.
-  **Coverage on the real 86 foods: 50% (DB-only) → 100% (with map).** Coverage = the
-  *word resolves*. Done.
-- ⚠️ **`analysis/classify_food.py` (reference classifier + correctness diff) — caught a
-  real MODELING bug.** Diffing new attributes vs the stored old ones confirmed the old
-  keyword matcher badly under-tagged (almonds were `fat`-only, missing protein+fiber —
-  the clinically key protein miss). BUT the new word→attribute lookup is itself wrong:
-  **single-WORD → single-FOOD resolution is unreliable** because words are ambiguous
-  ("black" → black *tea* → injects caffeine into "black-eyed peas"; "rice" → phantom
-  sugar) and multi-word foods get shredded into qualifier tokens. `chai → []` LOSES
-  caffeine. A "first-token = primary food" heuristic did NOT fix it.
-- ▶ **NEXT (the real task): redesign attribute resolution → FOOD-NAME-level matching.**
-  `food-aliases.json` points canonical terms to *specific USDA foods* (`chai → "black
-  tea"`, `rajma → "kidney beans"`); the classifier fuzzy-matches each canonical *phrase
-  against full food names*, reads that one food's attributes. Re-run the diff until
-  correctness is clean (chai=caffeine, no phantom sugar/caffeine). THEN: spike
-  `--suggest`; Swift `FoodAttributeClassifier` (mirrors the validated Python, replaces
-  `FoodAttribute.detect()`, Opus + on-phone).
-- ⚠️ **Historical backfill — needed but GATED.** Confirmed the existing food history is
-  under-tagged (almonds = `fat`-only). When the *corrected* classifier ships, run a
-  one-time re-classification over all existing `FoodEvent`s (SwiftData update → CloudKit,
-  no schema change) — **preserving any manual chip corrections.** Do NOT backfill with
-  the current buggy model.
+- ✅ `analysis/food-aliases.json` + `spike_food_db.py --map`.
+  **Coverage on the real 86 foods: 50% (DB-only) → 100% (with map).**
+- ✅ **`analysis/classify_food.py` — attribute resolution redesigned to FOOD-NAME-level
+  matching.** The earlier word→attribute index was unreliable (ambiguous words grabbed
+  unrepresentative foods: "black" → black *tea* → phantom caffeine on black-eyed peas;
+  "rice" → phantom sugar; "tea" → herbal → `chai` LOST caffeine). The new model:
+  1. **Token-subset match** the canonical phrase against full food **names** (fuzzy per
+     token for plurals/typos) — never substring, so `cola` can't hit "cho**cola**te".
+  2. **Pick the representative food**: prefer USDA's generic `NFS`/`NS as to…` entry, led
+     by the queried word, with fewest qualifier tokens — and **penalize processed forms**
+     (`canned`/`juice`/`dried`/`honey`/…) so `Pear, raw` (3.1g fiber) beats `Pear, canned`
+     (1.5g).
+  3. **Drop standalone qualifier words** (`black`/`white`/`hot`/`raw`/…) — they modify a
+     food, they are not one, so they can't pull a wrong food on their own.
+  4. **Greedy multi-word alias keys** (`black eyed peas` → `blackeyed peas`) before single
+     tokens. `food-aliases.json` values are now representative *phrase* queries, not bare
+     words (`chai → "tea hot leaf black"`, `rajma → "kidney beans"`, `coffee → "coffee ns
+     type"`, `walnut(s) → "walnuts english halves"`).
+- ✅ **Validated against the real 86 foods (diff vs the old keyword matcher):** 97
+  additions-only (real under-tagging fixed — e.g. almonds now `protein+fat+fiber`, not
+  `fat`-only), **1 removal** (uttapam phantom sugar — a correction), and **zero phantom
+  caffeine** anywhere. Every change is a justified add or a correct removal.
+- **Threshold calibration (coarse-presence decisions):**
+  - **Caffeine `0.0001` → `5 mg/100g`.** The old "any trace" bar flagged dessert caffeine
+    (ice cream ~1, choc milk ~1, cocoa ~3) as equal to coffee. 5mg keeps every real source
+    (coffee ~40, black tea ~20, cola ~9, dark chocolate ~47) and drops the trace noise
+    (403 → 247 flagged foods). This is the one clinically-validated attribute (PD
+    pharmacology), so it's worth getting right.
+  - **Whole fruit always counts as fiber** (overrides the 3g bar). Per-100g, fruit is
+    modest (apple 2.1, orange 2.0, banana 1.7) and misses the generic threshold — but it's
+    eaten in large portions and is the canonical motility/constipation lever (strong
+    personal n-of-1: an apple after dinner reliably moves the next morning). Keyed off
+    USDA's fruit *categories*, not names — FNDDS WWEIA whole-fruit block 6002–6024 — and
+    **juice/drinks are excluded** (juice strips the fiber out): `Apple, raw` → fiber,
+    `Apple juice` → not. The base fiber bar stays 3.0g for everything else (lowering it
+    globally to catch fruit balloons fiber-flagged foods 18% → 31%, diluting the signal).
+- ▶ **NEXT:** Swift `FoodAttributeClassifier` (mirror the validated Python, replace
+  `FoodAttribute.detect()`, Opus + on-phone); spike `--suggest` for the maintenance loop.
+- ⚠️ **Historical backfill — needed but GATED on the Swift port.** Existing history is
+  under-tagged (almonds = `fat`-only). When the corrected classifier ships, run a one-time
+  re-classification over all existing `FoodEvent`s (SwiftData → CloudKit, no schema
+  change) — **preserving any manual chip corrections.**
 - **LinkedIn:** post candidate logged in `marketing/linkedin/README.md` idea bank.
 - ⚠️ **Repo hygiene — the code is NOT in git yet.** The whole `analysis/` lab is
   gitignored (`.gitignore:30`), so `build_food_db.py`, `classify_food.py`,
