@@ -280,7 +280,7 @@ private struct GlanceCard: View {
     }
 
     private var tremorLabel: String {
-        guard let v = avgTremor else { return "No Apple Watch data" }
+        guard let v = avgTremor else { return "Tremor" }
         switch v {
         case ..<0.5: return "Tremor avg: None"
         case ..<1.5: return "Tremor avg: Slight"
@@ -306,11 +306,10 @@ private struct GlanceCard: View {
     }
 
     // SDNN HRV is sampled by the Apple Watch (opportunistically during the day,
-    // heavily during sleep). An empty tile means no watch reading for the day,
-    // not a broken metric — say so explicitly.
-    private var hrvLabel: String {
-        hrv == nil ? "No Apple Watch data" : "HRV"
-    }
+    // heavily during sleep). An empty tile shows "—" over the "HRV" label; the
+    // "open your Watch to sync" explanation lives in the Tremor card below, so
+    // the tile keeps its metric name rather than restating the empty reason.
+    private var hrvLabel: String { "HRV" }
 
     private var avgDyskinesia: Double? {
         guard !tremorReadings.isEmpty else { return nil }
@@ -323,7 +322,7 @@ private struct GlanceCard: View {
     }
 
     private var dyskinesiaLabel: String {
-        guard let v = avgDyskinesia else { return "No Apple Watch data" }
+        guard let v = avgDyskinesia else { return "Dyskinesia" }
         switch v {
         case ..<0.5: return "Dyskinesia: None"
         case ..<1.5: return "Dyskinesia: Slight"
