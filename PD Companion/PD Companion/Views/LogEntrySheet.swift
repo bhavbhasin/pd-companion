@@ -6,6 +6,9 @@ import SwiftData
 struct LogEntrySheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    /// The day currently shown on the Review screen — a new entry defaults to this
+    /// date (at the current time of day) instead of always today.
+    let defaultDate: Date
     let onLogged: (Date) -> Void
 
     enum Destination: Hashable { case food }
@@ -42,7 +45,7 @@ struct LogEntrySheet: View {
             .navigationDestination(for: Destination.self) { dest in
                 switch dest {
                 case .food:
-                    LogFoodScreen { date in onLogged(date); dismiss() }
+                    LogFoodScreen(defaultDate: defaultDate) { date in onLogged(date); dismiss() }
                 }
             }
         }
@@ -98,7 +101,20 @@ struct LogFoodScreen: View {
     let onSaved: (Date) -> Void
 
     @State private var description: String = ""
-    @State private var timestamp: Date = .now
+    @State private var timestamp: Date
+
+    init(defaultDate: Date, onSaved: @escaping (Date) -> Void) {
+        self.onSaved = onSaved
+        // Default to the viewed day at the current time of day, never in the future
+        // (the picker's range is ...now). Logging on a past day no longer silently
+        // records it as today.
+        let now = Date.now
+        let cal = Calendar.current
+        let t = cal.dateComponents([.hour, .minute], from: now)
+        let onViewedDay = cal.date(bySettingHour: t.hour ?? 12, minute: t.minute ?? 0,
+                                   second: 0, of: defaultDate) ?? defaultDate
+        _timestamp = State(initialValue: min(onViewedDay, now))
+    }
 
     var body: some View {
         Form {

@@ -86,7 +86,7 @@ struct DayInReviewView: View {
                 }
             }
             .sheet(isPresented: $showingLogSheet) {
-                LogEntrySheet { loggedDate in
+                LogEntrySheet(defaultDate: selectedDate) { loggedDate in
                     selectedDate = Calendar.current.startOfDay(for: loggedDate)
                 }
             }
