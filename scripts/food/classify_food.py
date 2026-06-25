@@ -46,7 +46,7 @@ import pandas as pd
 HERE = Path(__file__).parent
 REPO = Path(__file__).resolve().parents[2]
 RES = REPO / "PD Companion" / "PD Companion" / "Resources" / "Food"  # bundled (tracked)
-DB = RES / "FoodDB.sqlite"
+DB = HERE / "FoodDB.sqlite"          # tooling-only sqlite (lives beside this script)
 MAP = RES / "food-aliases.json"
 CSV = REPO / "analysis" / "data" / "food_events_2026-05-12_to_2026-06-18.csv"  # gitignored
 ATTRS = ("protein", "fat", "sugar", "fiber", "caffeine")

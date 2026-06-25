@@ -30,8 +30,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 DATA = REPO / "analysis" / "data"
 RES = REPO / "PD Companion" / "PD Companion" / "Resources" / "Food"
-OUT = RES / "FoodDB.sqlite"          # queried by the Python tooling (spike/classify)
-JSON_OUT = RES / "FoodDB.json"       # bundled by the iOS app (Codable, no SQLite dep)
+OUT = Path(__file__).parent / "FoodDB.sqlite"   # tooling-only (spike/classify query it); NOT bundled
+JSON_OUT = RES / "FoodDB.json"                   # the only food artifact the iOS app bundles
 
 # Datasets to ingest: (label, dir, set of food.csv data_types that are real foods)
 DATASETS = [
