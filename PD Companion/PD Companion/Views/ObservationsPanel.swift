@@ -313,10 +313,15 @@ struct ObservationEngine {
             ).at(event.timestamp)
         }
 
+        // This card only renders when a dose already preceded the food (the no-prior-dose
+        // case returns the morning-wearing-off card above), so a wearing-off rise is always
+        // a live alternative explanation. Pose it as a question and de-attribute in the
+        // subline rather than implying the food caused the rise — real attribution is the
+        // cross-day engine's job (its dose-confound guard drops dose-shadowed food events).
         return DayObservation(
             icon: icon, iconColor: .orange,
-            headline: "Tremor rose in the hour after \(factorLabel) at \(timeStr) (+\(Int(delta))%)",
-            detail: "\(mechanismNote)Avg \(fmt(pre)) → \(fmt(post)) in the 30–60 min window after. One day isn't proof — watch whether this repeats.",
+            headline: "Tremor rose at \(timeStr) (+\(Int(delta))%) — \(factorLabel) or wearing-off?",
+            detail: "\(mechanismNote)Avg \(fmt(pre)) → \(fmt(post)) in the 30–60 min window after. Insights tells them apart.",
             sentiment: .neutral
         ).at(event.timestamp)
     }
