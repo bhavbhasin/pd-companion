@@ -130,7 +130,9 @@ struct ObservationEngine {
             guard let pre, let post, pre > 0.1 else { continue }
 
             let pct = (pre - post) / pre * 100
-            guard abs(pct) >= 15 else { continue }
+            // Same magnitude floor as the standalone branches: ignore noise-floor swings
+            // where neither side reaches Slight (1.0) or the absolute change is < 0.5.
+            guard abs(pct) >= 15, max(pre, post) >= 1.0, abs(pre - post) >= 0.5 else { continue }
             let dir = pct > 0 ? "lower" : "higher"
             out.append(DayObservation(
                 icon: "pill.fill",
@@ -149,14 +151,14 @@ struct ObservationEngine {
                                  to: w.end.addingTimeInterval(5400))
             guard let pre, let post, pre > 0.1 else { continue }
             let pct = (pre - post) / pre * 100
-            if pct >= 15 {
+            if pct >= 15, pre >= 1.0, pre - post >= 0.5 {
                 out.append(DayObservation(
                     icon: "figure.run", iconColor: .green,
                     headline: "Tremor fell \(Int(pct))% after \(w.name.lowercased())",
                     detail: "Avg \(fmt(pre)) before → \(fmt(post)) in the hour after the session. One day isn't proof — watch whether it holds.",
                     sentiment: .positive
                 ).at(w.start))
-            } else if pct <= -15 {
+            } else if pct <= -15, post >= 1.0, post - pre >= 0.5 {
                 out.append(DayObservation(
                     icon: "figure.run", iconColor: .orange,
                     headline: "Tremor rose after \(w.name.lowercased())",
@@ -176,14 +178,19 @@ struct ObservationEngine {
             let pct = (pre - post) / pre * 100
             let timeStr = dose.time.formatted(.dateTime.hour().minute())
             let name = dose.name.capitalized
-            if pct >= 15 {
+            // Magnitude floor: only call a change real when the *meaningful* side reaches
+            // at least Slight (1.0) AND the absolute swing is >= 0.5. Without this, a
+            // noise-floor wiggle (e.g. 0.1 -> 0.4, both well below Slight) trips a false
+            // "wearing-off" because the tiny pre denominator inflates the percentage.
+            // Mirrors the peak-dose dyskinesia branch's post>=0.5 / post-pre>=0.5 gate.
+            if pct >= 15, pre >= 1.0, pre - post >= 0.5 {
                 out.append(DayObservation(
                     icon: "pill.fill", iconColor: .green,
                     headline: "Tremor fell \(Int(pct))% after \(name) at \(timeStr)",
                     detail: "Avg \(fmt(pre)) before → \(fmt(post)) in the 30–90 min window after.",
                     sentiment: .positive
                 ).at(dose.time))
-            } else if pct <= -15 {
+            } else if pct <= -15, post >= 1.0, post - pre >= 0.5 {
                 out.append(DayObservation(
                     icon: "pill.fill", iconColor: .orange,
                     headline: "Tremor rose after \(name) at \(timeStr)",
@@ -287,7 +294,11 @@ struct ObservationEngine {
         guard let pre, let post, pre > 0.1 else { return nil }
 
         let delta = (post - pre) / pre * 100
-        guard delta >= 20 else { return nil }
+        // Magnitude floor (same as the dose/workout branches): the rise must reach at
+        // least Slight (1.0) and move >= 0.5 absolute, so a noise-floor wiggle
+        // (e.g. 0.1 -> 0.3) can't trip a false "caffeine/sugar raised tremor" via the
+        // tiny pre denominator.
+        guard delta >= 20, post >= 1.0, post - pre >= 0.5 else { return nil }
         let timeStr = event.timestamp.formatted(.dateTime.hour().minute())
 
         // Confounder: tremor naturally climbs before the first dose of the day.
