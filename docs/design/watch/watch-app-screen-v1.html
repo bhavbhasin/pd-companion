@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family:'Geist'; font-weight:400; src:url('file:///Users/bhav/documents/parkinsonsproject/PD%20Companion/PD%20Companion/Fonts/Geist-Regular.ttf'); }
+  @font-face { font-family:'Geist'; font-weight:500; src:url('file:///Users/bhav/documents/parkinsonsproject/PD%20Companion/PD%20Companion/Fonts/Geist-Medium.ttf'); }
+  @font-face { font-family:'Geist'; font-weight:600; src:url('file:///Users/bhav/documents/parkinsonsproject/PD%20Companion/PD%20Companion/Fonts/Geist-SemiBold.ttf'); }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:520px; height:620px; background:#0a0a0a; display:flex; align-items:center; justify-content:center; font-family:'Geist',sans-serif; }
+
+  .device { width:300px; height:366px; background:#000; border-radius:74px;
+            box-shadow:0 0 0 10px #1a1a1c, 0 0 0 12px #2c2c2e, 0 26px 60px rgba(0,0,0,.6);
+            position:relative; overflow:hidden; }
+  .crown { position:absolute; right:-7px; top:128px; width:8px; height:54px; border-radius:6px;
+           background:linear-gradient(#3a3a3c,#2c2c2e); }
+
+  .screen { position:absolute; inset:0; padding:22px 26px 24px; display:flex; flex-direction:column; }
+
+  /* top bar: brand left, time right */
+  .topbar { display:flex; align-items:center; justify-content:space-between; }
+  .lockup { display:flex; align-items:center; gap:6px; }
+  .wordmark { font-weight:500; font-size:16px; color:#fff; letter-spacing:-.02em; }
+  .wordmark .macron { color:#4A8CD6; }
+  .time { font-size:16px; font-weight:600; color:#fff; letter-spacing:.01em; }
+
+  .label { text-align:center; color:#B9BCD2; font-size:14px; font-weight:500; margin-top:18px; }
+  .big { text-align:center; color:#6FE34F; font-size:60px; font-weight:600; line-height:1; margin-top:4px; letter-spacing:-.01em; }
+  .state { text-align:center; color:#B9BCD2; font-size:17px; font-weight:500; margin-top:6px; }
+
+  .spark { margin-top:16px; display:flex; justify-content:center; }
+  .caption { text-align:center; color:#7E8194; font-size:11.5px; font-weight:500; margin-top:9px; }
+  .caption b { color:#A6A9BC; font-weight:600; }
+
+  .logbtn { margin-top:auto; display:flex; align-items:center; justify-content:center; gap:7px;
+            background:#1c1c1e; border-radius:20px; padding:9px 0; color:#E6E8F0; font-size:14px; font-weight:500; }
+  .plus { width:18px; height:18px; border-radius:50%; background:#4A8CD6; color:#fff; font-size:14px;
+          display:flex; align-items:center; justify-content:center; font-weight:600; line-height:1; }
+</style>
+</head>
+<body>
+  <div class="device">
+    <div class="crown"></div>
+    <div class="screen">
+      <div class="topbar">
+        <div class="lockup">
+          <svg width="26" height="16" viewBox="0 0 240 144">
+            <path d="M8 90 C 28 90, 30 30, 56 30 C 78 30, 80 110, 104 95 C 124 82, 126 60, 150 60 C 168 60, 172 78, 192 78 L 232 78"
+                  fill="none" stroke="#4A8CD6" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="232" cy="78" r="8" fill="#4A8CD6"/>
+          </svg>
+          <span class="wordmark">k<span class="macron">ā</span>mpa</span>
+        </div>
+        <div class="time">4:13</div>
+      </div>
+
+      <div class="label">Latest Tremor</div>
+      <div class="big">0.0</div>
+      <div class="state">None</div>
+
+      <div class="spark">
+        <svg width="240" height="40" viewBox="0 0 240 40">
+          <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#4A8CD6" stop-opacity=".32"/>
+            <stop offset="1" stop-color="#4A8CD6" stop-opacity="0"/></linearGradient></defs>
+          <path d="M3 27 C17 27 21 11 34 27 C46 40 53 37 66 20 C78 7 88 31 100 31 C120 31 130 24 145 22 C145 22 153 30 165 30 C184 30 193 31 207 31 C224 31 232 32 237 32"
+                fill="none" stroke="#4A8CD6" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M3 27 C17 27 21 11 34 27 C46 40 53 37 66 20 C78 7 88 31 100 31 C120 31 130 24 145 22 C145 22 153 30 165 30 C184 30 193 31 207 31 C224 31 232 32 237 32 L237 40 L3 40 Z"
+                fill="url(#g)" stroke="none"/>
+          <circle cx="34" cy="38" r="2.3" fill="#E0524D"/>
+          <circle cx="100" cy="38" r="2.3" fill="#E0524D"/>
+          <circle cx="165" cy="38" r="2.3" fill="#E0524D"/>
+        </svg>
+      </div>
+      <div class="caption">Today &nbsp;·&nbsp; avg tremor <b>0.5</b> &nbsp;·&nbsp; dyskinesia <b>0.0</b></div>
+
+      <div class="logbtn"><span class="plus">+</span> Log</div>
+    </div>
+  </div>
+</body>
+</html>
