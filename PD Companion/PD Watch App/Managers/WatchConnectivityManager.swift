@@ -66,6 +66,45 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
         }
     }
 
+    /// Send samples and call `completion` once the phone acks (or we fall back).
+    /// Used by WorkoutSyncCoordinator to end its session the moment delivery is confirmed.
+    /// When the phone is reachable we use sendMessage's reply handler as the ack; when it
+    /// isn't, we queue transferUserInfo (guaranteed eventual delivery) and complete now —
+    /// keeping the session open wouldn't help an unreachable phone.
+    func sendTremorSamplesAwaitingAck(_ samples: [TremorSample], completion: @escaping @Sendable () -> Void) {
+        guard WCSession.default.activationState == .activated else {
+            print("[sync] ack-send skipped — WCSession not activated")
+            completion()
+            return
+        }
+        guard !samples.isEmpty else {
+            print("[sync] ack-send: no samples to send")
+            completion()
+            return
+        }
+        do {
+            let data = try JSONEncoder().encode(samples)
+            let message: [String: Any] = ["tremorSamples": data]
+            if WCSession.default.isReachable {
+                WCSession.default.sendMessage(message, replyHandler: { _ in
+                    print("[sync] ack received from phone")
+                    completion()
+                }, errorHandler: { error in
+                    print("[sync] ack-send failed: \(error.localizedDescription) — transferUserInfo fallback")
+                    WCSession.default.transferUserInfo(message)
+                    completion()
+                })
+            } else {
+                print("[sync] phone not reachable — transferUserInfo queued, completing")
+                WCSession.default.transferUserInfo(message)
+                completion()
+            }
+        } catch {
+            print("[sync] ack-send encode failed: \(error.localizedDescription)")
+            completion()
+        }
+    }
+
     private func handleIncoming(_ payload: [String: Any]) {
         guard payload["requestTremorSync"] as? Bool == true else { return }
         let since = (payload["since"] as? TimeInterval).map { Date(timeIntervalSince1970: $0) }

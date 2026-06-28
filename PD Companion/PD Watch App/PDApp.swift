@@ -15,6 +15,9 @@ struct PD_Watch_AppApp: App {
                 .task {
                     // Foreground-only refresh loop. Init lives in WatchAppDelegate so it
                     // runs on background launches too.
+                    // Request workout share auth here (foreground = the prompt has UI) so a
+                    // later phone-triggered startWatchApp can open a sync session.
+                    await WorkoutSyncCoordinator.shared.requestAuthorizationIfNeeded()
                     queryAndSync()
                     while !Task.isCancelled {
                         try? await Task.sleep(for: .seconds(120))

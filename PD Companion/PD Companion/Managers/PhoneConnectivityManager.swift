@@ -1,5 +1,6 @@
 import WatchConnectivity
 import SwiftData
+import HealthKit
 import Foundation
 import Combine
 
@@ -17,6 +18,12 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
     // (Apple Developer Forums thread 736305). Construct a fresh ModelContext per
     // delegate invocation instead.
     var modelContainer: ModelContainer?
+
+    // Used only to call startWatchApp(with:) — never to read/save health data here.
+    private let healthStore = HKHealthStore()
+    // Debounce so rapid foreground/background cycles don't re-launch the Watch app
+    // (and light up the wrist) more than once a minute.
+    private var lastWatchLaunch: Date?
 
     private override init() {
         super.init()
@@ -39,6 +46,35 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         isWatchPaired = session.isPaired
         isWatchAppInstalled = session.isWatchAppInstalled
         isWatchReachable = session.isReachable
+    }
+
+    /// Wake the Watch app so it can run a CoreMotion query and push tremor data,
+    /// even if neither app was open. Uses HKHealthStore.startWatchApp(with:), which
+    /// launches the Watch app into a short HKWorkoutSession (see WorkoutSyncCoordinator
+    /// on the Watch). The session is never saved as a workout. Call on phone foreground.
+    func launchWatchAppForSync() {
+        guard WCSession.default.activationState == .activated,
+              WCSession.default.isWatchAppInstalled else {
+            print("[sync] launchWatchAppForSync skipped — not activated / watch app not installed")
+            return
+        }
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        if let last = lastWatchLaunch, Date().timeIntervalSince(last) < 60 {
+            print("[sync] launchWatchAppForSync debounced (<60s since last)")
+            return
+        }
+        lastWatchLaunch = Date()
+
+        let config = HKWorkoutConfiguration()
+        config.activityType = .other
+        config.locationType = .unknown
+        healthStore.startWatchApp(with: config) { success, error in
+            if let error {
+                print("[sync] startWatchApp failed: \(error.localizedDescription)")
+            } else {
+                print("[sync] startWatchApp launched Watch app for sync (success=\(success))")
+            }
+        }
     }
 
     func requestFreshTremorData() {
@@ -162,6 +198,23 @@ extension PhoneConnectivityManager: WCSessionDelegate {
             Task { @MainActor in
                 self.processTremorData(data)
             }
+        }
+    }
+
+    // Ack variant: the Watch's WorkoutSyncCoordinator sends with a reply handler and
+    // ends its session the moment we confirm receipt. Persist, then reply.
+    nonisolated func session(
+        _ session: WCSession,
+        didReceiveMessage message: [String: Any],
+        replyHandler: @escaping ([String: Any]) -> Void
+    ) {
+        guard let data = message["tremorSamples"] as? Data else {
+            replyHandler(["ack": false])
+            return
+        }
+        Task { @MainActor in
+            self.processTremorData(data)
+            replyHandler(["ack": true])
         }
     }
 

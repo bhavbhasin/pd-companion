@@ -78,6 +78,8 @@ struct PD_CompanionApp: App {
                     case .active:
                         connectivity.refreshWatchState()
                         connectivity.requestFreshTremorData()
+                        // Wake the Watch app so it can sync without the user opening it.
+                        connectivity.launchWatchAppForSync()
                     case .background:
                         Self.scheduleTremorSync()
                     default:

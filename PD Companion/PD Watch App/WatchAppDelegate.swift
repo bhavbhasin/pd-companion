@@ -1,7 +1,17 @@
 import WatchKit
+import HealthKit
 import Foundation
 
 final class WatchAppDelegate: NSObject, WKApplicationDelegate {
+
+    // The phone called HKHealthStore.startWatchApp(with:) to wake us for a sync.
+    // Start the short workout-session sync immediately so watchOS doesn't terminate
+    // us for launching without starting a session.
+    func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
+        Task { @MainActor in
+            WorkoutSyncCoordinator.shared.startSyncSession(with: workoutConfiguration)
+        }
+    }
     func applicationDidFinishLaunching() {
         Task { @MainActor in
             // Initialize on every launch path (foreground OR background-launched by WCSession).

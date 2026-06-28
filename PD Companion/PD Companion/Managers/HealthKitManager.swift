@@ -23,7 +23,11 @@ class HealthKitManager: ObservableObject {
     @Published var dayDaylightMinutes: Double?
 
     private let writeTypes: Set<HKSampleType> = [
-        HKObjectType.categoryType(forIdentifier: .mindfulSession)!
+        HKObjectType.categoryType(forIdentifier: .mindfulSession)!,
+        // Required so the phone can call HKHealthStore.startWatchApp(with:) to wake
+        // the Watch app for a tremor sync. We never build or save an HKWorkout —
+        // the session is only used for its background-runtime privilege.
+        HKObjectType.workoutType()
     ]
 
     private let readTypes: Set<HKObjectType> = {
