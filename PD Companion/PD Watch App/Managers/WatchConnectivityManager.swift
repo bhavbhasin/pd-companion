@@ -20,49 +20,66 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
     // iOS retains the last value and delivers it on the next iPhone-side
     // activation, even if neither app was open in between. Pairs with the
     // on-demand sendMessage/transferUserInfo path — never trust a single chain.
-    func pushLatestContext(_ samples: [TremorSample]) {
+    /// Build the WC payload carrying both streams. Tremor and dyskinesia ride together
+    /// under separate keys so existing transport/size/ack logic is unchanged; an empty
+    /// stream simply omits its key (the phone tolerates a missing key).
+    private func makePayload(
+        tremor: [TremorSample], dyskinesia: [DyskinesiaSample]
+    ) -> [String: Any]? {
+        var message: [String: Any] = [:]
+        do {
+            if !tremor.isEmpty {
+                message["tremorSamples"] = try JSONEncoder().encode(tremor)
+            }
+            if !dyskinesia.isEmpty {
+                message["dyskinesiaSamples"] = try JSONEncoder().encode(dyskinesia)
+            }
+        } catch {
+            print("[sync] Failed to encode symptom data (t=\(tremor.count) d=\(dyskinesia.count)): \(error)")
+            return nil
+        }
+        return message.isEmpty ? nil : message
+    }
+
+    func pushLatestContext(tremor: [TremorSample], dyskinesia: [DyskinesiaSample]) {
         guard WCSession.default.activationState == .activated else { return }
         let cutoff = Date().addingTimeInterval(-48 * 3600)
-        let recent = samples.filter { $0.timestamp > cutoff }
-        guard !recent.isEmpty else { return }
+        let recentTremor = tremor.filter { $0.timestamp > cutoff }
+        let recentDyskinesia = dyskinesia.filter { $0.startDate > cutoff }
+        guard let message = makePayload(tremor: recentTremor, dyskinesia: recentDyskinesia) else { return }
         do {
-            let data = try JSONEncoder().encode(recent)
-            try WCSession.default.updateApplicationContext(["tremorSamples": data])
-            print("[sync] applicationContext updated: \(recent.count) samples")
+            try WCSession.default.updateApplicationContext(message)
+            print("[sync] applicationContext updated: \(recentTremor.count) tremor, \(recentDyskinesia.count) dyskinesia")
         } catch {
-            print("[sync] updateApplicationContext failed (\(recent.count) samples): \(error.localizedDescription)")
+            print("[sync] updateApplicationContext failed (t=\(recentTremor.count) d=\(recentDyskinesia.count)): \(error.localizedDescription)")
         }
     }
 
-    func sendTremorSamples(_ samples: [TremorSample]) {
+    func sendTremorSamples(tremor: [TremorSample], dyskinesia: [DyskinesiaSample]) {
         guard WCSession.default.activationState == .activated else {
-            print("[sync] WCSession not activated — skipping tremor sync (\(samples.count) samples)")
+            print("[sync] WCSession not activated — skipping symptom sync (t=\(tremor.count) d=\(dyskinesia.count))")
             return
         }
 
-        guard !samples.isEmpty else {
-            print("[sync] No new tremor samples to send")
+        guard let message = makePayload(tremor: tremor, dyskinesia: dyskinesia) else {
+            print("[sync] No new symptom samples to send")
             return
         }
 
-        do {
-            let data = try JSONEncoder().encode(samples)
-            let payloadKB = data.count / 1024
-            let message: [String: Any] = ["tremorSamples": data]
-            let sendMessageLimitKB = 60
+        let tremorBytes = (message["tremorSamples"] as? Data)?.count ?? 0
+        let dyskinesiaBytes = (message["dyskinesiaSamples"] as? Data)?.count ?? 0
+        let payloadKB = (tremorBytes + dyskinesiaBytes) / 1024
+        let sendMessageLimitKB = 60
 
-            if WCSession.default.isReachable && payloadKB < sendMessageLimitKB {
-                WCSession.default.sendMessage(message, replyHandler: nil) { error in
-                    print("[sync] sendMessage failed (\(payloadKB)KB, \(samples.count) samples): \(error.localizedDescription) — falling back to transferUserInfo")
-                    WCSession.default.transferUserInfo(message)
-                }
-                print("[sync] sendMessage dispatched: \(payloadKB)KB, \(samples.count) samples")
-            } else {
+        if WCSession.default.isReachable && payloadKB < sendMessageLimitKB {
+            WCSession.default.sendMessage(message, replyHandler: nil) { error in
+                print("[sync] sendMessage failed (\(payloadKB)KB): \(error.localizedDescription) — falling back to transferUserInfo")
                 WCSession.default.transferUserInfo(message)
-                print("[sync] transferUserInfo queued: \(payloadKB)KB, \(samples.count) samples")
             }
-        } catch {
-            print("[sync] Failed to encode tremor data (\(samples.count) samples): \(error)")
+            print("[sync] sendMessage dispatched: \(payloadKB)KB, t=\(tremor.count) d=\(dyskinesia.count)")
+        } else {
+            WCSession.default.transferUserInfo(message)
+            print("[sync] transferUserInfo queued: \(payloadKB)KB, t=\(tremor.count) d=\(dyskinesia.count)")
         }
     }
 
@@ -71,36 +88,32 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
     /// When the phone is reachable we use sendMessage's reply handler as the ack; when it
     /// isn't, we queue transferUserInfo (guaranteed eventual delivery) and complete now —
     /// keeping the session open wouldn't help an unreachable phone.
-    func sendTremorSamplesAwaitingAck(_ samples: [TremorSample], completion: @escaping @Sendable () -> Void) {
+    func sendTremorSamplesAwaitingAck(
+        tremor: [TremorSample], dyskinesia: [DyskinesiaSample],
+        completion: @escaping @Sendable () -> Void
+    ) {
         guard WCSession.default.activationState == .activated else {
             print("[sync] ack-send skipped — WCSession not activated")
             completion()
             return
         }
-        guard !samples.isEmpty else {
+        guard let message = makePayload(tremor: tremor, dyskinesia: dyskinesia) else {
             print("[sync] ack-send: no samples to send")
             completion()
             return
         }
-        do {
-            let data = try JSONEncoder().encode(samples)
-            let message: [String: Any] = ["tremorSamples": data]
-            if WCSession.default.isReachable {
-                WCSession.default.sendMessage(message, replyHandler: { _ in
-                    print("[sync] ack received from phone")
-                    completion()
-                }, errorHandler: { error in
-                    print("[sync] ack-send failed: \(error.localizedDescription) — transferUserInfo fallback")
-                    WCSession.default.transferUserInfo(message)
-                    completion()
-                })
-            } else {
-                print("[sync] phone not reachable — transferUserInfo queued, completing")
+        if WCSession.default.isReachable {
+            WCSession.default.sendMessage(message, replyHandler: { _ in
+                print("[sync] ack received from phone")
+                completion()
+            }, errorHandler: { error in
+                print("[sync] ack-send failed: \(error.localizedDescription) — transferUserInfo fallback")
                 WCSession.default.transferUserInfo(message)
                 completion()
-            }
-        } catch {
-            print("[sync] ack-send encode failed: \(error.localizedDescription)")
+            })
+        } else {
+            print("[sync] phone not reachable — transferUserInfo queued, completing")
+            WCSession.default.transferUserInfo(message)
             completion()
         }
     }
@@ -123,10 +136,12 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
                 Task { @MainActor in
                     let baselineCutoff = Date().addingTimeInterval(-48 * 3600)
                     let cutoff = max(since ?? baselineCutoff, baselineCutoff)
-                    let samples = MovementDisorderManager.shared.recentTremorSamples
+                    let tremor = MovementDisorderManager.shared.recentTremorSamples
                         .filter { $0.timestamp > cutoff }
-                    print("[sync] handleIncoming sending \(samples.count) samples")
-                    WatchConnectivityManager.shared.sendTremorSamples(samples)
+                    let dyskinesia = MovementDisorderManager.shared.recentDyskinesiaSamples
+                        .filter { $0.startDate > cutoff }
+                    print("[sync] handleIncoming sending \(tremor.count) tremor, \(dyskinesia.count) dyskinesia")
+                    WatchConnectivityManager.shared.sendTremorSamples(tremor: tremor, dyskinesia: dyskinesia)
                 }
             }
         }

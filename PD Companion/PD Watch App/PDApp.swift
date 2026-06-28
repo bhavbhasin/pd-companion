@@ -37,9 +37,11 @@ struct PD_Watch_AppApp: App {
         movementManager.queryRecentResults {
             Task { @MainActor in
                 let cutoff = Date().addingTimeInterval(-48 * 3600)
-                let samples = MovementDisorderManager.shared.recentTremorSamples
+                let tremor = MovementDisorderManager.shared.recentTremorSamples
                     .filter { $0.timestamp >= cutoff }
-                WatchConnectivityManager.shared.sendTremorSamples(samples)
+                let dyskinesia = MovementDisorderManager.shared.recentDyskinesiaSamples
+                    .filter { $0.startDate >= cutoff }
+                WatchConnectivityManager.shared.sendTremorSamples(tremor: tremor, dyskinesia: dyskinesia)
             }
         }
     }

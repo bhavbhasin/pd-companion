@@ -111,6 +111,22 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         return (try? context.fetch(descriptor))?.first?.timestamp
     }
 
+    /// Single entry point for an incoming WC payload — extracts both streams (either may be
+    /// absent) so every delegate callback handles tremor + dyskinesia identically.
+    @discardableResult
+    private func processIncoming(_ payload: [String: Any]) -> Bool {
+        var handled = false
+        if let data = payload["tremorSamples"] as? Data {
+            processTremorData(data)
+            handled = true
+        }
+        if let data = payload["dyskinesiaSamples"] as? Data {
+            processDyskinesiaData(data)
+            handled = true
+        }
+        return handled
+    }
+
     private func processTremorData(_ data: Data) {
         do {
             let samples = try JSONDecoder().decode([TremorSample].self, from: data)
@@ -122,6 +138,16 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         }
     }
 
+    private func processDyskinesiaData(_ data: Data) {
+        do {
+            let samples = try JSONDecoder().decode([DyskinesiaSample].self, from: data)
+            let inserted = persistDyskinesiaSamples(samples)
+            print("[sync] processDyskinesiaData received=\(samples.count) inserted=\(inserted)")
+        } catch {
+            print("[sync] Failed to decode dyskinesia data: \(error)")
+        }
+    }
+
     @discardableResult
     private func persistSamples(_ samples: [TremorSample]) -> Int {
         guard let context = makeContext() else { return 0 }
@@ -130,6 +156,20 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         var inserted = 0
         for sample in samples where !existingTimestamps.contains(sample.timestamp) {
             context.insert(TremorReading(from: sample))
+            inserted += 1
+        }
+        try? context.save()
+        return inserted
+    }
+
+    @discardableResult
+    private func persistDyskinesiaSamples(_ samples: [DyskinesiaSample]) -> Int {
+        guard let context = makeContext() else { return 0 }
+        let existing = (try? context.fetch(FetchDescriptor<DyskinesiaReading>())) ?? []
+        let existingStarts = Set(existing.map { $0.startDate })
+        var inserted = 0
+        for sample in samples where !existingStarts.contains(sample.startDate) {
+            context.insert(DyskinesiaReading(from: sample))
             inserted += 1
         }
         try? context.save()
@@ -194,10 +234,8 @@ extension PhoneConnectivityManager: WCSessionDelegate {
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        if let data = message["tremorSamples"] as? Data {
-            Task { @MainActor in
-                self.processTremorData(data)
-            }
+        Task { @MainActor in
+            self.processIncoming(message)
         }
     }
 
@@ -208,13 +246,9 @@ extension PhoneConnectivityManager: WCSessionDelegate {
         didReceiveMessage message: [String: Any],
         replyHandler: @escaping ([String: Any]) -> Void
     ) {
-        guard let data = message["tremorSamples"] as? Data else {
-            replyHandler(["ack": false])
-            return
-        }
         Task { @MainActor in
-            self.processTremorData(data)
-            replyHandler(["ack": true])
+            let handled = self.processIncoming(message)
+            replyHandler(["ack": handled])
         }
     }
 
@@ -225,18 +259,14 @@ extension PhoneConnectivityManager: WCSessionDelegate {
         _ session: WCSession,
         didReceiveApplicationContext applicationContext: [String: Any]
     ) {
-        if let data = applicationContext["tremorSamples"] as? Data {
-            Task { @MainActor in
-                self.processTremorData(data)
-            }
+        Task { @MainActor in
+            self.processIncoming(applicationContext)
         }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
-        if let data = userInfo["tremorSamples"] as? Data {
-            Task { @MainActor in
-                self.processTremorData(data)
-            }
+        Task { @MainActor in
+            self.processIncoming(userInfo)
         }
     }
 }

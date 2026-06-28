@@ -32,10 +32,12 @@ final class BackgroundRefreshCoordinator {
         manager.queryRecentResults {
             Task { @MainActor in
                 let cutoff = Date().addingTimeInterval(-48 * 3600)
-                let samples = MovementDisorderManager.shared.recentTremorSamples
+                let tremor = MovementDisorderManager.shared.recentTremorSamples
                     .filter { $0.timestamp >= cutoff }
-                print("[sync] BG refresh sending \(samples.count) samples")
-                WatchConnectivityManager.shared.sendTremorSamples(samples)
+                let dyskinesia = MovementDisorderManager.shared.recentDyskinesiaSamples
+                    .filter { $0.startDate >= cutoff }
+                print("[sync] BG refresh sending \(tremor.count) tremor, \(dyskinesia.count) dyskinesia")
+                WatchConnectivityManager.shared.sendTremorSamples(tremor: tremor, dyskinesia: dyskinesia)
                 BackgroundRefreshCoordinator.shared.scheduleNextRefresh()
                 task.setTaskCompletedWithSnapshot(false)
             }

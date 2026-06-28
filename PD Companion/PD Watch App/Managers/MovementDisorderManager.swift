@@ -12,6 +12,7 @@ final class MovementDisorderManager: ObservableObject {
     @Published var isMonitoring = false
     @Published var lastQueryDate: Date?
     @Published var recentTremorSamples: [TremorSample] = []
+    @Published var recentDyskinesiaSamples: [DyskinesiaSample] = []
     @Published var error: String?
 
     init() {}
@@ -75,6 +76,10 @@ final class MovementDisorderManager: ObservableObject {
                             strong: tremorResult.percentStrong
                         )
 
+                        // Legacy merged dyskinesia score — kept byte-for-byte (incl. the /25
+                        // scaling) for engine/UI continuity. The CORRECT raw dyskinesia signal
+                        // is captured independently in `dyskinesiaSamples` below; the display
+                        // fix that replaces this lives in a separate task.
                         var dyskinesiaScore: Double = 0
                         if let matching = dyskinesias.first(where: {
                             abs($0.startDate.timeIntervalSince(tremorResult.startDate)) < 60
@@ -85,13 +90,32 @@ final class MovementDisorderManager: ObservableObject {
                         samples.append(TremorSample(
                             timestamp: tremorResult.startDate,
                             tremorScore: tremorScore,
-                            dyskinesiaScore: dyskinesiaScore
+                            dyskinesiaScore: dyskinesiaScore,
+                            bucketEnd: tremorResult.endDate,
+                            percentUnknown: Double(tremorResult.percentUnknown),
+                            percentNone: Double(tremorResult.percentNone),
+                            percentSlight: Double(tremorResult.percentSlight),
+                            percentMild: Double(tremorResult.percentMild),
+                            percentModerate: Double(tremorResult.percentModerate),
+                            percentStrong: Double(tremorResult.percentStrong)
                         ))
                     }
 
+                    // Independent raw dyskinesia stream — every bucket, not merged onto tremor.
+                    let dyskinesiaSamples: [DyskinesiaSample] = dyskinesias.map { result in
+                        DyskinesiaSample(
+                            startDate: result.startDate,
+                            endDate: result.endDate,
+                            percentLikely: Double(result.percentLikely)
+                        )
+                    }
+
                     self.recentTremorSamples = samples
+                    self.recentDyskinesiaSamples = dyskinesiaSamples
                     self.lastQueryDate = now
-                    WatchConnectivityManager.shared.pushLatestContext(samples)
+                    WatchConnectivityManager.shared.pushLatestContext(
+                        tremor: samples, dyskinesia: dyskinesiaSamples
+                    )
                     completion?()
                 }
             }

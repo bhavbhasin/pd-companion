@@ -81,10 +81,14 @@ final class WorkoutSyncCoordinator: NSObject {
         movement.queryRecentResults {
             Task { @MainActor in
                 let cutoff = Date().addingTimeInterval(-48 * 3600)
-                let samples = MovementDisorderManager.shared.recentTremorSamples
+                let tremor = MovementDisorderManager.shared.recentTremorSamples
                     .filter { $0.timestamp >= cutoff }
-                print("[sync] workout sync sending \(samples.count) samples, awaiting ack")
-                WatchConnectivityManager.shared.sendTremorSamplesAwaitingAck(samples) {
+                let dyskinesia = MovementDisorderManager.shared.recentDyskinesiaSamples
+                    .filter { $0.startDate >= cutoff }
+                print("[sync] workout sync sending \(tremor.count) tremor, \(dyskinesia.count) dyskinesia, awaiting ack")
+                WatchConnectivityManager.shared.sendTremorSamplesAwaitingAck(
+                    tremor: tremor, dyskinesia: dyskinesia
+                ) {
                     Task { @MainActor in
                         WorkoutSyncCoordinator.shared.endSession()
                     }
