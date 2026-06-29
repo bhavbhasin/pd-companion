@@ -191,6 +191,27 @@ struct ObservationEngine {
                     sentiment: .positive
                 ).at(dose.time))
             } else if pct <= -15, post >= 1.0, post - pre >= 0.5 {
+                // A fixed pre/post window can't tell "this dose caused the rise" from
+                // "this dose was taken *into* a rise (the previous dose wearing off) and
+                // then worked." Two guards suppress that false wearing-off claim; both
+                // are inconclusive-friendly (missing data → fire as before, no regression).
+
+                // Guard A — pre-trend: tremor already climbing into the dose ⇒ the rise
+                // predates it, so don't credit this dose.
+                let preEarly = windowAvg(readings,
+                                         from: dose.time.addingTimeInterval(-3600),
+                                         to: dose.time.addingTimeInterval(-1800))
+                let risingIntoDose = preEarly.map { pre - $0 >= 0.3 } ?? false
+
+                // Guard B — look-ahead: tremor came back down 90–180 min later ⇒ the post
+                // bump was transient / the dose worked, so it isn't wearing-off.
+                let later = windowAvg(readings,
+                                      from: dose.time.addingTimeInterval(5400),
+                                      to: dose.time.addingTimeInterval(10800))
+                let settledAfter = later.map { post - $0 >= 0.5 } ?? false
+
+                if risingIntoDose || settledAfter { continue }
+
                 out.append(DayObservation(
                     icon: "pill.fill", iconColor: .orange,
                     headline: "Tremor rose after \(name) at \(timeStr)",
