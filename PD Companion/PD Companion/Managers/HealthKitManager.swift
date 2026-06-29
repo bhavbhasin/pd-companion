@@ -356,8 +356,13 @@ class HealthKitManager: ObservableObject {
 
     private func fetchSleepBreakdown(forDayStartingAt startOfDay: Date) async -> SleepBreakdown {
         let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
+        // 6 PM (prev day) → 6 PM (this day): a 24h window that tiles cleanly with
+        // adjacent days (no gap, no overlap) using Apple's ~6 PM sleep-day boundary. This
+        // captures the overnight AND any daytime naps on the day, so the total sums all of
+        // the day's sleep — matching Apple Health's daily "Time Asleep" — rather than
+        // clipping the afternoon at 2 PM.
         let windowStart = startOfDay.addingTimeInterval(-6 * 3600)
-        let windowEnd = startOfDay.addingTimeInterval(14 * 3600)
+        let windowEnd = startOfDay.addingTimeInterval(18 * 3600)
         let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: windowEnd)
 
         return await withCheckedContinuation { continuation in
@@ -379,11 +384,22 @@ class HealthKitManager: ObservableObject {
                     $0.endDate > windowStart && $0.endDate < windowEnd
                 }
 
-                let chosen = Self.dedupeSleepBySource(relevant)
+                // Gap-fill across sources: a "staging" source (one that emits Deep/REM —
+                // e.g. Apple Watch) is authoritative wherever it tracked; coarser sources
+                // (e.g. AutoSleep, which only writes "asleep unspecified") fill ONLY the
+                // spans the stager left blank. This recovers sleep the Watch missed (a
+                // late-detected onset) without letting a coarse all-night block steamroll
+                // the Watch's real awake/interruption detail.
+                let primarySources = Set(
+                    relevant.filter {
+                        $0.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
+                        $0.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue
+                    }.map { $0.sourceRevision.source.bundleIdentifier }
+                )
 
-                // Flatten overlapping samples to one stage-per-moment timeline so
-                // duplicated/overlapping sleep is counted once (see flattenSleepStages).
-                let segments = Self.flattenSleepStages(chosen)
+                // Flatten to one stage-per-moment timeline (also dedupes a single source
+                // that overlaps itself across syncs), with staging sources winning per-moment.
+                let segments = Self.flattenSleepStages(relevant, primarySources: primarySources)
 
                 var deep = 0.0, rem = 0.0, core = 0.0, awake = 0.0
                 for seg in segments {
@@ -424,43 +440,30 @@ class HealthKitManager: ObservableObject {
         }
     }
 
-    private nonisolated static func dedupeSleepBySource(_ samples: [HKCategorySample]) -> [HKCategorySample] {
-        guard !samples.isEmpty else { return [] }
-        let appleSamples = samples.filter {
-            $0.sourceRevision.source.bundleIdentifier.hasPrefix("com.apple.")
-        }
-        if !appleSamples.isEmpty { return appleSamples }
-        let bySource = Dictionary(grouping: samples) { $0.sourceRevision.source.bundleIdentifier }
-        let dominant = bySource.max { lhs, rhs in
-            asleepDuration(in: lhs.value) < asleepDuration(in: rhs.value)
-        }
-        return dominant?.value ?? samples
-    }
-
-    private nonisolated static func asleepDuration(in samples: [HKCategorySample]) -> TimeInterval {
-        let asleepValues: Set<Int> = [
-            HKCategoryValueSleepAnalysis.asleepCore.rawValue,
-            HKCategoryValueSleepAnalysis.asleepREM.rawValue,
-            HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
-            HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
-        ]
-        return samples.reduce(0.0) { acc, s in
-            asleepValues.contains(s.value) ? acc + s.endDate.timeIntervalSince(s.startDate) : acc
-        }
-    }
-
     /// Collapses overlapping sleep samples into one non-overlapping timeline so each
-    /// moment is counted exactly once. Summing raw sample durations double-counts any
-    /// overlap: some sources (e.g. Oura) re-write a night's stages across multiple
-    /// syncs that all persist in HealthKit, and two devices can both log the same night.
-    /// One tester's Oura layered the same night ~2x, so the old sum reported 10h16m for
-    /// a 7h38m night with 60 "interruptions". At each instant the deepest covering stage
-    /// wins and any asleep stage outranks awake; the result matches Apple Health to within
-    /// a few minutes. A no-op on clean, non-overlapping data (union == sum).
-    private nonisolated static func flattenSleepStages(_ samples: [HKCategorySample]) -> [SleepStageSegment] {
-        let staged: [(start: Date, end: Date, stage: SleepStage)] = samples.compactMap {
+    /// moment is counted exactly once, merging multiple sources with **gap-fill**.
+    ///
+    /// Two layers of priority pick the winner at each instant:
+    ///  1. **Source tier** — a sample from a `primarySources` source (a stager: emits
+    ///     Deep/REM, e.g. Apple Watch) outranks any coarse-source sample, so the stager
+    ///     is authoritative wherever it tracked and coarse sources (e.g. AutoSleep's
+    ///     all-night "asleep unspecified" block) only fill the spans it left blank. This
+    ///     recovers a late-detected onset without erasing the stager's awake/interruption
+    ///     detail.
+    ///  2. **Stage** — within a tier the deepest stage wins, and any asleep stage outranks
+    ///     awake so a stray awake layer never carves a hole in real sleep.
+    ///
+    /// Also dedupes a single source that overlaps itself across syncs (one tester's Oura
+    /// layered a night ~2x → a naive sum reported 10h16m for a 7h38m night). A no-op on
+    /// clean, single-source data (union == sum). `primarySources` empty → all samples are
+    /// the same tier (plain union), the right fallback when no stager is present.
+    private nonisolated static func flattenSleepStages(
+        _ samples: [HKCategorySample], primarySources: Set<String>
+    ) -> [SleepStageSegment] {
+        let staged: [(start: Date, end: Date, stage: SleepStage, tier: Int)] = samples.compactMap {
             guard let stage = sleepStage(for: $0.value), $0.endDate > $0.startDate else { return nil }
-            return ($0.startDate, $0.endDate, stage)
+            let tier = primarySources.contains($0.sourceRevision.source.bundleIdentifier) ? 1 : 0
+            return ($0.startDate, $0.endDate, stage, tier)
         }
         guard !staged.isEmpty else { return [] }
 
@@ -469,15 +472,16 @@ class HealthKitManager: ObservableObject {
         for i in 0..<(bounds.count - 1) {
             let a = bounds[i], b = bounds[i + 1]
             let mid = a.addingTimeInterval(b.timeIntervalSince(a) / 2)
+            // Tier first (a stager wins wherever it tracked → coarse sources only gap-fill),
+            // then stage priority within the winning tier.
             let winner = staged
                 .filter { $0.start <= mid && mid < $0.end }
-                .map(\.stage)
-                .max { stagePriority($0) < stagePriority($1) }
+                .max { ($0.tier, stagePriority($0.stage)) < ($1.tier, stagePriority($1.stage)) }
             guard let winner else { continue }
-            if let last = segments.last, last.stage == winner, last.end == a {
-                segments[segments.count - 1] = SleepStageSegment(stage: winner, start: last.start, end: b)
+            if let last = segments.last, last.stage == winner.stage, last.end == a {
+                segments[segments.count - 1] = SleepStageSegment(stage: winner.stage, start: last.start, end: b)
             } else {
-                segments.append(SleepStageSegment(stage: winner, start: a, end: b))
+                segments.append(SleepStageSegment(stage: winner.stage, start: a, end: b))
             }
         }
         return segments
