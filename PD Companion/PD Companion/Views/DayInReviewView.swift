@@ -7,8 +7,11 @@ struct DayInReviewView: View {
     @EnvironmentObject var healthKit: HealthKitManager
     @EnvironmentObject var connectivity: PhoneConnectivityManager
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \TremorReading.timestamp, order: .forward) private var allReadings: [TremorReading]
-    @Query(sort: \FoodEvent.timestamp, order: .forward) private var allFoodEvents: [FoodEvent]
+    // Newest reading timestamp for the header sync-status label. Fetched with a
+    // fetchLimit = 1 descriptor (refreshLatestReadingDate) and refreshed reactively
+    // via DayReviewContent's onDataChanged — loading every TremorReading into an
+    // @Query just to read .last is the perf trap this screen used to hit.
+    @State private var latestReadingDate: Date?
     // Default to today: the app is used through the day for logging (food, meds), so
     // the view should reflect "now" — seeing yesterday right after logging something
     // today reads as a bug. Today's data is partial (the chart fills as the day goes),
@@ -21,36 +24,11 @@ struct DayInReviewView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    GlanceCard(
-                        sleep: healthKit.daySleep,
-                        tremorReadings: dayReadings,
-                        hrv: healthKit.dayHRV
-                    )
-                    TremorTimelinePanel(
-                        readings: dayReadings,
-                        hasEverHadData: !allReadings.isEmpty,
-                        events: allDayEvents,
-                        dayStart: dayStart,
-                        dayEnd: dayEnd,
-                        onEventTap: { selectedEvent = $0 }
-                    )
-                    SleepStagesPanel(
-                        sleep: healthKit.daySleep,
-                        daylightMinutes: healthKit.dayDaylightMinutes
-                    )
-                    ObservationsPanel(
-                        readings: dayReadings,
-                        events: allDayEvents,
-                        foodEvents: dayFoodEvents,
-                        sleep: healthKit.daySleep,
-                        hrvSamples: healthKit.dayHRVSamples,
-                        daylightMinutes: healthKit.dayDaylightMinutes
-                    )
-                }
-                .padding()
-            }
+            DayReviewContent(
+                selectedDate: selectedDate,
+                onEventTap: { selectedEvent = $0 },
+                onDataChanged: refreshLatestReadingDate
+            )
             .safeAreaInset(edge: .top, spacing: 0) {
                 dateHeader
                     .padding(.horizontal)
@@ -123,34 +101,26 @@ struct DayInReviewView: View {
                 .presentationDetents([.medium, .large])
             }
             .task(id: selectedDate) {
+                refreshLatestReadingDate()
                 await healthKit.fetchDayInReview(for: selectedDate)
             }
             .refreshable {
                 connectivity.requestFreshTremorData()
                 await healthKit.fetchDayInReview(for: selectedDate)
+                refreshLatestReadingDate()
             }
         }
     }
 
-    private var dayStart: Date { Calendar.current.startOfDay(for: selectedDate) }
-    private var dayEnd: Date {
-        Calendar.current.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(86400)
-    }
-
-    private var dayReadings: [TremorReading] {
-        allReadings.filter { $0.timestamp >= dayStart && $0.timestamp < dayEnd }
-    }
-
-    private var dayFoodEvents: [FoodEvent] {
-        allFoodEvents.filter { $0.timestamp >= dayStart && $0.timestamp < dayEnd }
-    }
-
-    private var allDayEvents: [DayEvent] {
-        let food = dayFoodEvents.map {
-            DayEvent.food(id: $0.id, time: $0.timestamp,
-                          userDescription: $0.userDescription ?? "", attributes: $0.attributes)
-        }
-        return (healthKit.dayEvents + food).sorted { $0.time < $1.time }
+    // Reads only the single most-recent reading (fetchLimit = 1) for the header's
+    // "Updated …" label — no full-table hydration. Called on day change, pull-to-refresh,
+    // and reactively from DayReviewContent whenever the day's readings change.
+    private func refreshLatestReadingDate() {
+        var descriptor = FetchDescriptor<TremorReading>(
+            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        latestReadingDate = (try? modelContext.fetch(descriptor))?.first?.timestamp
     }
 
     private var dateHeader: some View {
@@ -197,7 +167,7 @@ struct DayInReviewView: View {
     }
 
     private var syncStatusText: String {
-        guard let latest = allReadings.last?.timestamp else {
+        guard let latest = latestReadingDate else {
             return "No tremor data yet"
         }
         let style: Date.FormatStyle = Calendar.current.isDateInToday(latest)
@@ -207,7 +177,7 @@ struct DayInReviewView: View {
     }
 
     private var syncStatusColor: Color {
-        guard let latest = allReadings.last?.timestamp else { return .secondary }
+        guard let latest = latestReadingDate else { return .secondary }
         let age = Date().timeIntervalSince(latest)
         switch age {
         case ..<(6 * 3600):      return .secondary
@@ -221,6 +191,94 @@ struct DayInReviewView: View {
         let today = Calendar.current.startOfDay(for: Date())
         if next > today { return }
         selectedDate = Calendar.current.startOfDay(for: next)
+    }
+}
+
+// MARK: - Day-scoped content
+
+/// Owns the day-scoped SwiftData queries. The predicate is built in init from the
+/// selected day's bounds, so SwiftData only hydrates that day's rows instead of the
+/// whole table. SwiftUI re-creates this view (and re-runs the query) whenever the
+/// parent passes a new selectedDate — the canonical dynamic-@Query pattern.
+private struct DayReviewContent: View {
+    @EnvironmentObject var healthKit: HealthKitManager
+    @Environment(\.modelContext) private var modelContext
+
+    private let dayStart: Date
+    private let dayEnd: Date
+    private let onEventTap: (DayEvent) -> Void
+    private let onDataChanged: () -> Void
+
+    @Query private var dayReadings: [TremorReading]
+    @Query private var dayFoodEvents: [FoodEvent]
+
+    init(selectedDate: Date,
+         onEventTap: @escaping (DayEvent) -> Void,
+         onDataChanged: @escaping () -> Void) {
+        let start = Calendar.current.startOfDay(for: selectedDate)
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: start)
+            ?? start.addingTimeInterval(86400)
+        self.dayStart = start
+        self.dayEnd = end
+        self.onEventTap = onEventTap
+        self.onDataChanged = onDataChanged
+        _dayReadings = Query(
+            filter: #Predicate<TremorReading> { $0.timestamp >= start && $0.timestamp < end },
+            sort: \TremorReading.timestamp, order: .forward
+        )
+        _dayFoodEvents = Query(
+            filter: #Predicate<FoodEvent> { $0.timestamp >= start && $0.timestamp < end },
+            sort: \FoodEvent.timestamp, order: .forward
+        )
+    }
+
+    // Cheap COUNT(*) — does the user have any tremor reading ever? — without hydrating rows.
+    private var hasEverHadData: Bool {
+        ((try? modelContext.fetchCount(FetchDescriptor<TremorReading>())) ?? 0) > 0
+    }
+
+    private var allDayEvents: [DayEvent] {
+        let food = dayFoodEvents.map {
+            DayEvent.food(id: $0.id, time: $0.timestamp,
+                          userDescription: $0.userDescription ?? "", attributes: $0.attributes)
+        }
+        return (healthKit.dayEvents + food).sorted { $0.time < $1.time }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                GlanceCard(
+                    sleep: healthKit.daySleep,
+                    tremorReadings: dayReadings,
+                    hrv: healthKit.dayHRV
+                )
+                TremorTimelinePanel(
+                    readings: dayReadings,
+                    hasEverHadData: hasEverHadData,
+                    events: allDayEvents,
+                    dayStart: dayStart,
+                    dayEnd: dayEnd,
+                    onEventTap: onEventTap
+                )
+                SleepStagesPanel(
+                    sleep: healthKit.daySleep,
+                    daylightMinutes: healthKit.dayDaylightMinutes
+                )
+                ObservationsPanel(
+                    readings: dayReadings,
+                    events: allDayEvents,
+                    foodEvents: dayFoodEvents,
+                    sleep: healthKit.daySleep,
+                    hrvSamples: healthKit.dayHRVSamples,
+                    daylightMinutes: healthKit.dayDaylightMinutes
+                )
+            }
+            .padding()
+        }
+        // Option B: when a sync lands a new reading for the visible day, nudge the parent
+        // to re-read the latest-reading timestamp so the header label stays live.
+        .onChange(of: dayReadings.last?.timestamp) { _, _ in onDataChanged() }
     }
 }
 
