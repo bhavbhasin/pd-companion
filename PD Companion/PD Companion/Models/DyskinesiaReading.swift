@@ -15,6 +15,10 @@ import SwiftData
 /// thresholding/noise-floor lives in a later display task, NOT here.
 @Model
 final class DyskinesiaReading {
+    // Indexed for the same reason as TremorReading.timestamp — sync dedup filters by
+    // startDate. Non-unique → CloudKit-compatible.
+    #Index<DyskinesiaReading>([\.startDate])
+
     // Defaults required for CloudKit (NSPersistentCloudKitContainer).
     var startDate: Date = Date.distantPast
     var endDate: Date = Date.distantPast

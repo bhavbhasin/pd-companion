@@ -151,7 +151,16 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
     @discardableResult
     private func persistSamples(_ samples: [TremorSample]) -> Int {
         guard let context = makeContext() else { return 0 }
-        let existing = (try? context.fetch(FetchDescriptor<TremorReading>())) ?? []
+        // Dedup only against existing rows within the incoming batch's time span: a
+        // duplicate must share a timestamp, which is necessarily inside [lo, hi], so
+        // rows outside that window can't collide. Avoids hydrating the whole table on
+        // every sync (which grows with the database).
+        let times = samples.map { $0.timestamp }
+        guard let lo = times.min(), let hi = times.max() else { return 0 }
+        let descriptor = FetchDescriptor<TremorReading>(
+            predicate: #Predicate { $0.timestamp >= lo && $0.timestamp <= hi }
+        )
+        let existing = (try? context.fetch(descriptor)) ?? []
         let existingTimestamps = Set(existing.map { $0.timestamp })
         var inserted = 0
         for sample in samples where !existingTimestamps.contains(sample.timestamp) {
@@ -165,7 +174,14 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
     @discardableResult
     private func persistDyskinesiaSamples(_ samples: [DyskinesiaSample]) -> Int {
         guard let context = makeContext() else { return 0 }
-        let existing = (try? context.fetch(FetchDescriptor<DyskinesiaReading>())) ?? []
+        // Same targeted dedup as persistSamples: only fetch existing rows in the
+        // batch's startDate span instead of the whole DyskinesiaReading table.
+        let starts = samples.map { $0.startDate }
+        guard let lo = starts.min(), let hi = starts.max() else { return 0 }
+        let descriptor = FetchDescriptor<DyskinesiaReading>(
+            predicate: #Predicate { $0.startDate >= lo && $0.startDate <= hi }
+        )
+        let existing = (try? context.fetch(descriptor)) ?? []
         let existingStarts = Set(existing.map { $0.startDate })
         var inserted = 0
         for sample in samples where !existingStarts.contains(sample.startDate) {

@@ -3,6 +3,11 @@ import SwiftData
 
 @Model
 final class TremorReading {
+    // Index timestamp: every hot path (day-scoped Review query, sync dedup, latest-reading
+    // lookup) filters/sorts by it, so an index turns those from full-table scans into range
+    // lookups as the table grows. Non-unique → CloudKit-compatible (unlike #Unique).
+    #Index<TremorReading>([\.timestamp])
+
     // Defaults are required for CloudKit (NSPersistentCloudKitContainer):
     // every stored property must be optional or have a default value.
     var timestamp: Date = Date.distantPast
