@@ -17,7 +17,7 @@ import Foundation
 /// Resources are loaded once, lazily, and matched in memory (the matching is a
 /// token-subset scan over every food, not a database query — so JSON + an array
 /// is all we need; no SQLite at runtime).
-final class FoodAttributeClassifier {
+nonisolated final class FoodAttributeClassifier: Sendable {
 
     static let shared = FoodAttributeClassifier()
 

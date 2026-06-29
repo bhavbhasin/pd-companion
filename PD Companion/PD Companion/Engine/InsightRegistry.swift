@@ -23,7 +23,7 @@ import HealthKit
 // MARK: Variables — everything reduces to two canonical shapes
 
 /// A variable in the catalog, in one of the two shapes a primitive understands.
-enum Variable: Hashable {
+nonisolated enum Variable: Hashable {
     // — Continuous signals (a value over time) —
     case tremor
     case dyskinesia
@@ -48,15 +48,15 @@ enum Variable: Hashable {
 }
 
 /// Narrows a meal event to a PD-relevant subset (we never need exact grams).
-enum MealFilter: Hashable { case any, proteinRich, large }
+nonisolated enum MealFilter: Hashable { case any, proteinRich, large }
 
 /// A facet of a night's sleep, used as an overnight predictor.
-enum SleepFacet: Hashable { case duration, deep, rem, interruptions }
+nonisolated enum SleepFacet: Hashable { case duration, deep, rem, interruptions }
 
 // Bridges that let the (HealthKit-free) engine match a registry entry's variables
 // without importing HealthKit — the HealthKit knowledge stays here, in the config
 // layer, and the engine only ever sees plain values (UInt, String, Bool).
-extension Variable {
+nonisolated extension Variable {
     /// HealthKit raw value if this is a workout exposure, else nil.
     var workoutRawValue: UInt? {
         if case .workout(let t) = self { return t.rawValue }
@@ -86,7 +86,7 @@ extension Variable {
 
 /// A statistical method that operates on *shapes*, not specific variables.
 /// One primitive serves many registry entries — that is the whole point.
-enum Primitive: Hashable {
+nonisolated enum Primitive: Hashable {
     /// Effect of an event on a signal in the window after it (baseline-corrected).
     case windowedEffect(preMin: Double, postMin: Double)
     /// Onset latency + completeness of a dose, split by time-of-day bucket.
@@ -115,7 +115,7 @@ enum Primitive: Hashable {
 /// single-metric trend card that would share the same primitive. A nil renderer =
 /// the question is registered but its card path isn't built yet (it stays dormant,
 /// like its primitive). See docs/intelligence-architecture.md → "renderer dimension".
-enum Renderer: Hashable {
+nonisolated enum Renderer: Hashable {
     case doseResponse      // per-time-of-day onset overlay (afternoon-dose card)
     case wearingOff        // pooled survival curve (the "discuss with neurologist" card)
     case gaitComposite     // bespoke: 4 mobility markers → 1 reassurance card
@@ -125,14 +125,14 @@ enum Renderer: Hashable {
 // MARK: Provenance + safety + lifecycle
 
 /// Where a hypothesis came from — the provenance trail a health app must keep.
-enum HypothesisSource: Hashable {
+nonisolated enum HypothesisSource: Hashable {
     case curated                       // human-authored, literature/mechanism-motivated
     case llmProposed(model: String)    // proposed by the hypothesis layer, human-approved
 }
 
 /// Governs how a validated finding may be PRESENTED. The medication line is
 /// non-negotiable — Kampa never issues a dosing instruction.
-enum SafetyClass: Hashable {
+nonisolated enum SafetyClass: Hashable {
     /// Patient-controllable behavior — a finding may propose an experiment.
     case lifestyleExperiment
     /// Touches the medication regimen or disease progression — surface the
@@ -140,7 +140,7 @@ enum SafetyClass: Hashable {
     case clinicalReferral
 }
 
-enum RegistryStatus: Hashable {
+nonisolated enum RegistryStatus: Hashable {
     case active        // shipped; the engine runs it (may still be gated-hidden per user)
     case candidate     // proposed; awaiting human approval into the engine
     case disabled
@@ -157,7 +157,7 @@ enum RegistryStatus: Hashable {
 /// CloudKit migration. The UI applies a separate display policy on top (e.g. fold
 /// single-card categories into a shared section), so an entry's category can be
 /// honest without forcing an ugly one-item header.
-enum InsightCategory: Hashable {
+nonisolated enum InsightCategory: Hashable {
     case medication    // dose response, wearing-off, dyskinesia, circadian control
     case exercise      // the workout cluster (any activity type)
     case food          // caffeine, sugar, protein / meal-timing
@@ -167,7 +167,7 @@ enum InsightCategory: Hashable {
 }
 
 /// One question. Configuration, not code.
-struct RegistryEntry: Identifiable, Hashable {
+nonisolated struct RegistryEntry: Identifiable, Hashable {
     let id: String
     let category: InsightCategory   // semantic home — the Insights screen's grouping axis
     let exposure: Variable
@@ -185,7 +185,7 @@ struct RegistryEntry: Identifiable, Hashable {
 
 // MARK: - The pre-wired 80%
 
-enum InsightRegistry {
+nonisolated enum InsightRegistry {
 
     /// The shipped, curated question set. Every entry is mechanism- or
     /// literature-motivated (NOT every possible pair — that would be a

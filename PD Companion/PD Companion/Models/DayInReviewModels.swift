@@ -27,7 +27,7 @@ struct SleepBreakdown: Equatable {
     var hasData: Bool { totalAsleepHours > 0 || awakeMinutes > 0 }
 }
 
-enum SleepStage: String, Equatable, CaseIterable {
+nonisolated enum SleepStage: String, Equatable, CaseIterable {
     case awake, rem, core, deep
 
     var displayName: String {
@@ -49,7 +49,7 @@ enum SleepStage: String, Equatable, CaseIterable {
     }
 }
 
-struct SleepStageSegment: Identifiable, Equatable {
+nonisolated struct SleepStageSegment: Identifiable, Equatable {
     let id: UUID
     let stage: SleepStage
     let start: Date

@@ -405,7 +405,7 @@ nonisolated enum CorrelationEngine {
 // Each primitive can ship a default spec; a registry entry may override it.
 // See docs/intelligence-architecture.md + InsightRegistry.swift.
 
-extension CorrelationEngine {
+nonisolated extension CorrelationEngine {
 
     /// One tier's bar. The tier is met when ALL specified axes pass; unspecified
     /// (nil) axes are ignored. `minEffect` is compared SIGNED — callers pass a
@@ -483,7 +483,7 @@ extension CorrelationEngine {
 // which variable it's looking at. That's why one primitive serves every exercise
 // registry line. See InsightRegistry.swift + docs/intelligence-architecture.md.
 
-extension CorrelationEngine {
+nonisolated extension CorrelationEngine {
 
     /// Aggregated per-event baseline (pre-window mean) vs response (post-window
     /// mean). A negative `delta` means the signal fell after the event (e.g. tremor

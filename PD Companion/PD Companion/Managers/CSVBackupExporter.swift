@@ -61,7 +61,7 @@ enum CSVBackupExporter {
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
 
-    private static func escape(_ field: String) -> String {
+    private nonisolated static func escape(_ field: String) -> String {
         let needsQuoting = field.contains(",") || field.contains("\"")
             || field.contains("\n") || field.contains("\r")
         guard needsQuoting else { return field }

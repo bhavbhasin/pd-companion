@@ -13,7 +13,7 @@ import SwiftData
 /// is no manual-correction UI to preserve, so re-running yields the same result.
 /// Guarded by a version flag, so it runs once per bump. Writes only entries whose
 /// attribute *set* actually changed, to avoid needless CloudKit churn.
-enum FoodAttributeBackfill {
+nonisolated enum FoodAttributeBackfill {
     private static let versionKey = "foodAttributeBackfillVersion"
     // Bump whenever the classifier or alias map changes in a way that should re-tag
     // existing history. v2: diet-soda aliases (Diet Coke / Coke Zero / Diet Pepsi)

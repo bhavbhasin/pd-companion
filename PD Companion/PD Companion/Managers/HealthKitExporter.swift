@@ -235,7 +235,12 @@ enum HealthKitExporter {
         case .swimBikeRun: return "swimBikeRun"
         case .transition: return "transition"
         case .other: return "other"
-        @unknown default: return "unknown(\(type.rawValue))"
+        // `default` (not `@unknown default`): HKWorkoutActivityType is a large,
+        // non-frozen Apple enum and the only "missing" known case is the deprecated
+        // `.mixedMetabolicCardioTraining`, which we don't want to name (deprecation
+        // warning). This is a debug/CSV name mapper — an unmapped type stringifies to
+        // "unknown(N)" either way, so exhaustive future-proofing has no value here.
+        default: return "unknown(\(type.rawValue))"
         }
     }
 
@@ -288,6 +293,8 @@ enum HealthKitExporter {
         case .skipped:  return "skipped"
         case .snoozed:  return "snoozed"
         case .notLogged: return "notLogged"
+        case .notInteracted: return "notInteracted"
+        case .notificationNotSent: return "notificationNotSent"
         @unknown default: return "unknown(\(status.rawValue))"
         }
     }

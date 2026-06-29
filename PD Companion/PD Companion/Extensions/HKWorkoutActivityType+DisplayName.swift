@@ -1,6 +1,6 @@
 import HealthKit
 
-extension HKWorkoutActivityType {
+nonisolated extension HKWorkoutActivityType {
     var displayName: String {
         switch self {
         case .taiChi: return "Tai Chi"

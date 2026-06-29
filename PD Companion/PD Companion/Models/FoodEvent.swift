@@ -53,7 +53,7 @@ enum FoodType: String, Codable, CaseIterable {
     }
 }
 
-enum FoodAttribute: String, Codable, CaseIterable {
+nonisolated enum FoodAttribute: String, Codable, CaseIterable {
     case caffeine, protein, sugar, fiber, fat
 
     var displayName: String {
