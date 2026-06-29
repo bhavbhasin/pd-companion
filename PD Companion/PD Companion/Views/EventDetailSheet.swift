@@ -179,6 +179,9 @@ struct EventDetailSheet: View {
             let descriptor = FetchDescriptor<FoodEvent>(predicate: #Predicate { $0.id == foodId })
             if let record = try? modelContext.fetch(descriptor).first {
                 modelContext.delete(record)
+                // Commit explicitly for parity with edit; don't leave the removal to
+                // autosave timing.
+                try? modelContext.save()
             }
             dismiss()
 
@@ -289,6 +292,10 @@ struct EditFoodScreen: View {
         record.userDescription = trimmed
         record.timestamp = timestamp
         record.attributes = FoodAttributeClassifier.shared.classify(trimmed)
+        // Commit explicitly: an in-place edit isn't a collection change, so relying on
+        // autosave leaves the @Query-backed timeline showing the pre-edit snapshot. The
+        // save emits a didSave the day's @Query observes, so the glyph reflects the edit.
+        try? modelContext.save()
         onSaved()
     }
 }
