@@ -66,24 +66,28 @@ struct SleepStageSegment: Identifiable, Equatable {
 enum DayEvent: Identifiable {
     case medication(id: UUID, time: Date, name: String?)
     case workout(id: UUID, start: Date, duration: TimeInterval, type: HKWorkoutActivityType)
-    case mindfulness(id: UUID, start: Date, duration: TimeInterval)
+    // isEditable: true only when Kampa itself saved this mindful session. HealthKit
+    // only lets an app delete samples it authored, so sessions from Apple's
+    // Mindfulness app (or any other source) are read-only here and must be deleted
+    // in the Health app.
+    case mindfulness(id: UUID, start: Date, duration: TimeInterval, isEditable: Bool)
     case food(id: UUID, time: Date, userDescription: String, attributes: [FoodAttribute])
 
     var id: UUID {
         switch self {
-        case .medication(let id, _, _):    return id
-        case .workout(let id, _, _, _):    return id
-        case .mindfulness(let id, _, _):   return id
-        case .food(let id, _, _, _):       return id
+        case .medication(let id, _, _):     return id
+        case .workout(let id, _, _, _):     return id
+        case .mindfulness(let id, _, _, _): return id
+        case .food(let id, _, _, _):        return id
         }
     }
 
     var time: Date {
         switch self {
-        case .medication(_, let time, _):   return time
-        case .workout(_, let start, _, _):  return start
-        case .mindfulness(_, let start, _): return start
-        case .food(_, let time, _, _):      return time
+        case .medication(_, let time, _):      return time
+        case .workout(_, let start, _, _):     return start
+        case .mindfulness(_, let start, _, _): return start
+        case .food(_, let time, _, _):         return time
         }
     }
 
@@ -126,7 +130,7 @@ enum DayEvent: Identifiable {
         switch self {
         case .medication(_, _, let name):      return name ?? "Dose"
         case .workout(_, _, _, let type):      return type.displayName
-        case .mindfulness:                     return "Meditation"
+        case .mindfulness:                     return "Mindfulness"
         case .food(_, _, let desc, _):
             return desc.isEmpty ? "Food" : String(desc.prefix(40))
         }

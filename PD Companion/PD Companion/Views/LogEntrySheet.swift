@@ -11,7 +11,7 @@ struct LogEntrySheet: View {
     let defaultDate: Date
     let onLogged: (Date) -> Void
 
-    enum Destination: Hashable { case food }
+    enum Destination: Hashable { case food, mindfulness }
     @State private var path: [Destination] = []
     @State private var showMedInfo = false
 
@@ -27,6 +27,10 @@ struct LogEntrySheet: View {
                     title: "Medication", subtitle: "Logged in Apple Health",
                     trailing: "arrow.up.forward.app"
                 ) { showMedInfo = true }
+                menuRow(
+                    icon: "figure.mind.and.body", iconBg: Color.cyan.opacity(0.15), iconColor: .cyan,
+                    title: "Mindfulness", subtitle: "A meditation or breathing session"
+                ) { path.append(.mindfulness) }
             }
             .listStyle(.insetGrouped)
             .alert("Logging your medications", isPresented: $showMedInfo) {
@@ -46,6 +50,8 @@ struct LogEntrySheet: View {
                 switch dest {
                 case .food:
                     LogFoodScreen(defaultDate: defaultDate) { date in onLogged(date); dismiss() }
+                case .mindfulness:
+                    LogMindfulnessScreen(defaultDate: defaultDate) { date in onLogged(date); dismiss() }
                 }
             }
         }
@@ -152,6 +158,106 @@ struct LogFoodScreen: View {
                 }
                 .fontWeight(.semibold)
                 .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+    }
+}
+
+// MARK: - Log mindfulness screen
+//
+// Mirrors Apple Health's "Mindful Minutes" Add-Data screen — a Starts and an Ends
+// row (each a date + time) — so the from/to experience matches what users already
+// know. Unlike Medication (Apple's Medications API isn't app-writable, so that row
+// deep-links to Health), mindful sessions ARE app-writable, so Kampa writes the
+// session itself; it then appears in both Kampa and Apple Health's Mindful Minutes.
+
+struct LogMindfulnessScreen: View {
+    @EnvironmentObject var healthKit: HealthKitManager
+    let onSaved: (Date) -> Void
+
+    @State private var starts: Date
+    @State private var ends: Date
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    init(defaultDate: Date, onSaved: @escaping (Date) -> Void) {
+        self.onSaved = onSaved
+        // Anchor to the viewed day at the current time of day (never the future),
+        // matching LogFoodScreen; default to a 1-hour session the user can adjust.
+        let now = Date.now
+        let cal = Calendar.current
+        let t = cal.dateComponents([.hour, .minute], from: now)
+        let onViewedDay = cal.date(bySettingHour: t.hour ?? 12, minute: t.minute ?? 0,
+                                   second: 0, of: defaultDate) ?? defaultDate
+        let end = min(onViewedDay, now)
+        _ends = State(initialValue: end)
+        _starts = State(initialValue: end.addingTimeInterval(-3600))
+    }
+
+    private var durationValid: Bool { ends > starts }
+
+    var body: some View {
+        Form {
+            Section {
+                VStack(spacing: 10) {
+                    Image(systemName: "brain.head.profile")
+                        .font(.system(size: 30))
+                        .foregroundStyle(.cyan)
+                        .frame(width: 64, height: 64)
+                        .background(Color.cyan.opacity(0.12), in: Circle())
+                    Text("Mindful Minutes")
+                        .font(.headline)
+                }
+                .frame(maxWidth: .infinity)
+                .listRowBackground(Color.clear)
+            }
+
+            Section {
+                DatePicker("Starts", selection: $starts, in: ...Date.now,
+                           displayedComponents: [.date, .hourAndMinute])
+                DatePicker("Ends", selection: $ends, in: ...Date.now,
+                           displayedComponents: [.date, .hourAndMinute])
+            } footer: {
+                if !durationValid {
+                    Text("End time must be after the start time.")
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            if let errorMessage {
+                Section {
+                    Text(errorMessage).foregroundStyle(.red).font(.caption)
+                }
+            }
+        }
+        .navigationTitle("Log mindfulness")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { save() }
+                    .fontWeight(.semibold)
+                    .disabled(!durationValid || isSaving)
+            }
+        }
+    }
+
+    private func save() {
+        isSaving = true
+        errorMessage = nil
+        Task {
+            do {
+                try await healthKit.writeMindfulSession(
+                    start: starts,
+                    duration: ends.timeIntervalSince(starts)
+                )
+                // Mindful sessions are read from HealthKit (not SwiftData), so refresh
+                // the logged day explicitly — logging on the already-viewed day won't
+                // otherwise re-trigger the day's fetch.
+                await healthKit.fetchDayInReview(for: Calendar.current.startOfDay(for: starts))
+                onSaved(starts)
+            } catch {
+                errorMessage = "Could not save: \(error.localizedDescription)"
+                isSaving = false
             }
         }
     }

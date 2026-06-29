@@ -10,6 +10,7 @@ struct EventDetailSheet: View {
     @State private var showDeleteAlert = false
     @State private var isDeleting = false
     @State private var showEditScreen = false
+    @State private var deleteError: String?
 
     var body: some View {
         NavigationStack {
@@ -82,6 +83,8 @@ struct EventDetailSheet: View {
                     healthAppNote
                 } else if case .medication = event {
                     healthAppNote
+                } else if case .mindfulness(_, _, _, let isEditable) = event, !isEditable {
+                    healthAppNote
                 }
 
                 Spacer()
@@ -108,7 +111,7 @@ struct EventDetailSheet: View {
                             .buttonStyle(.bordered)
                             .controlSize(.large)
                         }
-                    } else if case .mindfulness = event {
+                    } else if case .mindfulness(_, _, _, let isEditable) = event, isEditable {
                         Button(role: .destructive) {
                             showDeleteAlert = true
                         } label: {
@@ -145,6 +148,14 @@ struct EventDetailSheet: View {
         } message: {
             Text("This cannot be undone.")
         }
+        .alert("Delete failed", isPresented: Binding(
+            get: { deleteError != nil },
+            set: { if !$0 { deleteError = nil } }
+        )) {
+            Button("OK", role: .cancel) { deleteError = nil }
+        } message: {
+            Text(deleteError ?? "")
+        }
         .disabled(isDeleting)
     }
 
@@ -171,10 +182,24 @@ struct EventDetailSheet: View {
             }
             dismiss()
 
-        case .mindfulness(_, let start, let duration):
+        case .mindfulness(let id, _, _, _):
+            // id IS the HealthKit sample UUID (set in fetchMindfulnessSessionsInRange),
+            // so we delete the exact sample rather than reconstructing its timestamps.
             Task {
-                try? await healthKit.deleteMindfulSession(start: start, duration: duration)
-                await MainActor.run { dismiss() }
+                do {
+                    try await healthKit.deleteMindfulSession(uuid: id)
+                    // Optimistically drop it from the published events so the timeline
+                    // updates immediately, independent of HealthKit read-back timing.
+                    await MainActor.run {
+                        healthKit.dayEvents.removeAll { $0.id == id }
+                        dismiss()
+                    }
+                } catch {
+                    await MainActor.run {
+                        isDeleting = false
+                        deleteError = "Couldn't delete this session: \(error.localizedDescription)"
+                    }
+                }
             }
 
         default:
@@ -186,7 +211,7 @@ struct EventDetailSheet: View {
         switch event {
         case .medication:  return "Medication"
         case .workout:     return "Workout"
-        case .mindfulness: return "Meditation"
+        case .mindfulness: return "Mindfulness"
         case .food:        return "Food"
         }
     }
@@ -199,7 +224,7 @@ struct EventDetailSheet: View {
             return "Taken at \(time.formatted(.dateTime.hour().minute()))"
         case .workout(_, let start, let duration, _):
             return "\(Int(duration / 60)) min · \(start.formatted(.dateTime.hour().minute()))"
-        case .mindfulness(_, let start, let duration):
+        case .mindfulness(_, let start, let duration, _):
             return "\(Int(duration / 60)) min · \(start.formatted(.dateTime.hour().minute()))"
         case .food(_, let time, _, _):
             return time.formatted(.dateTime.hour().minute())

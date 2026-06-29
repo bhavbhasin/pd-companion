@@ -284,7 +284,8 @@ class HealthKitManager: ObservableObject {
         }
         for session in resolvedMindful {
             events.append(.mindfulness(
-                id: UUID(), start: session.start, duration: session.duration
+                id: session.uuid, start: session.start, duration: session.duration,
+                isEditable: session.isEditable
             ))
         }
         events.sort { $0.time < $1.time }
@@ -686,10 +687,11 @@ class HealthKitManager: ObservableObject {
 
     private func fetchMindfulnessSessionsInRange(
         from start: Date, to end: Date
-    ) async -> [(start: Date, duration: TimeInterval)] {
+    ) async -> [(uuid: UUID, start: Date, duration: TimeInterval, isEditable: Bool)] {
         let mindfulType = HKObjectType.categoryType(forIdentifier: .mindfulSession)!
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        let localBundleID = Bundle.main.bundleIdentifier
         return await withCheckedContinuation { continuation in
             let query = HKSampleQuery(
                 sampleType: mindfulType, predicate: predicate,
@@ -700,7 +702,12 @@ class HealthKitManager: ObservableObject {
                     return
                 }
                 let mapped = samples.map { sample in
-                    (sample.startDate, sample.endDate.timeIntervalSince(sample.startDate))
+                    // Carry the sample's UUID so deletes can target it exactly; editable
+                    // only if Kampa saved it (HealthKit forbids deleting other sources').
+                    (sample.uuid,
+                     sample.startDate,
+                     sample.endDate.timeIntervalSince(sample.startDate),
+                     sample.sourceRevision.source.bundleIdentifier == localBundleID)
                 }
                 continuation.resume(returning: mapped)
             }
@@ -708,10 +715,16 @@ class HealthKitManager: ObservableObject {
         }
     }
 
-    func deleteMindfulSession(start: Date, duration: TimeInterval) async throws {
+    func writeMindfulSession(start: Date, duration: TimeInterval) async throws {
         let type = HKObjectType.categoryType(forIdentifier: .mindfulSession)!
-        let end = start.addingTimeInterval(duration)
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [.strictStartDate, .strictEndDate])
+        let sample = HKCategorySample(type: type, value: 0,
+                                      start: start, end: start.addingTimeInterval(duration))
+        try await store.save(sample)
+    }
+
+    func deleteMindfulSession(uuid: UUID) async throws {
+        let type = HKObjectType.categoryType(forIdentifier: .mindfulSession)!
+        let predicate = HKQuery.predicateForObjects(with: [uuid])
         let descriptor = HKSampleQueryDescriptor(
             predicates: [.categorySample(type: type, predicate: predicate)],
             sortDescriptors: []

@@ -582,7 +582,7 @@ private struct TremorTimelinePanel: View {
         case .food:
             return LegendEntry(icon: "fork.knife", label: "Food", palette: false, color: .brown)
         case .mindfulness:
-            return LegendEntry(icon: "figure.mind.and.body", label: "Meditation", palette: false, color: .cyan)
+            return LegendEntry(icon: "figure.mind.and.body", label: "Mindfulness", palette: false, color: .cyan)
         case .workout(_, _, _, let type):
             return LegendEntry(icon: event.iconName, label: type.displayName, palette: false, color: .green)
         }
