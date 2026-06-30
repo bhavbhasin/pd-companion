@@ -11,7 +11,9 @@ struct KampaAppShortcuts: AppShortcutsProvider {
             intent: LogFoodIntent(),
             phrases: [
                 "Log food in \(.applicationName)",
+                "Log food with \(.applicationName)",
                 "Log a meal in \(.applicationName)",
+                "Log a meal with \(.applicationName)",
                 "Log a snack in \(.applicationName)",
                 "Log a drink in \(.applicationName)",
                 "Log what I ate in \(.applicationName)",
@@ -19,32 +21,25 @@ struct KampaAppShortcuts: AppShortcutsProvider {
             shortTitle: "Log Food",
             systemImageName: "fork.knife"
         )
+        // Only Food and Mindfulness are hands-free auto-shortcuts: their trigger words
+        // ("food/meal/snack/drink" vs "mindfulness") share nothing, so Siri separates
+        // them cleanly. Medication is deliberately NOT here — "medication" is a homophone
+        // of "meditation", and Siri's auto-matcher cannot reliably tell two close "Log
+        // [noun]" phrases apart (it falls back to declaration order, hijacking whichever
+        // is declared second). Medication logging lives on the in-app "+" voice path
+        // instead, where Kampa owns the context and there is no Siri arbitration; a user
+        // who wants it hands-free can record a custom phrase against `LogMedicationIntent`.
         AppShortcut(
             intent: LogMindfulnessIntent(),
             phrases: [
-                "Log meditation in \(.applicationName)",
-                "Log a meditation in \(.applicationName)",
                 "Log mindfulness in \(.applicationName)",
-                "Log a meditation session in \(.applicationName)",
+                "Log mindfulness with \(.applicationName)",
+                "Log my mindfulness in \(.applicationName)",
+                "Log a mindfulness session in \(.applicationName)",
+                "Start a mindfulness session in \(.applicationName)",
             ],
-            shortTitle: "Log Meditation",
+            shortTitle: "Log Mindfulness",
             systemImageName: "brain.head.profile"
-        )
-        // Distinct, phonetically-separated phrases ("meds"/"dose"/"Sinemet") so Siri
-        // routes medication away from the close-sounding "meditation" intent.
-        AppShortcut(
-            intent: LogMedicationIntent(),
-            phrases: [
-                "Log medication in \(.applicationName)",
-                "Log my medication in \(.applicationName)",
-                "Log my meds in \(.applicationName)",
-                "Log a dose in \(.applicationName)",
-                "Log my dose in \(.applicationName)",
-                "Log my Sinemet in \(.applicationName)",
-                "Open my medications in \(.applicationName)",
-            ],
-            shortTitle: "Log Medication",
-            systemImageName: "pills.fill"
         )
     }
 }

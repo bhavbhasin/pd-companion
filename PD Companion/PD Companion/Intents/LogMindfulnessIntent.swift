@@ -11,9 +11,13 @@ import HealthKit
 /// number that would silently corrupt the signal. The spoken anchor time is treated as
 /// the session's *end* (you log when you finish), so it can never land in the future.
 struct LogMindfulnessIntent: AppIntent {
-    static var title: LocalizedStringResource = "Log Meditation"
+    // Branded "Mindfulness", never "Meditation": the title feeds Siri's matcher, and
+    // "Log Meditation" is a homophone of the "Log Medication" shortcut's title — sharing
+    // the word pooled the two shortcuts as ambiguous and routed sessions to medication.
+    // "Mindfulness" collides with nothing, so the two intents can no longer be confused.
+    static var title: LocalizedStringResource = "Log Mindfulness"
     static var description = IntentDescription(
-        "Log a meditation or mindfulness session in Kampa."
+        "Log a mindfulness session in Kampa."
     )
 
     static var openAppWhenRun = false
