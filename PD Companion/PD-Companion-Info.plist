@@ -20,5 +20,19 @@
 		<string>Geist-Medium.ttf</string>
 		<string>Geist-SemiBold.ttf</string>
 	</array>
+	<!-- Spoken names Siri accepts for App Shortcuts, alongside the "Kāmpa" display
+	     name. The macron and long-ā can nudge recognition toward "KAH-mpa"; these
+	     plain spellings cover the intended "kuhm-pah". -->
+	<key>INAlternativeAppNames</key>
+	<array>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Kampa</string>
+		</dict>
+		<dict>
+			<key>INAlternativeAppName</key>
+			<string>Kumpa</string>
+		</dict>
+	</array>
 </dict>
 </plist>
