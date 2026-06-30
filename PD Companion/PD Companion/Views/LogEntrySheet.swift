@@ -14,6 +14,7 @@ struct LogEntrySheet: View {
     enum Destination: Hashable { case food, mindfulness }
     @State private var path: [Destination] = []
     @State private var showMedInfo = false
+    @State private var showVoice = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -38,6 +39,12 @@ struct LogEntrySheet: View {
                 Button("Not now", role: .cancel) { }
             } message: {
                 Text("🔍 → Medications")
+            }
+            .safeAreaInset(edge: .bottom) { voiceButton }
+            .sheet(isPresented: $showVoice) {
+                VoiceLogView(defaultDate: defaultDate) { date in
+                    onLogged(date); dismiss()
+                }
             }
             .navigationTitle("Log entry")
             .navigationBarTitleDisplayMode(.inline)
@@ -83,6 +90,33 @@ struct LogEntrySheet: View {
             .padding(.vertical, 4)
         }
         .buttonStyle(.plain)
+    }
+
+    // The voice recorder lives right here at the bottom of the "+" screen — one tap goes
+    // straight into listening (VoiceLogView auto-starts), no intermediate row. This is
+    // the most capable path: Kampa transcribes and routes itself, so it logs all three
+    // flows — food, medication, and mindfulness — without Siri's homophone collision.
+    private var voiceButton: some View {
+        Button { showVoice = true } label: {
+            VStack(spacing: 8) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 64, height: 64)
+                    .background(Color.accentColor, in: Circle())
+                    .shadow(color: Color.accentColor.opacity(0.4), radius: 6, y: 2)
+                Text("Tap to log by voice")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.primary)
+                Text("Food, medication, or mindfulness")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+        .background(.thinMaterial)
     }
 
     // Deep-links straight to the Health app's Medications screen. The scheme is

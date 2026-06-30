@@ -646,7 +646,9 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Kampa reads your health data (sleep, heart rate, HRV, exercise, mindfulness) to find patterns that correlate with your Parkinson's symptoms.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Kampa stores symptom tracking data in HealthKit to keep your health information in one place.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Kampa uses the microphone so you can log meals, doses, and mindfulness by speaking instead of typing.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Kampa uses motion data to track tremor and movement patterns related to Parkinson's disease.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Kampa transcribes your voice on-device to turn what you say into a log entry. Your speech is not sent to Apple's servers.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -687,7 +689,9 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Kampa reads your health data (sleep, heart rate, HRV, exercise, mindfulness) to find patterns that correlate with your Parkinson's symptoms.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Kampa stores symptom tracking data in HealthKit to keep your health information in one place.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Kampa uses the microphone so you can log meals, doses, and mindfulness by speaking instead of typing.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Kampa uses motion data to track tremor and movement patterns related to Parkinson's disease.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Kampa transcribes your voice on-device to turn what you say into a log entry. Your speech is not sent to Apple's servers.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

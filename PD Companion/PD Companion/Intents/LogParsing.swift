@@ -10,10 +10,24 @@ import Foundation
 nonisolated enum LogParsing {
 
     /// Pulls the first *real* time mentioned in `text` (e.g. "at 9am today",
-    /// "yesterday at 2pm") and returns it with that phrase removed. `date == nil`
-    /// when no time is mentioned — the caller then defaults to now. Future times are
-    /// left for the caller to clamp.
+    /// "yesterday at 2pm", "last night at 10:30") and returns it with that phrase
+    /// removed. `date == nil` when no time is mentioned — the caller then defaults to
+    /// now. Future times are left for the caller to clamp.
     static func extractDate(from text: String) -> (date: Date?, cleanedText: String) {
+        // Relative time-of-day phrases NSDataDetector can't resolve ("last night",
+        // "this morning"…). Each carries a day offset and a default hour, used only when
+        // no explicit clock time is *also* spoken. Tried first so "last night at 10:30"
+        // lands on yesterday, not today.
+        if let relative = extractRelativePhrase(from: text) {
+            return (relative.date, relative.cleanedText)
+        }
+        return extractClockTime(from: text)
+    }
+
+    /// The NSDataDetector pass: handles absolute dates, "yesterday at 2pm", bare "9am".
+    /// Bare-number false positives ("5 almonds") are rejected — a real time carries a
+    /// letter (am/pm/today) or a colon — so quantities stay in the text.
+    static func extractClockTime(from text: String) -> (date: Date?, cleanedText: String) {
         guard let detector = try? NSDataDetector(
             types: NSTextCheckingResult.CheckingType.date.rawValue
         ) else {
@@ -22,9 +36,6 @@ nonisolated enum LogParsing {
         let full = NSRange(text.startIndex..<text.endIndex, in: text)
         for match in detector.matches(in: text, options: [], range: full) {
             guard let date = match.date, let r = Range(match.range, in: text) else { continue }
-            // Guard against bare-number false positives ("5 almonds"): a real time
-            // always carries a letter (am/pm/today/morning) or a colon. A lone digit
-            // that NSDataDetector guesses at is rejected so quantities stay in the text.
             let matched = text[r].lowercased()
             let looksLikeTime = matched.rangeOfCharacter(from: .letters) != nil || matched.contains(":")
             guard looksLikeTime else { continue }
@@ -35,6 +46,52 @@ nonisolated enum LogParsing {
         }
         return (nil, text)
     }
+
+    /// Resolves the time-of-day phrases NSDataDetector misses. Returns the composed date
+    /// (day offset + explicit-or-default hour, clamped to ≤ now) and the text with both
+    /// the phrase and any explicit time removed. `nil` when no such phrase is present.
+    private static func extractRelativePhrase(from text: String) -> (date: Date, cleanedText: String)? {
+        let lower = text.lowercased()
+        guard let match = relativePhrases
+            .sorted(by: { $0.phrase.count > $1.phrase.count })          // longest wins
+            .first(where: { lower.contains($0.phrase) })
+        else { return nil }
+
+        var remaining = text
+        if let r = remaining.range(of: match.phrase, options: .caseInsensitive) {
+            remaining.removeSubrange(r)
+        }
+
+        // An explicit clock time, if spoken, overrides the phrase's default hour.
+        var hour = match.defaultHour
+        var minute = 0
+        let clock = extractClockTime(from: remaining)
+        if let spoken = clock.date {
+            let c = Calendar.current.dateComponents([.hour, .minute], from: spoken)
+            hour = c.hour ?? hour
+            minute = c.minute ?? 0
+            remaining = clock.cleanedText
+        }
+
+        let cal = Calendar.current
+        let baseDay = cal.date(byAdding: .day, value: match.dayOffset, to: cal.startOfDay(for: .now)) ?? .now
+        var composed = cal.date(bySettingHour: hour, minute: minute, second: 0, of: baseDay) ?? baseDay
+        if composed > .now { composed = .now }                          // never the future
+        return (composed, stripDanglingConnectors(remaining))
+    }
+
+    /// Time-of-day phrases and their (day offset, default hour when no clock time spoken).
+    private static let relativePhrases: [(phrase: String, dayOffset: Int, defaultHour: Int)] = [
+        ("yesterday morning", -1, 8),
+        ("yesterday afternoon", -1, 14),
+        ("yesterday evening", -1, 19),
+        ("last night", -1, 20),
+        ("last evening", -1, 20),
+        ("this morning", 0, 8),
+        ("this afternoon", 0, 14),
+        ("this evening", 0, 19),
+        ("tonight", 0, 20),
+    ]
 
     /// Pulls a duration in minutes from `text` ("45 minutes", "an hour",
     /// "half an hour", "1.5 hours"). `minutes == nil` when none is found — the
@@ -75,6 +132,34 @@ nonisolated enum LogParsing {
         let day = DateFormatter()
         day.dateFormat = "MMM d"
         return "on \(day.string(from: date)) at \(t)"
+    }
+
+    /// Peels the spoken command preamble off the front of a description so the stored
+    /// text is the content, not "log food …". Only a *leading* run of command words is
+    /// removed (verb → article/possessive → category noun → connector); the moment a real
+    /// content word appears, stripping stops — so a food that happens to contain one of
+    /// these words later ("almond butter on toast") is left intact. Never returns empty:
+    /// if the phrase was *all* command words, the original text is kept.
+    static func stripLeadingCommand(from text: String) -> String {
+        let fillers: Set<String> = [
+            "log", "logged", "record", "recorded", "track", "tracked", "add", "note",
+            "took", "take", "taking", "taken", "had", "have", "having",
+            "ate", "eat", "eating", "drank", "drink", "drinking",
+            "did", "do", "start", "started", "begin", "began", "i",
+            "a", "an", "my", "some", "the", "of", "for",
+            "food", "meal", "snack", "bite",
+            "medication", "medications", "med", "meds", "dose", "dosage",
+            "pill", "pills", "tablet", "capsule", "supplement",
+            "mindfulness", "meditation", "session",
+        ]
+        var tokens = text.split(separator: " ").map(String.init)
+        while let first = tokens.first {
+            let bare = first.lowercased().trimmingCharacters(in: .punctuationCharacters)
+            guard fillers.contains(bare) else { break }
+            tokens.removeFirst()
+        }
+        let result = tokens.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return result.isEmpty ? text : result
     }
 
     // MARK: - Helpers
