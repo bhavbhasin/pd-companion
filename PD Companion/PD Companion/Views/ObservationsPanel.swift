@@ -50,6 +50,7 @@ struct ObservationEngine {
 
     static func generate(
         readings: [TremorReading],
+        dyskinesia: [DyskinesiaReading],
         events: [DayEvent],
         foodEvents: [FoodEvent],
         sleep: SleepBreakdown?,
@@ -68,7 +69,7 @@ struct ObservationEngine {
 
         var result: [DayObservation] = []
         result += medicationAndExerciseObservations(readings: readings, events: events)
-        result += dyskinesiaDoseObservations(readings: readings, events: events)
+        result += dyskinesiaDoseObservations(dyskinesia: dyskinesia, events: events)
         result += tremorTrajectoryObservation(readings: readings, anchor: dayEnd)
         result += foodEvents.filter { hasCaffeine($0) }.compactMap {
             foodRiseObservation(event: $0, readings: readings, doseTimes: doseTimes,
@@ -229,21 +230,30 @@ struct ObservationEngine {
     // Inverted from tremor: dyskinesia (levodopa-induced involuntary movement)
     // tends to *rise* near peak dose, 30–120 min after taking it. Gated on an
     // absolute floor so near-zero readings don't fire noise.
+    //
+    // Reads the raw DyskinesiaReading stream through the shared DyskinesiaDisplay mapping
+    // (floor + rescale) — same source the chart uses — NOT the crushed legacy
+    // TremorReading.dyskinesiaScore (= percentLikely/25), which reads ~0 for everyone.
 
     private static func dyskinesiaDoseObservations(
-        readings: [TremorReading], events: [DayEvent]
+        dyskinesia: [DyskinesiaReading], events: [DayEvent]
     ) -> [DayObservation] {
         let doses: [(time: Date, name: String)] = events.compactMap {
             if case .medication(_, let time, let name) = $0 { return (time, name ?? "dose") }
             return nil
         }
+        // Mean display-intensity over a window of the raw stream (parallels windowAvg, but
+        // over DyskinesiaReading keyed on startDate, with the floor/rescale mapping applied).
+        func windowDyskinesia(from start: Date, to end: Date, minCount: Int = 2) -> Double? {
+            let window = dyskinesia.filter { $0.startDate >= start && $0.startDate < end }
+            guard window.count >= minCount else { return nil }
+            return window.map { DyskinesiaDisplay.intensity($0.percentLikely) }.reduce(0, +) / Double(window.count)
+        }
         return doses.compactMap { dose in
-            let pre = windowAvg(readings,
-                                from: dose.time.addingTimeInterval(-1800),
-                                to: dose.time, metric: \.dyskinesiaScore)
-            let post = windowAvg(readings,
-                                 from: dose.time.addingTimeInterval(1800),
-                                 to: dose.time.addingTimeInterval(7200), metric: \.dyskinesiaScore)
+            let pre = windowDyskinesia(from: dose.time.addingTimeInterval(-1800),
+                                       to: dose.time)
+            let post = windowDyskinesia(from: dose.time.addingTimeInterval(1800),
+                                        to: dose.time.addingTimeInterval(7200))
             guard let pre, let post, post >= 0.5, post - pre >= 0.5 else { return nil }
             let timeStr = dose.time.formatted(.dateTime.hour().minute())
             return DayObservation(
@@ -454,6 +464,7 @@ struct ObservationEngine {
 
 struct ObservationsPanel: View {
     let readings: [TremorReading]
+    let dyskinesia: [DyskinesiaReading]
     let events: [DayEvent]
     let foodEvents: [FoodEvent]
     let sleep: SleepBreakdown?
@@ -462,7 +473,7 @@ struct ObservationsPanel: View {
 
     private var observations: [DayObservation] {
         ObservationEngine.generate(
-            readings: readings, events: events,
+            readings: readings, dyskinesia: dyskinesia, events: events,
             foodEvents: foodEvents, sleep: sleep,
             hrvSamples: hrvSamples, daylightMinutes: daylightMinutes
         )

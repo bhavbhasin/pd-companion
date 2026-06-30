@@ -210,6 +210,7 @@ private struct DayReviewContent: View {
     private let onDataChanged: () -> Void
 
     @Query private var dayReadings: [TremorReading]
+    @Query private var dayDyskinesia: [DyskinesiaReading]
     @Query private var dayFoodEvents: [FoodEvent]
 
     init(selectedDate: Date,
@@ -225,6 +226,10 @@ private struct DayReviewContent: View {
         _dayReadings = Query(
             filter: #Predicate<TremorReading> { $0.timestamp >= start && $0.timestamp < end },
             sort: \TremorReading.timestamp, order: .forward
+        )
+        _dayDyskinesia = Query(
+            filter: #Predicate<DyskinesiaReading> { $0.startDate >= start && $0.startDate < end },
+            sort: \DyskinesiaReading.startDate, order: .forward
         )
         _dayFoodEvents = Query(
             filter: #Predicate<FoodEvent> { $0.timestamp >= start && $0.timestamp < end },
@@ -251,10 +256,12 @@ private struct DayReviewContent: View {
                 GlanceCard(
                     sleep: healthKit.daySleep,
                     tremorReadings: dayReadings,
+                    dyskinesiaReadings: dayDyskinesia,
                     hrv: healthKit.dayHRV
                 )
                 TremorTimelinePanel(
                     readings: dayReadings,
+                    dyskinesia: dayDyskinesia,
                     hasEverHadData: hasEverHadData,
                     events: allDayEvents,
                     dayStart: dayStart,
@@ -267,6 +274,7 @@ private struct DayReviewContent: View {
                 )
                 ObservationsPanel(
                     readings: dayReadings,
+                    dyskinesia: dayDyskinesia,
                     events: allDayEvents,
                     foodEvents: dayFoodEvents,
                     sleep: healthKit.daySleep,
@@ -282,25 +290,68 @@ private struct DayReviewContent: View {
     }
 }
 
+// MARK: - Dyskinesia display mapping
+
+/// Display-time mapping from Apple's raw per-minute dyskinesia *likelihood*
+/// (`DyskinesiaReading.percentLikely`, 0…1) onto the shared 0–4 chart axis.
+/// Lives here (not on the model) deliberately — `DyskinesiaReading` stores the raw
+/// signal; thresholding is a display concern (see the model's doc comment).
+///
+/// ⚠️ The legacy `TremorReading.dyskinesiaScore` (= `percentLikely / 25`) is NOT used
+/// here — that bug crushes the value ~100× so it reads ~0 for everyone. The chart and
+/// glance card both read this stream instead.
+enum DyskinesiaDisplay {
+    /// Minutes whose `percentLikely` is below this are treated as artifact (→ 0).
+    /// CMDyskineticSymptomResult has no abstain state, so ordinary voluntary movement
+    /// leaks a false "likely" baseline (Apple Movement-Disorder addendum §5.4). A floor
+    /// suppresses that noise — without it we'd re-create the StrivePD false-positive that
+    /// testers without dyskinesia complained about.
+    ///
+    /// ⚠️ PROVISIONAL. Bhav's dyskinesia is ~0, so this can't be tuned on his data — it
+    /// needs a wrist that actually has dyskinesia (his dad / a dyskinetic tester). This is
+    /// the single knob. See BACKLOG "Fix dyskinesia scale + noise floor".
+    static let noiseFloor = 0.5
+
+    /// Floor, then rescale the surviving range so `noiseFloor → 0` and `1.0 → 4`.
+    /// NOTE: this is a *likelihood* drawn on a severity axis, not a calibrated amplitude
+    /// like `tremorScore` — the two waveforms answer "how likely" vs "how strong".
+    static func intensity(_ percentLikely: Double) -> Double {
+        guard percentLikely > noiseFloor else { return 0 }
+        return (percentLikely - noiseFloor) / (1 - noiseFloor) * 4
+    }
+
+    /// Mean display-intensity over a day's readings, or nil if there are none.
+    static func dayAverage(_ readings: [DyskinesiaReading]) -> Double? {
+        guard !readings.isEmpty else { return nil }
+        let sum = readings.reduce(0.0) { $0 + intensity($1.percentLikely) }
+        return sum / Double(readings.count)
+    }
+}
+
 // MARK: - Glance card
 
 private struct GlanceCard: View {
     let sleep: SleepBreakdown?
     let tremorReadings: [TremorReading]
+    let dyskinesiaReadings: [DyskinesiaReading]
     let hrv: Double?
 
+    // Constant identity colors (blue = tremor, pink = dyskinesia) match the chart's two
+    // waveforms exactly — this card doubles as the chart's implicit legend. Height/number
+    // encode severity; color only says *which signal*. (The old value-varying severity
+    // gradient was a redundant 3rd encoding that over-signalled a noisy daily average.)
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 16) {
                 stat(icon: "bed.double.fill", color: .indigo,
                      value: sleepValue, sub: "Total sleep")
-                stat(icon: "waveform.path.ecg", color: tremorColor,
+                stat(icon: "waveform.path.ecg", color: .blue,
                      value: tremorValue, sub: tremorLabel)
             }
             HStack(spacing: 16) {
                 stat(icon: "bolt.heart.fill", color: .purple,
                      value: hrvValue, sub: hrvLabel)
-                stat(icon: "waveform.path", color: dyskinesiaColor,
+                stat(icon: "waveform.path", color: .pink,
                      value: dyskinesiaValue, sub: dyskinesiaLabel)
             }
         }
@@ -348,16 +399,6 @@ private struct GlanceCard: View {
         }
     }
 
-    private var tremorColor: Color {
-        guard let v = avgTremor else { return .secondary }
-        switch v {
-        case ..<1: return .green
-        case ..<2: return .yellow
-        case ..<3: return .orange
-        default:   return .red
-        }
-    }
-
     private var hrvValue: String {
         guard let hrv else { return "—" }
         return "\(Int(hrv)) ms"
@@ -369,9 +410,11 @@ private struct GlanceCard: View {
     // the tile keeps its metric name rather than restating the empty reason.
     private var hrvLabel: String { "HRV" }
 
+    // Reads the raw DyskinesiaReading stream through the display mapping (floor + rescale),
+    // NOT the crushed legacy TremorReading.dyskinesiaScore. Stays in lock-step with the
+    // chart's dyskinesia waveform, which uses the same mapping.
     private var avgDyskinesia: Double? {
-        guard !tremorReadings.isEmpty else { return nil }
-        return tremorReadings.reduce(0.0) { $0 + $1.dyskinesiaScore } / Double(tremorReadings.count)
+        DyskinesiaDisplay.dayAverage(dyskinesiaReadings)
     }
 
     private var dyskinesiaValue: String {
@@ -389,22 +432,13 @@ private struct GlanceCard: View {
         default:     return "Dyskinesia: Strong"
         }
     }
-
-    private var dyskinesiaColor: Color {
-        guard let v = avgDyskinesia else { return .secondary }
-        switch v {
-        case ..<0.5: return .secondary
-        case ..<1.5: return .yellow
-        case ..<2.5: return .orange
-        default:     return .pink
-        }
-    }
 }
 
 // MARK: - Tremor timeline
 
 private struct TremorTimelinePanel: View {
     let readings: [TremorReading]
+    let dyskinesia: [DyskinesiaReading]
     let hasEverHadData: Bool
     let events: [DayEvent]
     let dayStart: Date
@@ -446,10 +480,28 @@ private struct TremorTimelinePanel: View {
                     ForEach(chartBuckets, id: \.hour) { bucket in
                         LineMark(
                             x: .value("Time", bucket.hour),
-                            y: .value("Tremor", bucket.value)
+                            y: .value("Tremor", bucket.value),
+                            series: .value("Signal", "Tremor")
                         )
                         .interpolationMethod(.catmullRom)
                         .foregroundStyle(Color.blue)
+                        .lineStyle(StrokeStyle(lineWidth: 2))
+                    }
+                    // Dyskinesia overlay — same 0–4 axis (NOT a 2nd axis, which would
+                    // manufacture a correlation). Pink, and an *unshaded* line (not a 2nd
+                    // area fill) — two overlapping fills read as mud; the primary signal
+                    // (tremor) keeps its fill, the overlay is a clean line on top. The
+                    // explicit `series:` is load-bearing: without it Charts merges these
+                    // points into the tremor line (one color + a spurious connecting line).
+                    // Draws nothing when the day has no dyskinesia (honest empty — Bhav ~0).
+                    ForEach(dyskinesiaBuckets, id: \.hour) { bucket in
+                        LineMark(
+                            x: .value("Time", bucket.hour),
+                            y: .value("Dyskinesia", bucket.value),
+                            series: .value("Signal", "Dyskinesia")
+                        )
+                        .interpolationMethod(.catmullRom)
+                        .foregroundStyle(Color.pink)
                         .lineStyle(StrokeStyle(lineWidth: 2))
                     }
                 }
@@ -643,6 +695,26 @@ private struct TremorTimelinePanel: View {
             result.append(HourBucket(hour: dayEnd, value: last.value))
         }
         return result
+    }
+
+    // Same 30-min bucketing as tremor, but each minute's raw `percentLikely` passes
+    // through the display mapping (floor + rescale to 0–4) before averaging. Skips the
+    // tremor curve's dayEnd-anchor tail — that's a cosmetic edge for the primary signal.
+    private var dyskinesiaBuckets: [HourBucket] {
+        guard !dyskinesia.isEmpty else { return [] }
+        let cal = Calendar.current
+        var sums: [Date: (sum: Double, count: Int)] = [:]
+        for r in dyskinesia {
+            let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: r.startDate)
+            var bucketComps = comps
+            bucketComps.minute = (comps.minute ?? 0) >= 30 ? 30 : 0
+            bucketComps.second = 0
+            guard let bucket = cal.date(from: bucketComps) else { continue }
+            let cur = sums[bucket] ?? (0, 0)
+            sums[bucket] = (cur.sum + DyskinesiaDisplay.intensity(r.percentLikely), cur.count + 1)
+        }
+        return sums.map { HourBucket(hour: $0.key, value: $0.value.sum / Double($0.value.count)) }
+            .sorted { $0.hour < $1.hour }
     }
 
     private func yLabel(for level: Int) -> String {
@@ -850,3 +922,56 @@ private struct FlowLayout: Layout {
         }
     }
 }
+
+#if DEBUG
+// Synthetic data only — exercises the dyskinesia overlay's rendering, which can't be
+// seen on Bhav's own data (~0 dyskinesia). Tremor sawtooths DOWN after each dose;
+// dyskinesia likelihood peaks mid-ON — the inverse "seesaw" the overlay exists to show.
+// The dyskinesia `percentLikely` deliberately straddles DyskinesiaDisplay.noiseFloor so
+// the floor (peaks clear it, background doesn't) is visible too.
+#Preview("Tremor + dyskinesia seesaw") {
+    let cal = Calendar.current
+    let dayStart = cal.startOfDay(for: Date())
+    let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(86400)
+    func at(_ h: Int, _ m: Int) -> Date {
+        cal.date(bySettingHour: h, minute: m, second: 0, of: dayStart) ?? dayStart
+    }
+    let doses = [at(8, 0), at(12, 0)]
+    // Smooth bell centered `center` min after a dose — keeps catmullRom from overshooting
+    // the way it does on hard steps (which is what made the preview look chaotic).
+    func bell(_ x: Double, center: Double, width: Double) -> Double {
+        exp(-pow((x - center) / width, 2))
+    }
+
+    var tremor: [TremorReading] = []
+    var dysk: [DyskinesiaReading] = []
+    var t = at(6, 0)
+    let endSampling = at(16, 0)
+    while t < endSampling {
+        // Minutes since the most recent prior dose (large before any dose).
+        let sinceDose = doses.filter { $0 <= t }.map { t.timeIntervalSince($0) / 60 }.min() ?? 600
+        // Tremor: ~2.8 OFF, dips toward ~0.4 at peak ON (~90 min post-dose).
+        let tremorScore = max(0.3, 2.8 - 2.4 * bell(sinceDose, center: 90, width: 60))
+        tremor.append(TremorReading(timestamp: t, tremorScore: tremorScore, dyskinesiaScore: 0))
+        // Dyskinesia likelihood: a smooth bump at peak-dose ON (~100 min), opposite the
+        // tremor trough. Baseline 0.2 stays *below* the noise floor (→ 0); the peak (~0.9)
+        // clears it — so the floor is visible in the render too.
+        let likely = 0.20 + 0.70 * bell(sinceDose, center: 100, width: 45)
+        dysk.append(DyskinesiaReading(startDate: t, endDate: t.addingTimeInterval(60), percentLikely: likely))
+        t = t.addingTimeInterval(10 * 60)
+    }
+    let events: [DayEvent] = doses.map { .medication(id: UUID(), time: $0, name: "Sinemet") }
+
+    return ScrollView {
+        TremorTimelinePanel(
+            readings: tremor,
+            dyskinesia: dysk,
+            hasEverHadData: true,
+            events: events,
+            dayStart: dayStart,
+            dayEnd: dayEnd
+        )
+        .padding()
+    }
+}
+#endif
