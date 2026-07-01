@@ -200,6 +200,13 @@ struct DayInReviewView: View {
 /// selected day's bounds, so SwiftData only hydrates that day's rows instead of the
 /// whole table. SwiftUI re-creates this view (and re-runs the query) whenever the
 /// parent passes a new selectedDate — the canonical dynamic-@Query pattern.
+/// Shared layout constants for the stacked Review panels. The y-axis gutter width is
+/// pinned equal across Tremor and Glucose so their plot rectangles match and the shared
+/// x-domain lines up pixel-for-pixel — the vertical read across panels depends on it.
+private enum DayReviewLayout {
+    static let yAxisWidth: CGFloat = 46   // fits the widest tremor label ("Strong")
+}
+
 private struct DayReviewContent: View {
     @EnvironmentObject var healthKit: HealthKitManager
     @Environment(\.modelContext) private var modelContext
@@ -208,6 +215,16 @@ private struct DayReviewContent: View {
     private let dayEnd: Date
     private let onEventTap: (DayEvent) -> Void
     private let onDataChanged: () -> Void
+
+    // Shared horizontal-scroll position for the stacked Tremor + Glucose charts, so they
+    // pan together and a spike lines up with the meal/dose that caused it. Both charts bind
+    // to this; a no-glucose day simply has one fewer consumer (nothing breaks).
+    @State private var chartScrollX: Date
+
+    // Shared crosshair time: tapping either chart sets this, and BOTH panels draw a rule +
+    // value readout at that instant — the vertical read as a number, not just by eye.
+    // Anchored to a time (scrolls with the data); tap the pill's × or change day to clear.
+    @State private var selectedTime: Date?
 
     @Query private var dayReadings: [TremorReading]
     @Query private var dayDyskinesia: [DyskinesiaReading]
@@ -223,6 +240,7 @@ private struct DayReviewContent: View {
         self.dayEnd = end
         self.onEventTap = onEventTap
         self.onDataChanged = onDataChanged
+        _chartScrollX = State(initialValue: start)
         _dayReadings = Query(
             filter: #Predicate<TremorReading> { $0.timestamp >= start && $0.timestamp < end },
             sort: \TremorReading.timestamp, order: .forward
@@ -266,8 +284,25 @@ private struct DayReviewContent: View {
                     events: allDayEvents,
                     dayStart: dayStart,
                     dayEnd: dayEnd,
+                    scrollX: $chartScrollX,
+                    selectedTime: $selectedTime,
                     onEventTap: onEventTap
                 )
+                // Day-gated: only for a CGM (Lingo) user, and only when this day has a
+                // curve (else a quiet note). Sits directly under Tremor with a matched
+                // x-domain and shared scroll so meals/doses read straight down across panels.
+                if !healthKit.dayGlucose.isEmpty {
+                    GlucosePanel(
+                        samples: healthKit.dayGlucose,
+                        events: allDayEvents,
+                        dayStart: dayStart,
+                        dayEnd: dayEnd,
+                        scrollX: $chartScrollX,
+                        selectedTime: $selectedTime
+                    )
+                } else if healthKit.hasEverHadGlucose {
+                    GlucosePanel.gapNote
+                }
                 SleepStagesPanel(
                     sleep: healthKit.daySleep,
                     daylightMinutes: healthKit.dayDaylightMinutes
@@ -287,6 +322,13 @@ private struct DayReviewContent: View {
         // Option B: when a sync lands a new reading for the visible day, nudge the parent
         // to re-read the latest-reading timestamp so the header label stays live.
         .onChange(of: dayReadings.last?.timestamp) { _, _ in onDataChanged() }
+        // Reset the shared scroll to the start of a newly selected day. @State survives
+        // the dynamic-@Query re-init, so without this a day change would keep the prior
+        // day's scroll offset (and could land outside the new day's domain).
+        .onChange(of: dayStart) { _, newStart in
+            chartScrollX = newStart
+            selectedTime = nil
+        }
     }
 }
 
@@ -336,7 +378,7 @@ private struct GlanceCard: View {
     let dyskinesiaReadings: [DyskinesiaReading]
     let hrv: Double?
 
-    // Constant identity colors (blue = tremor, pink = dyskinesia) match the chart's two
+    // Constant identity colors (blue = tremor, teal = dyskinesia) match the chart's two
     // waveforms exactly — this card doubles as the chart's implicit legend. Height/number
     // encode severity; color only says *which signal*. (The old value-varying severity
     // gradient was a redundant 3rd encoding that over-signalled a noisy daily average.)
@@ -351,7 +393,7 @@ private struct GlanceCard: View {
             HStack(spacing: 16) {
                 stat(icon: "bolt.heart.fill", color: .purple,
                      value: hrvValue, sub: hrvLabel)
-                stat(icon: "waveform.path", color: .pink,
+                stat(icon: "waveform.path", color: .dyskinesia,
                      value: dyskinesiaValue, sub: dyskinesiaLabel)
             }
         }
@@ -443,6 +485,8 @@ private struct TremorTimelinePanel: View {
     let events: [DayEvent]
     let dayStart: Date
     let dayEnd: Date
+    @Binding var scrollX: Date
+    @Binding var selectedTime: Date?
     var onEventTap: (DayEvent) -> Void = { _ in }
 
     var body: some View {
@@ -501,22 +545,42 @@ private struct TremorTimelinePanel: View {
                             series: .value("Signal", "Dyskinesia")
                         )
                         .interpolationMethod(.catmullRom)
-                        .foregroundStyle(Color.pink)
+                        .foregroundStyle(Color.dyskinesia)
                         .lineStyle(StrokeStyle(lineWidth: 2))
+                    }
+                    if let t = selectedTime {
+                        RuleMark(x: .value("Selected", t))
+                            .foregroundStyle(.gray.opacity(0.55))
+                            .lineStyle(StrokeStyle(lineWidth: 1))
+                        // Hang the callout from just under the event-glyph lane (glyphs sit at
+                        // y≈4.3) into the plot's empty top — clears the glyphs and never clips
+                        // at the card top. Invisible anchor point (symbolSize 0).
+                        PointMark(x: .value("Selected", t), y: .value("Callout lane", 4.05))
+                            .symbolSize(0)
+                            .annotation(position: .bottom, alignment: .center, spacing: 2,
+                                        overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .plot))) {
+                                CrosshairCallout(time: t, rows: [
+                                    .init(value: tremorReadout(at: t), label: "Tremor", color: .blue),
+                                    .init(value: dyskinesiaReadout(at: t), label: "Dyskinesia", color: .dyskinesia)
+                                ])
+                            }
                     }
                 }
                 .chartYScale(domain: 0...4.6)
                 .chartXScale(domain: dayStart...dayEnd)
                 .chartScrollableAxes(.horizontal)
                 .chartXVisibleDomain(length: 12 * 3600)
-                .chartScrollPosition(initialX: dayStart)
+                .chartScrollPosition(x: $scrollX)
+                .chartXSelection(value: $selectedTime)
                 .chartYAxis {
                     AxisMarks(values: [0, 1, 2, 3, 4]) { value in
                         AxisGridLine()
                         AxisValueLabel {
-                            if let v = value.as(Int.self) {
-                                Text(yLabel(for: v)).font(.caption2)
-                            }
+                            // Fixed-width gutter (shared with the glucose panel) so the two
+                            // stacked charts have identical plot widths and align vertically.
+                            Text(value.as(Int.self).map { yLabel(for: $0) } ?? "")
+                                .font(.caption2)
+                                .frame(width: DayReviewLayout.yAxisWidth, alignment: .leading)
                         }
                     }
                 }
@@ -573,6 +637,10 @@ private struct TremorTimelinePanel: View {
             if let anchor = proxy.plotFrame {
                 let plotFrame = geometry[anchor]
                 VStack(spacing: 0) {
+                    // Top strip = event lane: a tap here opens the nearest meal/dose detail.
+                    // The plot body below stays non-interactive so the chart's own scroll
+                    // and `.chartXSelection` (crosshair) work — an opaque overlay here would
+                    // swallow the scroll drag.
                     Color.clear
                         .frame(height: 36)
                         .contentShape(Rectangle())
@@ -598,6 +666,27 @@ private struct TremorTimelinePanel: View {
         }
         guard let nearest, abs(nearest.time.timeIntervalSince(tappedDate)) < 3600 else { return }
         onEventTap(nearest)
+    }
+
+    /// Tremor score at the crosshair time — nearest 30-min bucket (matches the drawn line),
+    /// on the 0–4 severity scale to one decimal, or "—" when the tap is far from any data.
+    private func tremorReadout(at time: Date) -> String {
+        guard let b = nearestBucket(hourlyBuckets, to: time) else { return "—" }
+        return String(format: "%.1f", b.value)
+    }
+
+    /// Dyskinesia intensity at the crosshair time (same 0–4 display mapping as the waveform),
+    /// to one decimal; no nearby data reads as 0.0 (honest — Bhav is ~0).
+    private func dyskinesiaReadout(at time: Date) -> String {
+        guard let b = nearestBucket(dyskinesiaBuckets, to: time) else { return "0.0" }
+        return String(format: "%.1f", b.value)
+    }
+
+    private func nearestBucket(_ buckets: [HourBucket], to time: Date) -> HourBucket? {
+        guard let b = buckets.min(by: {
+            abs($0.hour.timeIntervalSince(time)) < abs($1.hour.timeIntervalSince(time))
+        }), abs(b.hour.timeIntervalSince(time)) < 45 * 60 else { return nil }
+        return b
     }
 
     @ViewBuilder
@@ -757,6 +846,248 @@ private struct TremorTimelinePanel: View {
                 .multilineTextAlignment(.center)
         }
         .frame(height: 120).frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Glucose (CGM)
+
+/// Continuous-glucose panel — sits directly under Tremor with a matched x-domain so a
+/// meal or dose reads straight down across both charts. Display-only (step 1 of the CGM
+/// slice): the curve, the 70–180 mg/dL target band shaded, and the same event RuleMarks
+/// as the tremor panel. The vertical read across panels IS the gastric-emptying →
+/// absorption chain. Collapsible; default expanded (observing it by eye is the whole point
+/// right now). Scroll is matched-but-independent (Option A) — the two panels align at the
+/// initial position; locking their scroll together is a later iteration.
+private struct GlucosePanel: View {
+    let samples: [GlucoseSample]
+    let events: [DayEvent]
+    let dayStart: Date
+    let dayEnd: Date
+    @Binding var scrollX: Date
+    @Binding var selectedTime: Date?
+    @State private var expanded = true
+
+    // Break the line across sensor gaps > 15 min so we never draw a straight segment over
+    // missing data (warmup / between-sensor / dropout). Each contiguous run becomes its own
+    // series, which stops Charts from connecting the ends across the gap.
+    private var segments: [(id: Int, points: [GlucoseSample])] {
+        guard !samples.isEmpty else { return [] }
+        var runs: [[GlucoseSample]] = [[samples[0]]]
+        for s in samples.dropFirst() {
+            if let last = runs[runs.count - 1].last,
+               s.date.timeIntervalSince(last.date) > 15 * 60 {
+                runs.append([s])
+            } else {
+                runs[runs.count - 1].append(s)
+            }
+        }
+        return runs.enumerated().map { (id: $0.offset, points: $0.element) }
+    }
+
+    // The distinct HealthKit source(s) feeding today's glucose — shown in the caption so the
+    // user knows where it came from (a CGM brand, or their own manual/finger-prick entries).
+    private var sourceText: String {
+        let names = Set(samples.map(\.source)).sorted()
+        guard !names.isEmpty else { return "" }
+        return names.count == 1 ? "source: \(names[0])" : "sources: \(names.joined(separator: ", "))"
+    }
+
+    // Day's mean glucose — a stable one-number summary for the header (more meaningful for
+    // a whole-day review than the last reading before a sensor gap).
+    private var dayAverage: Int? {
+        guard !samples.isEmpty else { return nil }
+        return Int((samples.map(\.value).reduce(0, +) / Double(samples.count)).rounded())
+    }
+
+    // Fixed 40–180 frame (broad enough to show a sub-70 low and a post-meal spike without
+    // rescaling day-to-day), expanding only if a reading actually falls outside it.
+    private var yDomain: ClosedRange<Double> {
+        let values = samples.map(\.value)
+        let lo = min(40, (values.min() ?? 40) - 5)
+        let hi = max(180, (values.max() ?? 180) + 5)
+        return lo...hi
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                // Title + chevron toggle collapse. Kept as its own button so the crosshair
+                // pill's × (outside it) doesn't also fire the collapse.
+                Button {
+                    withAnimation(.snappy) { expanded.toggle() }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("Glucose").font(.headline).foregroundStyle(.primary)
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+                if let avg = dayAverage {
+                    Text("\(avg) mg/dL avg")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            if expanded {
+                Chart {
+                    // Target-range band (70–140 mg/dL — the non-diabetic metabolic-health
+                    // target, matching Lingo's own reference lines) shaded behind the curve.
+                    RectangleMark(
+                        xStart: .value("Start", dayStart),
+                        xEnd: .value("End", dayEnd),
+                        yStart: .value("Low", 70),
+                        yEnd: .value("High", 140)
+                    )
+                    .foregroundStyle(Color.green.opacity(0.08))
+
+                    // Same event lines as the tremor panel above (dashed) so a meal/dose
+                    // reads straight down across both charts.
+                    ForEach(events) { event in
+                        RuleMark(x: .value("Event time", event.time))
+                            .foregroundStyle(.gray.opacity(0.25))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    }
+
+                    // One series per contiguous segment → no line drawn across gaps. An
+                    // isolated reading (finger-prick / lone manual entry) is its own 1-point
+                    // segment, which a line can't render — draw those as dots so they show.
+                    ForEach(segments, id: \.id) { segment in
+                        if segment.points.count == 1, let p = segment.points.first {
+                            PointMark(
+                                x: .value("Time", p.date),
+                                y: .value("Glucose", p.value)
+                            )
+                            .foregroundStyle(Color.pink)
+                            .symbolSize(28)
+                        } else {
+                            ForEach(segment.points, id: \.date) { p in
+                                LineMark(
+                                    x: .value("Time", p.date),
+                                    y: .value("Glucose", p.value),
+                                    series: .value("Segment", segment.id)
+                                )
+                                .interpolationMethod(.monotone)
+                                .foregroundStyle(Color.pink)
+                                .lineStyle(StrokeStyle(lineWidth: 2))
+                            }
+                        }
+                    }
+
+                    if let t = selectedTime {
+                        RuleMark(x: .value("Selected", t))
+                            .foregroundStyle(.gray.opacity(0.55))
+                            .lineStyle(StrokeStyle(lineWidth: 1))
+                            .annotation(position: .top, alignment: .center, spacing: 4,
+                                        overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .plot))) {
+                                CrosshairCallout(time: t, rows: [
+                                    .init(value: glucoseReadout(at: t), label: "", color: .pink)
+                                ])
+                            }
+                    }
+                }
+                .chartYScale(domain: yDomain)
+                .chartXScale(domain: dayStart...dayEnd)
+                .chartScrollableAxes(.horizontal)
+                .chartXVisibleDomain(length: 12 * 3600)
+                .chartScrollPosition(x: $scrollX)
+                .chartXSelection(value: $selectedTime)
+                .chartYAxis {
+                    AxisMarks(values: [70, 100, 140]) { value in
+                        AxisGridLine()
+                        AxisValueLabel {
+                            // Fixed-width gutter (== the tremor panel's) so both plot
+                            // rectangles are the same width → the shared x-domain maps to
+                            // the same pixels and a meal reads straight down across panels.
+                            Text(value.as(Int.self).map { "\($0)" } ?? "")
+                                .font(.caption2)
+                                .frame(width: DayReviewLayout.yAxisWidth, alignment: .leading)
+                        }
+                    }
+                }
+                .chartXAxis {
+                    AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
+                        AxisGridLine()
+                        AxisValueLabel(format: .dateTime.hour())
+                    }
+                }
+                .frame(height: 160)
+
+                Text("mg/dL · target band 70–140 · \(sourceText)")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
+        .padding()
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// Glucose at the crosshair time — nearest sample within 10 min, else "—" (a gap the
+    /// broken line already shows). Read-only lookup, no interpolation across a gap.
+    private func glucoseReadout(at time: Date) -> String {
+        guard let s = samples.min(by: {
+            abs($0.date.timeIntervalSince(time)) < abs($1.date.timeIntervalSince(time))
+        }), abs(s.date.timeIntervalSince(time)) < 10 * 60 else { return "— mg/dL" }
+        return "\(Int(s.value.rounded())) mg/dL"
+    }
+
+    /// Shown on a CGM user's *gap* day (sensor warmup / between sensors / dropout) so the
+    /// panel's absence isn't misread as "glucose is fine" — a known-CGM user expects it here.
+    static var gapNote: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "drop")
+                .foregroundStyle(.pink.opacity(0.6)).font(.caption)
+            Text("No glucose data for this day.")
+                .font(.caption).foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding()
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+// MARK: - Crosshair readout
+
+/// Floating callout anchored above the crosshair line (StrivePD-style): the selected time
+/// and one bold colored value per signal with its label. Shown while pressing-and-holding a
+/// chart; releasing dismisses it. Shared by Tremor (two rows) and Glucose (one row).
+///
+/// Background is an explicit `systemBackground` (NOT `.regularMaterial`, which rendered dark
+/// and unreadable over the light-mode chart) so text stays high-contrast in both modes.
+private struct CrosshairCallout: View {
+    struct Row: Identifiable {
+        let value: String
+        let label: String
+        let color: Color
+        var id: String { label }
+    }
+    let time: Date
+    let rows: [Row]
+
+    var body: some View {
+        // Single row (time + values) keeps the callout short, so when it overflows upward
+        // past the plot it lands just above the event glyphs without clipping at the card top.
+        HStack(spacing: 8) {
+            Text(time.formatted(.dateTime.hour().minute()))
+                .font(.caption2).foregroundStyle(.secondary)
+            ForEach(rows) { row in
+                HStack(spacing: 4) {
+                    Text(row.value).font(.subheadline.weight(.semibold))
+                        .foregroundStyle(row.color)
+                    if !row.label.isEmpty {
+                        Text(row.label).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color(.systemBackground)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.15), radius: 4, y: 1)
+        .fixedSize()
     }
 }
 
@@ -969,7 +1300,9 @@ private struct FlowLayout: Layout {
             hasEverHadData: true,
             events: events,
             dayStart: dayStart,
-            dayEnd: dayEnd
+            dayEnd: dayEnd,
+            scrollX: .constant(dayStart),
+            selectedTime: .constant(nil)
         )
         .padding()
     }

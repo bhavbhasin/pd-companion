@@ -257,7 +257,7 @@ struct ObservationEngine {
             guard let pre, let post, post >= 0.5, post - pre >= 0.5 else { return nil }
             let timeStr = dose.time.formatted(.dateTime.hour().minute())
             return DayObservation(
-                icon: "waveform.path", iconColor: .pink,
+                icon: "waveform.path", iconColor: .dyskinesia,
                 headline: "Dyskinesia rose after \(dose.name.capitalized) at \(timeStr)",
                 detail: "Avg \(fmt(pre)) before → \(fmt(post)) in the 30–120 min window after. Involuntary movement that peaks after a dose is typical peak-dose dyskinesia — note whether it eases as the dose wears off.",
                 sentiment: .neutral

@@ -2,9 +2,27 @@ import Foundation
 import HealthKit
 import SwiftUI
 
+extension Color {
+    /// App-wide dyskinesia accent. Teal — deliberately distinct from tremor (blue, its
+    /// chart-mate on the timeline) and glucose (pink), and clear of HRV's purple on the
+    /// glance card. Change here to restyle dyskinesia everywhere.
+    static let dyskinesia = Color.teal
+}
+
 struct HRVSample: Equatable {
     let timestamp: Date
     let value: Double   // SDNN, milliseconds
+}
+
+/// One blood-glucose reading (mg/dL at a time) from HealthKit — brand-agnostic: any CGM
+/// (Lingo/Stelo/Libre…) OR a finger-prick/manual entry the user adds to Apple Health.
+/// Display-only for now — step 1 of the CGM slice is "confirm data lands, observe by eye";
+/// no engine correlation yet. `Sendable` so the fetch can run off the main thread. `source`
+/// is the HealthKit source name, kept for the panel caption and future dedup.
+struct GlucoseSample: Sendable, Equatable {
+    let date: Date
+    let value: Double   // mg/dL
+    let source: String
 }
 
 struct SleepBreakdown: Equatable {

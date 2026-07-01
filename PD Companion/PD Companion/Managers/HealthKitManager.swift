@@ -21,6 +21,11 @@ class HealthKitManager: ObservableObject {
     @Published var dayHRV: Double?
     @Published var dayHRVSamples: [HRVSample] = []
     @Published var dayDaylightMinutes: Double?
+    @Published var dayGlucose: [GlucoseSample] = []
+    /// Sticky once any viewed day has Lingo glucose — lets a CGM user's *gap* day show a
+    /// quiet "no glucose" note instead of hiding the panel, while a never-CGM user never
+    /// sees it. Set in `fetchDayInReview`; step-1 approximation (see the glucose fetch note).
+    @Published var hasEverHadGlucose = false
 
     private let writeTypes: Set<HKSampleType> = [
         HKObjectType.categoryType(forIdentifier: .mindfulSession)!,
@@ -49,6 +54,7 @@ class HealthKitManager: ObservableObject {
             HKObjectType.quantityType(forIdentifier: .walkingStepLength)!,
             HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
             HKObjectType.quantityType(forIdentifier: .basalEnergyBurned)!,
+            HKObjectType.quantityType(forIdentifier: .bloodGlucose)!,
         ]
         return Set(types)
     }()
@@ -261,6 +267,7 @@ class HealthKitManager: ObservableObject {
         async let hrv = fetchAverageHRVInRange(from: startOfDay, to: endOfDay)
         async let hrvSamples = fetchHRVSamplesInRange(from: startOfDay, to: endOfDay)
         async let daylight = fetchTimeInDaylightInRange(from: startOfDay, to: endOfDay)
+        async let glucose = fetchGlucoseSeries(from: startOfDay, to: endOfDay)
 
         let resolvedSleep = await sleep
         let resolvedWorkouts = await workouts
@@ -269,6 +276,7 @@ class HealthKitManager: ObservableObject {
         let resolvedHRV = await hrv
         let resolvedHRVSamples = await hrvSamples
         let resolvedDaylight = await daylight
+        let resolvedGlucose = await glucose
 
         var events: [DayEvent] = []
         for dose in resolvedDoses {
@@ -296,6 +304,45 @@ class HealthKitManager: ObservableObject {
         dayHRV = resolvedHRV
         dayHRVSamples = resolvedHRVSamples
         dayDaylightMinutes = resolvedDaylight
+        dayGlucose = resolvedGlucose
+        if !resolvedGlucose.isEmpty { hasEverHadGlucose = true }
+    }
+
+    /// Blood-glucose samples for the day — brand-agnostic. Reads ALL `bloodGlucose` so any
+    /// CGM (Lingo/Stelo/Libre…) or a finger-prick/manual entry in Apple Health shows up; the
+    /// panel draws dense CGM data as a line and isolated readings as dots. Read-only: no
+    /// SwiftData/CloudKit ingestion — glucose lives in HealthKit and we render it by eye.
+    ///
+    /// Light dedup on exact timestamp collapses the case where one sensor is mirrored by two
+    /// apps (e.g. Libre + a middleware) into one point; distinct real readings never share an
+    /// exact `startDate`, so genuine data is untouched. Step 1 of the CGM slice; no engine yet.
+    func fetchGlucoseSeries(from start: Date, to end: Date) async -> [GlucoseSample] {
+        let type = HKQuantityType.quantityType(forIdentifier: .bloodGlucose)!
+        let unit = HKUnit(from: "mg/dL")
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type, predicate: predicate,
+                limit: HKObjectQueryNoLimit, sortDescriptors: [sort]
+            ) { _, samples, _ in
+                guard let samples = samples as? [HKQuantitySample] else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                var seen = Set<Date>()
+                var out: [GlucoseSample] = []
+                for s in samples where seen.insert(s.startDate).inserted {
+                    out.append(GlucoseSample(
+                        date: s.startDate,
+                        value: s.quantity.doubleValue(for: unit),
+                        source: s.sourceRevision.source.name
+                    ))
+                }
+                continuation.resume(returning: out)
+            }
+            store.execute(query)
+        }
     }
 
     private func fetchAverageHRVInRange(from start: Date, to end: Date) async -> Double? {
