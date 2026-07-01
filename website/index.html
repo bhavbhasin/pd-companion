@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kampa — Movement Intelligence for Parkinson's</title>
-    <meta name="description" content="Kampa passively monitors tremor via Apple Watch, correlates medication, food, sleep, and exercise, and surfaces the patterns that matter. No manual symptom tracking required.">
+    <meta name="description" content="Kampa passively monitors tremor and dyskinesia via Apple Watch, correlates medication, food, sleep, and exercise, and surfaces the patterns that matter. No manual symptom tracking required.">
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-08KTDP6KRR"></script>
     <script>
@@ -28,6 +28,7 @@
             --blue-deep: #2F5D99;
             --blue-dim: rgba(74, 140, 214, 0.12);
             --blue-border: rgba(74, 140, 214, 0.30);
+            --coral: #FF6B7A;
             --orange: #FF9F0A;
             --text-1: #ffffff;
             --text-2: rgba(235, 235, 245, 0.76);
@@ -480,16 +481,11 @@
         .insight-shots {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 24px;
+            gap: 20px;
+            align-items: start;
         }
-        .insight-shot { display: flex; flex-direction: column; align-items: center; gap: 16px; }
-        .insight-shot img {
-            width: 100%;
-            display: block;
-            border-radius: 18px;
-            border: 1px solid var(--border);
-            background: #000;
-        }
+        .insight-shot { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+        .insight-shot img { width: 100%; display: block; }
         .insight-cap { text-align: center; }
         .insight-cap strong { display: block; font-size: 14px; font-weight: 600; color: var(--text-1); margin-bottom: 3px; }
         .insight-cap span { font-size: 12.5px; color: var(--text-3); line-height: 1.45; }
@@ -515,6 +511,41 @@
         .tremor-header strong { font-size: 13.5px; font-weight: 600; }
         .tremor-header span { font-size: 12px; color: var(--text-3); }
         .tremor-callout img { width: 100%; display: block; }
+        /* Annotation rings over the real chart (UI overlay, image untouched) */
+        .chart-annot { position: relative; line-height: 0; }
+        .annot-ring {
+            position: absolute;
+            width: clamp(24px, 5.4%, 44px);
+            aspect-ratio: 1;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 0 2px rgba(0,0,0,0.45), 0 0 8px rgba(0,0,0,0.4);
+            pointer-events: none;
+        }
+        .annot-ring::after {
+            content: attr(data-time);
+            position: absolute;
+            left: 50%; top: -7px;
+            transform: translate(-50%, -100%);
+            white-space: nowrap;
+            font-size: 10.5px;
+            font-weight: 600;
+            line-height: 1;
+            color: #ffffff;
+            background: rgba(10,10,10,0.82);
+            padding: 3px 8px;
+            border-radius: 100px;
+            letter-spacing: 0.02em;
+        }
+        .sig-swatch-line { display: inline-block; width: 16px; height: 3px; border-radius: 2px; vertical-align: middle; }
+        .annot-note {
+            font-size: 12.5px;
+            color: var(--text-3);
+            line-height: 1.55;
+            padding: 14px 18px 0;
+        }
+        .annot-note b { color: var(--coral); font-weight: 600; }
         .tremor-legend {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -531,6 +562,136 @@
         .legend-item span { font-size: 17px; }
         .legend-item strong { display: block; font-size: 12.5px; font-weight: 600; }
         .legend-item p { font-size: 11.5px; color: var(--text-3); }
+
+        /* ── Dual-signal showcase ── */
+        .signal-grid {
+            display: grid;
+            grid-template-columns: 0.82fr 1fr;
+            gap: 52px;
+            align-items: center;
+            margin-top: 8px;
+        }
+        .signal-grid .phone { width: 100%; max-width: 258px; }
+        .signal-grid .phone-wrap { align-self: center; }
+        .signal-h {
+            font-size: clamp(20px, 2.4vw, 26px);
+            font-weight: 650;
+            letter-spacing: -0.02em;
+            line-height: 1.2;
+            margin-bottom: 14px;
+        }
+        .signal-lead {
+            font-size: 15px;
+            color: var(--text-2);
+            line-height: 1.65;
+            margin-bottom: 26px;
+        }
+        .signal-legend {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px 24px;
+        }
+        .sig-item { display: flex; align-items: flex-start; gap: 11px; }
+        .sig-swatch { margin-top: 5px; flex-shrink: 0; }
+        .sig-swatch.line { width: 22px; height: 3px; border-radius: 2px; }
+        .sig-swatch.dot { width: 11px; height: 11px; border-radius: 50%; margin-top: 3px; }
+        .sig-glyph { font-size: 15px; line-height: 1; margin-top: 1px; flex-shrink: 0; width: 20px; }
+        .sig-item strong { display: block; font-size: 13.5px; font-weight: 600; color: var(--text-1); margin-bottom: 2px; }
+        .sig-item span { font-size: 12.5px; color: var(--text-3); line-height: 1.5; }
+        @media (max-width: 900px) {
+            .signal-grid { grid-template-columns: 1fr; gap: 34px; }
+            .signal-grid .phone-wrap { order: -1; }
+            .signal-legend { max-width: 480px; }
+        }
+
+        /* ── Voice logging strip ── */
+        .voice-strip {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 22px;
+            align-items: start;
+        }
+        .voice-step { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+        .voice-step .phone { width: 100%; max-width: 208px; }
+        .voice-cap { text-align: center; }
+        .voice-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px; height: 24px;
+            border-radius: 50%;
+            background: var(--blue-dim);
+            border: 1px solid var(--blue-border);
+            color: var(--blue);
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        .voice-cap strong { display: block; font-size: 14.5px; font-weight: 600; color: var(--text-1); margin-bottom: 4px; }
+        .voice-cap span { font-size: 12.5px; color: var(--text-3); line-height: 1.5; }
+        @media (max-width: 1024px) {
+            .voice-strip { grid-template-columns: repeat(2, 1fr); gap: 30px 24px; max-width: 520px; margin: 0 auto; }
+        }
+        @media (max-width: 768px) {
+            .voice-strip { grid-template-columns: 1fr; max-width: 320px; margin: 0 auto; gap: 40px; }
+        }
+
+        /* ── Watch lede ── */
+        .watch-lede {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 64px;
+            align-items: center;
+        }
+        /* Realistic Apple Watch (46mm) mockup, straight-on */
+        .watch-device { position: relative; width: 216px; flex-shrink: 0; }
+        .watch-band {
+            position: absolute; left: 50%; transform: translateX(-50%);
+            width: 116px; z-index: 0;
+            background: linear-gradient(90deg, #121214, #2a2a2e 22%, #313136 50%, #2a2a2e 78%, #121214);
+        }
+        .watch-band-top {
+            top: -44px; height: 92px; border-radius: 24px 24px 10px 10px;
+            -webkit-mask-image: linear-gradient(to top, #000 46%, transparent);
+            mask-image: linear-gradient(to top, #000 46%, transparent);
+        }
+        .watch-band-bottom {
+            bottom: -44px; height: 92px; border-radius: 10px 10px 24px 24px;
+            -webkit-mask-image: linear-gradient(to bottom, #000 46%, transparent);
+            mask-image: linear-gradient(to bottom, #000 46%, transparent);
+        }
+        .watch-crown {
+            position: absolute; z-index: 1; right: 4px; top: 31%;
+            width: 12px; height: 32px; border-radius: 5px;
+            background: linear-gradient(90deg, #6f7176, #cbcdd0 42%, #e8e9eb 55%, #9a9c9f 76%, #5e6064);
+            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.22), 1px 0 2px rgba(0,0,0,0.45);
+        }
+        .watch-crown::after {
+            content: ''; position: absolute; inset: 5px 3px; border-radius: 3px;
+            background: repeating-linear-gradient(#000 0 1px, transparent 1px 3px); opacity: 0.22;
+        }
+        .watch-button {
+            position: absolute; z-index: 1; right: 6px; top: 62%;
+            width: 7px; height: 38px; border-radius: 4px;
+            background: linear-gradient(90deg, #5e6064, #b9bbbe 50%, #66686c);
+            box-shadow: 1px 0 2px rgba(0,0,0,0.45);
+        }
+        .watch-case {
+            position: relative; z-index: 2; width: 184px; margin: 0 auto;
+            aspect-ratio: 416 / 496; border-radius: 58px; padding: 5px;
+            background: linear-gradient(135deg, #e9eaec, #abaeb3 38%, #87898e 60%, #c9cbce 100%);
+            box-shadow: 0 0 0 1px rgba(0,0,0,0.35), 0 26px 54px rgba(0,0,0,0.7), 0 0 72px rgba(74,140,214,0.08);
+        }
+        .watch-case img {
+            width: 100%; height: 100%; object-fit: cover; display: block;
+            background: #000; border-radius: 54px;
+        }
+        .watch-copy h3 { margin-bottom: 14px; }
+        .watch-copy p { font-size: 16px; color: var(--text-2); line-height: 1.65; max-width: 520px; font-weight: 380; }
+        @media (max-width: 768px) {
+            .watch-lede { grid-template-columns: 1fr; justify-items: center; text-align: center; gap: 36px; }
+            .watch-copy p { margin: 0 auto; }
+        }
 
         /* ── Story ── */
         .story-grid {
@@ -797,6 +958,7 @@
     </a>
     <div class="nav-links">
         <a href="#how-it-works" class="nav-link">How it works</a>
+        <a href="#insights" class="nav-link">Insights</a>
         <a href="#whats-new" class="nav-link">What's new</a>
         <a href="#story" class="nav-link">Story</a>
         <a href="mailto:info@kampa.health" class="nav-cta">Get in touch</a>
@@ -811,7 +973,7 @@
             Apple Movement Disorder API
         </div>
         <h1>Notice what your body already knows.</h1>
-        <p class="hero-sub">No two people experience Parkinson's the same way. Kampa passively monitors your tremor through Apple Watch, correlates every dose, meal, workout, and night of sleep, and surfaces the patterns that are true for you - so you can adjust your life around what actually affects you. No manual symptom tracking. No daily check-ins.</p>
+        <p class="hero-sub">No two people experience Parkinson's the same way. Kampa passively monitors your tremor and dyskinesia through Apple Watch, correlates every dose, meal, workout, and night of sleep, and surfaces the patterns that are true for you - so you can adjust your life around what actually affects you. No manual symptom tracking. No daily check-ins.</p>
         <div class="chips">
             <span class="chip">watchOS</span>
             <span class="chip">Apple Health</span>
@@ -858,18 +1020,18 @@
     <div class="cap-grid">
         <div class="cap-card">
             <div class="cap-icon">📈</div>
-            <h3 class="cap-title">Continuous tremor monitoring</h3>
-            <p class="cap-desc">Apple's Movement Disorder API reads tremor via Apple Watch all day. Ambient observation - no tapping, no check-ins, nothing to remember.</p>
+            <h3 class="cap-title">Tremor &amp; dyskinesia, all day</h3>
+            <p class="cap-desc">Apple's Movement Disorder API reads both tremor and dyskinesia via Apple Watch continuously - the two motor signals that shape a Parkinson's day. Ambient observation: no tapping, no check-ins, nothing to remember.</p>
         </div>
         <div class="cap-card">
             <div class="cap-icon">💊</div>
             <h3 class="cap-title">Medication correlation</h3>
-            <p class="cap-desc">Tracks what happens to your tremor in the 30-90 minutes after every dose. Wearing-off timing, effectiveness, and duration - surfaced automatically.</p>
+            <p class="cap-desc">Tracks what happens to your movement in the 30-90 minutes after every dose. Wearing-off timing, effectiveness, and duration - surfaced automatically.</p>
         </div>
         <div class="cap-card">
-            <div class="cap-icon">🍎</div>
-            <h3 class="cap-title">No logging chore</h3>
-            <p class="cap-desc">Kampa reads what you already track in Apple Health and on your Apple Watch - sleep, HRV, workouts, medications, daylight - and correlates it against continuous tremor. No separate logbook to keep up; the only thing you note in Kampa is food.</p>
+            <div class="cap-icon">🎙️</div>
+            <h3 class="cap-title">Log by voice</h3>
+            <p class="cap-desc">Kampa reads what Apple Health already tracks - sleep, HRV, workouts, daylight - automatically. What you note yourself, like a meal or a dose, takes just a sentence - by voice or a quick tap. Built for tremor-affected hands, so logging never becomes a chore.</p>
         </div>
         <div class="cap-card">
             <div class="cap-icon">✦</div>
@@ -879,95 +1041,125 @@
     </div>
 </div>
 
+<!-- ── On your wrist ── -->
+<div class="section-wrap" style="padding-bottom: 40px;">
+    <div class="watch-lede">
+        <div class="watch-device">
+            <div class="watch-band watch-band-top"></div>
+            <div class="watch-band watch-band-bottom"></div>
+            <div class="watch-crown"></div>
+            <div class="watch-button"></div>
+            <div class="watch-case">
+                <img src="images/watch-tremor.jpg" alt="Kampa on Apple Watch showing latest tremor 0.0, a tremor sparkline, and today's average tremor 0.5 and dyskinesia 0.0">
+            </div>
+        </div>
+        <div class="watch-copy">
+            <p class="eyebrow">On your wrist</p>
+            <h3 class="section-h">The sensor you're already wearing.</h3>
+            <p>Kampa runs on Apple Watch, reading tremor and dyskinesia continuously through Apple's Movement Disorder API - no session to start, nothing to wear beyond the watch you already own. A glance shows your latest reading and the shape of the day, and your iPhone wakes the watch to sync in the background - so the data keeps flowing without you doing a thing.</p>
+        </div>
+    </div>
+</div>
+
 <!-- ── Screenshots ── -->
-<div class="section-wrap" style="padding-top: 0;">
+<div class="section-wrap" style="padding-top: 40px;">
     <div class="screens-box">
         <p class="eyebrow" style="margin-bottom: 8px;">The app</p>
-        <h2 class="section-h" style="margin-bottom: 28px;">Real data. Real patterns.</h2>
-        <!-- Day at a glance -->
+        <h2 class="section-h" style="margin-bottom: 14px;">Real data. Real patterns.</h2>
+        <p class="section-p" style="max-width: 560px; margin-bottom: 28px;">One real day in Kampa - Monday, June 29. Nothing staged, nothing simulated. This is what the app actually recorded.</p>
+        <!-- Day at a glance (real values from this day) -->
         <div class="glance-card">
             <div class="glance-item">
                 <span class="glance-icon">🛏️</span>
-                <div><div class="glance-num">5h 47m</div><div class="glance-label">Total sleep</div></div>
+                <div><div class="glance-num">5h 3m</div><div class="glance-label">Total sleep</div></div>
             </div>
             <div class="glance-item">
                 <span class="glance-icon">📈</span>
                 <div><div class="glance-num">0.9</div><div class="glance-label">Tremor avg · Slight</div></div>
             </div>
             <div class="glance-item">
-                <span class="glance-icon">💜</span>
-                <div><div class="glance-num">36 ms</div><div class="glance-label">HRV</div></div>
+                <span class="glance-icon">〰️</span>
+                <div><div class="glance-num">0.0</div><div class="glance-label">Dyskinesia · None</div></div>
             </div>
             <div class="glance-item">
-                <span class="glance-icon">☀️</span>
-                <div><div class="glance-num">53m</div><div class="glance-label">In daylight</div></div>
+                <span class="glance-icon">💜</span>
+                <div><div class="glance-num">47 ms</div><div class="glance-label">HRV</div></div>
             </div>
         </div>
-        <!-- Tremor chart callout — the centerpiece -->
+        <!-- Dual-signal chart callout — the centerpiece -->
         <div class="tremor-callout" style="margin-top: 0;">
             <div class="tremor-header">
-                <strong>Tremor timeline - medication, exercise &amp; meditation overlaid</strong>
-                <span>Every event that matters, on one chart</span>
+                <strong>Tremor &amp; dyskinesia - one real day, one timeline</strong>
+                <span>Every dose and meal, marked where it happened</span>
             </div>
-            <img src="images/screenshot-tremor.jpeg" alt="Tremor chart with medication, workout, and meditation events">
+            <div class="chart-annot">
+                <img src="images/chart-dual-signal.jpg" alt="Kampa chart for Monday June 29 showing the blue tremor line active through the morning and the coral dyskinesia line near zero, with medication and food events marked">
+                <!-- Rings annotate the real, subtle dyskinesia upticks (see grid analysis) -->
+                <span class="annot-ring" data-time="11 AM" style="left: 41.5%; top: 76%;"></span>
+                <span class="annot-ring" data-time="5 PM" style="left: 85%; top: 75.5%;"></span>
+            </div>
+            <p class="annot-note">Both motor signals on one chart. Today, <b>dyskinesia barely registered</b> - Kampa still catches the small upticks it did find, around 11 AM and 5 PM.</p>
             <div class="tremor-legend">
                 <div class="legend-item">
+                    <span><span class="sig-swatch-line" style="background: var(--blue);"></span></span>
+                    <div><strong>Tremor</strong><p>Shake, minute to minute</p></div>
+                </div>
+                <div class="legend-item">
+                    <span><span class="sig-swatch-line" style="background: var(--coral);"></span></span>
+                    <div><strong>Dyskinesia</strong><p>Involuntary movement</p></div>
+                </div>
+                <div class="legend-item">
                     <span>💊</span>
-                    <div><strong>Medication</strong><p>Dose timing + effect window</p></div>
-                </div>
-                <div class="legend-item">
-                    <span>🏃</span>
-                    <div><strong>Workout</strong><p>Exercise sessions correlated</p></div>
-                </div>
-                <div class="legend-item">
-                    <span>🧘</span>
-                    <div><strong>Meditation</strong><p>Mindfulness sessions tracked</p></div>
+                    <div><strong>Medication</strong><p>Every dose, to the minute</p></div>
                 </div>
                 <div class="legend-item">
                     <span>🍽️</span>
-                    <div><strong>Food</strong><p>Meals and their aftereffects</p></div>
+                    <div><strong>Food</strong><p>Meals, ready to correlate</p></div>
                 </div>
             </div>
         </div>
 
-        <!-- Detail cards — the story behind each event -->
-        <p class="section-p" style="margin: 48px 0 24px; max-width: none;">Tap any event on the timeline and Kampa shows you the detail - what it was, when it happened, and what it means.</p>
-        <div class="detail-grid">
-            <div class="detail-card">
-                <span class="detail-icon">🍽️</span>
-                <div class="detail-label">Food</div>
-                <div class="detail-head">5 almonds, 2 walnuts, chai</div>
-                <div class="detail-sub">Logged by voice at 8:32 AM. Kampa auto-detected <span class="dtag">Caffeine</span> <span class="dtag">Fat</span></div>
+        <!-- Voice logging story -->
+        <p class="section-p" style="margin: 56px 0 26px; max-width: none;">A meal, a dose, a mindfulness session - the things you note yourself, you just say. Kampa transcribes on device, works out what you meant, and files it at the right time. Even "last night at 9 PM" lands on the right day.</p>
+        <div class="voice-strip">
+            <div class="voice-step">
+                <div class="phone"><img src="images/voice-menu.jpg" alt="Kampa Log entry screen with Food, Medication and Mindfulness, and a Tap to log by voice mic button"></div>
+                <div class="voice-cap"><span class="voice-num">1</span><strong>Start anywhere</strong><span>Tap + and hit the mic - food, medication, or mindfulness</span></div>
             </div>
-            <div class="detail-card">
-                <span class="detail-icon">🧘</span>
-                <div class="detail-label">Meditation</div>
-                <div class="detail-head">30 minutes at 10:00 PM</div>
-                <div class="detail-sub">Every event timestamped - ready to correlate against tremor.</div>
+            <div class="voice-step">
+                <div class="phone"><img src="images/voice-speak.jpg" alt="Kampa Speak to log screen transcribing 'I ate blueberries and vanilla ice cream last night at 9 PM'"></div>
+                <div class="voice-cap"><span class="voice-num">2</span><strong>Just say it</strong><span>"blueberries and vanilla ice cream last night at 9 PM"</span></div>
             </div>
-            <div class="detail-card">
-                <span class="detail-icon">💊</span>
-                <div class="detail-label">Insight</div>
-                <div class="detail-head">Sinemet at 12 PM — tremor down 83%</div>
-                <div class="detail-sub">Avg 2.1 → 0.3 in the 30–90 min window after. No charts to read.</div>
+            <div class="voice-step">
+                <div class="phone"><img src="images/voice-parsed.jpg" alt="Kampa parsing the voice entry into Food, dated to 9:00 PM the night before"></div>
+                <div class="voice-cap"><span class="voice-num">3</span><strong>Kampa understands</strong><span>Sorted into food, timed to 9 PM - no forms</span></div>
+            </div>
+            <div class="voice-step">
+                <div class="phone"><img src="images/voice-stored.jpg" alt="The stored food entry showing auto-detected attributes: Sugar, Fiber, Fat"></div>
+                <div class="voice-cap"><span class="voice-num">4</span><strong>Filed &amp; detected</strong><span>Auto-tags Sugar, Fiber, Fat - ready to correlate</span></div>
             </div>
         </div>
 
-        <!-- Insights showcase — cross-day patterns -->
-        <p class="section-p" style="margin: 56px 0 26px; max-width: none;">And across weeks and months, the Insights view surfaces the longer patterns - each with an honest confidence level, and only when the data actually supports it.</p>
-        <div class="insight-shots">
-            <div class="insight-shot">
-                <img src="images/insight-overview.jpg" alt="Kampa Insights list - several findings, each labeled with a confidence level">
-                <div class="insight-cap"><strong>Ranked by confidence</strong><span>Emerging, Moderate, or Strong - never overstated</span></div>
-            </div>
-            <div class="insight-shot">
-                <img src="images/insight-experiment.jpg" alt="An insight expanded with a chart and a 'Try an experiment' button">
-                <div class="insight-cap"><strong>A hypothesis you can test</strong><span>Framed as an association to test, not proof</span></div>
-            </div>
-            <div class="insight-shot">
-                <img src="images/insight-dose.jpg" alt="Medication dose-response chart comparing morning, pre-lunch and afternoon doses">
-                <div class="insight-cap"><strong>Worth a doctor's eye</strong><span>Clear enough to bring to your neurologist</span></div>
-            </div>
+    </div>
+</div>
+
+<!-- ── Insights (cross-day) ── -->
+<div class="section-wrap" id="insights">
+    <p class="eyebrow">Insights</p>
+    <h2 class="section-h">The patterns you'd never spot yourself.</h2>
+    <p class="section-p">A single day shows what happened. Across weeks and months, the Insights view surfaces the longer patterns - how your medication really performs, when wearing-off tends to hit, how your walking is trending - each with an honest confidence level, and only when the data actually supports it.</p>
+    <div class="insight-shots">
+        <div class="insight-shot">
+            <img src="images/insight-1.jpg" alt="Kampa Insights list - several findings, each labeled with a confidence level">
+            <div class="insight-cap"><strong>Ranked by confidence</strong><span>Emerging, Moderate, or Strong - never overstated</span></div>
+        </div>
+        <div class="insight-shot">
+            <img src="images/insight-2.jpg" alt="An insight expanded with a chart and a 'Try an experiment' button">
+            <div class="insight-cap"><strong>A hypothesis you can test</strong><span>Framed as an association to test, not proof</span></div>
+        </div>
+        <div class="insight-shot">
+            <img src="images/insight-3.jpg" alt="Medication dose-response chart comparing morning, pre-lunch and afternoon doses">
+            <div class="insight-cap"><strong>Worth a doctor's eye</strong><span>Clear enough to bring to your neurologist</span></div>
         </div>
     </div>
 </div>
@@ -1052,6 +1244,27 @@
         <div class="changelog-item">
             <div class="changelog-date">Jun 2026</div>
             <div>
+                <div class="changelog-title">Log by voice</div>
+                <div class="changelog-desc">Speak a meal, a dose, or a mindfulness session and Kampa transcribes it on device, works out what you meant, and files it at the right time - even "last night at 9 PM." Food and mindfulness also work hands-free through Siri. Built for tremor-affected hands: no typing, no forms.</div>
+            </div>
+        </div>
+        <div class="changelog-item">
+            <div class="changelog-date">Jun 2026</div>
+            <div>
+                <div class="changelog-title">Dyskinesia, alongside tremor</div>
+                <div class="changelog-desc">Kampa now reads the full tremor distribution and the raw dyskinesia stream from Apple's Movement Disorder API - and draws both on the same timeline. Two motor signals, one chart, so you can see the whole picture of how a day moved.</div>
+            </div>
+        </div>
+        <div class="changelog-item">
+            <div class="changelog-date">Jun 2026</div>
+            <div>
+                <div class="changelog-title">A redesigned Apple Watch face</div>
+                <div class="changelog-desc">The Watch app gets a clean Kampa lockup and a live tremor sparkline - and the iPhone can now wake it to sync in the background, so your tremor data keeps flowing without opening anything.</div>
+            </div>
+        </div>
+        <div class="changelog-item">
+            <div class="changelog-date">Jun 2026</div>
+            <div>
                 <div class="changelog-title">Cross-day Insights</div>
                 <div class="changelog-desc">A new Insights view looks across weeks and months, not just today - surfacing longer-running patterns like medication response, wearing-off timing, and walking trends. Each comes with an honest confidence level and a clear "discuss with your neurologist" note. It only claims a pattern when the data actually supports it.</div>
             </div>
@@ -1120,14 +1333,14 @@
             <p class="roadmap-desc">Proactive wrist alerts built from your own patterns - not generic reminders. "Your typical wear-off is at 4 hours. Your last dose was 3h 50m ago."</p>
         </div>
         <div class="roadmap-item">
-            <div class="roadmap-label">Roadmap</div>
-            <div class="roadmap-title">Glucose - tremor correlation</div>
-            <p class="roadmap-desc">Continuous glucose monitoring via Dexcom or Abbott Libre, read through Apple Health. No PD app currently measures how glucose spikes affect levodopa absorption and tremor.</p>
+            <div class="roadmap-label">Up next</div>
+            <div class="roadmap-title">Glucose - movement correlation</div>
+            <p class="roadmap-desc">Continuous glucose monitoring read through Apple Health. No PD app currently measures how glucose spikes affect levodopa absorption and tremor - the sensors are in hand and integration is the next signal to land.</p>
         </div>
         <div class="roadmap-item">
             <div class="roadmap-label">Roadmap</div>
-            <div class="roadmap-title">Voice-first logging</div>
-            <p class="roadmap-desc">"Hey Siri, log Sinemet." App Intents built for tremor-affected hands - no typing required. Designed around how PD patients actually interact with their phones.</p>
+            <div class="roadmap-title">Guided experiments</div>
+            <p class="roadmap-desc">Turn a pattern into a test. Kampa proposes a hypothesis from your own data - "does a later first dose steady your mornings?" - then labels the days and reads back a verdict.</p>
         </div>
         <div class="roadmap-item">
             <div class="roadmap-label">Roadmap</div>
