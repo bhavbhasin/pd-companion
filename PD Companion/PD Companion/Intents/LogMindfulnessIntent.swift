@@ -87,7 +87,7 @@ enum LogIntentError: Error, CustomLocalizedStringResourceConvertible {
     var localizedStringResource: LocalizedStringResource {
         switch self {
         case .healthKitWriteFailed:
-            return "Couldn't save to Apple Health. Open Kampa, allow Health access, then try again."
+            return "Couldn't save to Health. Open Kampa, allow Health access, then try again."
         }
     }
 }

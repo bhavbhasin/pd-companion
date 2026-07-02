@@ -12,8 +12,10 @@ import UIKit
 /// mis-logging a mindfulness session.
 struct LogMedicationIntent: AppIntent {
     static var title: LocalizedStringResource = "Log Medication"
+    // NOTE: an App Intent description must not contain the word "Apple" — Apple's upload
+    // validator rejects it (ITMS-90626, build 7). Say "Health" (the app's actual name).
     static var description = IntentDescription(
-        "Open Apple Health's Medications screen to log a dose. Apple doesn't allow apps to record doses directly, so Kampa hands off to Health."
+        "Open the Health app's Medications screen to log a dose. Third-party apps can't record doses directly, so Kampa hands off to Health."
     )
 
     // Must foreground to hand off to another app's URL scheme.
@@ -21,7 +23,7 @@ struct LogMedicationIntent: AppIntent {
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         await Self.openMedications()
-        return .result(dialog: "Opening Medications in Apple Health.")
+        return .result(dialog: "Opening Medications in Health.")
     }
 
     // Deep-links to Health's Medications screen; falls back to Health's home if that
