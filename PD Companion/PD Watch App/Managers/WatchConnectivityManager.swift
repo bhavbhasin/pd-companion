@@ -23,17 +23,18 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
     /// Build the WC payload carrying both streams. Tremor and dyskinesia ride together
     /// under separate keys so existing transport/size/ack logic is unchanged; an empty
     /// stream simply omits its key (the phone tolerates a missing key).
+    // applicationContext is hard-capped (~256KB) and latest-wins, so it carries only a small
+    // recent slice as an always-fits ambient heartbeat; bulk/backfill rides transferUserInfo.
+    // See docs/design/watch-sync-payload-options.md (Recommendation).
+    private let applicationContextWindowHours: Double = 6
+
     private func makePayload(
         tremor: [TremorSample], dyskinesia: [DyskinesiaSample]
     ) -> [String: Any]? {
         var message: [String: Any] = [:]
         do {
-            if !tremor.isEmpty {
-                message["tremorSamples"] = try JSONEncoder().encode(tremor)
-            }
-            if !dyskinesia.isEmpty {
-                message["dyskinesiaSamples"] = try JSONEncoder().encode(dyskinesia)
-            }
+            try Self.addStream(tremor, raw: "tremorSamples", lz: "tremorSamplesLZ", to: &message)
+            try Self.addStream(dyskinesia, raw: "dyskinesiaSamples", lz: "dyskinesiaSamplesLZ", to: &message)
         } catch {
             print("[sync] Failed to encode symptom data (t=\(tremor.count) d=\(dyskinesia.count)): \(error)")
             return nil
@@ -41,15 +42,30 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
         return message.isEmpty ? nil : message
     }
 
+    // Encode a stream to JSON, then attach it compressed under the …LZ key when compression
+    // succeeds, else raw under the legacy key. Compression is what keeps the payload under
+    // WC's size limits; the phone reads either key. See docs/design/watch-sync-payload-options.md.
+    private static func addStream<T: Encodable>(
+        _ samples: [T], raw: String, lz: String, to message: inout [String: Any]
+    ) throws {
+        guard !samples.isEmpty else { return }
+        let json = try JSONEncoder().encode(samples)
+        if let compressed = WCPayload.compress(json) {
+            message[lz] = compressed
+        } else {
+            message[raw] = json
+        }
+    }
+
     func pushLatestContext(tremor: [TremorSample], dyskinesia: [DyskinesiaSample]) {
         guard WCSession.default.activationState == .activated else { return }
-        let cutoff = Date().addingTimeInterval(-48 * 3600)
+        let cutoff = Date().addingTimeInterval(-applicationContextWindowHours * 3600)
         let recentTremor = tremor.filter { $0.timestamp > cutoff }
         let recentDyskinesia = dyskinesia.filter { $0.startDate > cutoff }
         guard let message = makePayload(tremor: recentTremor, dyskinesia: recentDyskinesia) else { return }
         do {
             try WCSession.default.updateApplicationContext(message)
-            print("[sync] applicationContext updated: \(recentTremor.count) tremor, \(recentDyskinesia.count) dyskinesia")
+            print("[sync] applicationContext updated: \(recentTremor.count) tremor, \(recentDyskinesia.count) dyskinesia (≤\(Int(applicationContextWindowHours))h slice)")
         } catch {
             print("[sync] updateApplicationContext failed (t=\(recentTremor.count) d=\(recentDyskinesia.count)): \(error.localizedDescription)")
         }
@@ -66,9 +82,9 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
             return
         }
 
-        let tremorBytes = (message["tremorSamples"] as? Data)?.count ?? 0
-        let dyskinesiaBytes = (message["dyskinesiaSamples"] as? Data)?.count ?? 0
-        let payloadKB = (tremorBytes + dyskinesiaBytes) / 1024
+        // Sum every Data value (compressed …LZ or legacy raw keys) so the size gate is
+        // key-name agnostic.
+        let payloadKB = message.values.compactMap { ($0 as? Data)?.count }.reduce(0, +) / 1024
         let sendMessageLimitKB = 60
 
         if WCSession.default.isReachable && payloadKB < sendMessageLimitKB {

@@ -116,15 +116,24 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
     @discardableResult
     private func processIncoming(_ payload: [String: Any]) -> Bool {
         var handled = false
-        if let data = payload["tremorSamples"] as? Data {
+        if let data = Self.streamData(payload, raw: "tremorSamples", lz: "tremorSamplesLZ") {
             processTremorData(data)
             handled = true
         }
-        if let data = payload["dyskinesiaSamples"] as? Data {
+        if let data = Self.streamData(payload, raw: "dyskinesiaSamples", lz: "dyskinesiaSamplesLZ") {
             processDyskinesiaData(data)
             handled = true
         }
         return handled
+    }
+
+    // Extract a stream's JSON, preferring the compressed key (…LZ) and falling back to the
+    // legacy raw key so a new phone build still reads an older watch build's payload during a
+    // staggered TestFlight update. See docs/design/watch-sync-payload-options.md.
+    private static func streamData(_ payload: [String: Any], raw: String, lz: String) -> Data? {
+        if let compressed = payload[lz] as? Data { return WCPayload.decompress(compressed) }
+        if let plain = payload[raw] as? Data { return plain }
+        return nil
     }
 
     private func processTremorData(_ data: Data) {

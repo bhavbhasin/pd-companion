@@ -76,3 +76,17 @@ struct HealthSample: Codable, Identifiable {
     var mindfulnessMinutes: Double?
     var stepCount: Double?
 }
+
+/// LZFSE (de)compression for WatchConnectivity payloads. Tremor/dyskinesia JSON is dominated
+/// by repeated key names, which compress ~5-10×, keeping `applicationContext` under its
+/// ~256KB cap and shrinking `transferUserInfo` well below the ~1MB that was failing to
+/// deliver. Lives here so both the phone and watch targets share one implementation.
+/// See docs/design/watch-sync-payload-options.md (Recommendation, step 2).
+enum WCPayload {
+    static func compress(_ data: Data) -> Data? {
+        try? (data as NSData).compressed(using: .lzfse) as Data
+    }
+    static func decompress(_ data: Data) -> Data? {
+        try? (data as NSData).decompressed(using: .lzfse) as Data
+    }
+}
