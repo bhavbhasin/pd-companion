@@ -1,6 +1,15 @@
 # Watch → Phone Sync — Payload Reliability: Options & Failure Modes
 
-**Status:** analysis only. No code. Decision pending. (Jul 2 2026)
+**Status:** Implemented as **build 9** (Jul 3 2026). Root cause confirmed on-device: the 48h window of
+full-distribution samples serialized to ~1MB → `applicationContext` failed `PayloadTooLarge` (ambient
+path dead for any user past ~12h history) and the ~1MB `transferUserInfo` fallback did not deliver. NOT
+the pairing desync (that was a separate dev-sideload artifact) and NOT a build-8 regression.
+Fix = steps 1-4 below. Commits: `0f25e8f` (1), `54b09ad` (2), `1bace7b` (3), `0dfb128` (4), `1c72d5b` (bump).
+On-device verified: `applicationContext … (≤6h slice)` no longer overflows; `transferUserInfo` 1019KB → 215KB
+and delivered; phone watermark advanced (caught up). Pending: device-verify chunked >48h backfill + stale
+banner/nudge, then TestFlight upload. Follow-up (not in scope): tremor chart misrepresents sparse days
+(catmullRom interpolates across gaps + duration-blind `tremorScore`) — break line at gaps + weight by
+`percentUnknown`.
 
 ## Verified facts (grounded in logs + code)
 
