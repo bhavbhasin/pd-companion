@@ -71,17 +71,52 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
         }
     }
 
+    // Bulk sends are split into chunks of this many samples so an arbitrarily large backfill
+    // (a multi-day gap, bounded by the API's ~7-day retention) delivers as many small,
+    // independently-valid payloads instead of one oversized blob that fails to deliver. The
+    // phone dedups on timestamp, so chunk boundaries and re-sends are harmless.
+    // See docs/design/watch-sync-payload-options.md (step 3).
+    private let chunkSize = 500
+
     func sendTremorSamples(tremor: [TremorSample], dyskinesia: [DyskinesiaSample]) {
         guard WCSession.default.activationState == .activated else {
             print("[sync] WCSession not activated — skipping symptom sync (t=\(tremor.count) d=\(dyskinesia.count))")
             return
         }
-
-        guard let message = makePayload(tremor: tremor, dyskinesia: dyskinesia) else {
+        let chunks = Self.chunk(tremor: tremor, dyskinesia: dyskinesia, size: chunkSize)
+        if chunks.isEmpty {
             print("[sync] No new symptom samples to send")
             return
         }
+        if chunks.count > 1 {
+            print("[sync] sending \(tremor.count) tremor + \(dyskinesia.count) dyskinesia in \(chunks.count) chunks")
+        }
+        for batch in chunks {
+            sendOnePayload(tremor: batch.tremor, dyskinesia: batch.dyskinesia)
+        }
+    }
 
+    // Split into ≤`size`-sample batches, pairing the two streams by index. Each batch is an
+    // independently-valid payload; cross-stream alignment doesn't matter (dedup is per-sample).
+    private static func chunk(
+        tremor: [TremorSample], dyskinesia: [DyskinesiaSample], size: Int
+    ) -> [(tremor: [TremorSample], dyskinesia: [DyskinesiaSample])] {
+        if tremor.isEmpty && dyskinesia.isEmpty { return [] }
+        let tBatches = stride(from: 0, to: tremor.count, by: size).map {
+            Array(tremor[$0..<min($0 + size, tremor.count)])
+        }
+        let dBatches = stride(from: 0, to: dyskinesia.count, by: size).map {
+            Array(dyskinesia[$0..<min($0 + size, dyskinesia.count)])
+        }
+        let count = max(tBatches.count, dBatches.count)
+        return (0..<count).map { i in
+            (tremor: i < tBatches.count ? tBatches[i] : [],
+             dyskinesia: i < dBatches.count ? dBatches[i] : [])
+        }
+    }
+
+    private func sendOnePayload(tremor: [TremorSample], dyskinesia: [DyskinesiaSample]) {
+        guard let message = makePayload(tremor: tremor, dyskinesia: dyskinesia) else { return }
         // Sum every Data value (compressed …LZ or legacy raw keys) so the size gate is
         // key-name agnostic.
         let payloadKB = message.values.compactMap { ($0 as? Data)?.count }.reduce(0, +) / 1024
@@ -150,8 +185,11 @@ class WatchConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
             print("[sync] handleIncoming requestTremorSync since=\(since?.description ?? "nil") available=\(movement.isAvailable)")
             movement.queryRecentResults {
                 Task { @MainActor in
-                    let baselineCutoff = Date().addingTimeInterval(-48 * 3600)
-                    let cutoff = max(since ?? baselineCutoff, baselineCutoff)
+                    // Honor the phone's watermark down to the API's ~7-day retention floor, so a
+                    // gap longer than 48h still recovers (delivered chunked). Bounded because the
+                    // watch cannot query older than the retained window anyway.
+                    let retentionFloor = Date().addingTimeInterval(-7 * 24 * 3600)
+                    let cutoff = max(since ?? retentionFloor, retentionFloor)
                     let tremor = MovementDisorderManager.shared.recentTremorSamples
                         .filter { $0.timestamp > cutoff }
                     let dyskinesia = MovementDisorderManager.shared.recentDyskinesiaSamples
