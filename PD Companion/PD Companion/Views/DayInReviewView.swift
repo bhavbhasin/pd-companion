@@ -209,6 +209,7 @@ private enum DayReviewLayout {
 
 private struct DayReviewContent: View {
     @EnvironmentObject var healthKit: HealthKitManager
+    @EnvironmentObject var connectivity: PhoneConnectivityManager
     @Environment(\.modelContext) private var modelContext
 
     private let dayStart: Date
@@ -268,9 +269,33 @@ private struct DayReviewContent: View {
         return (healthKit.dayEvents + food).sorted { $0.time < $1.time }
     }
 
+    // Shown when watch data has gone stale (paired watch, has synced before, silent >8h). One
+    // human-doable step only — never reboot/force-quit. See docs/design/watch-sync-payload-options.md.
+    private var staleWatchBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "applewatch.slash")
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Watch data is behind")
+                    .font(.subheadline.weight(.semibold))
+                Text("Open Kampa on your Watch to sync your latest data.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
+                if connectivity.syncIsStale {
+                    staleWatchBanner
+                }
                 GlanceCard(
                     sleep: healthKit.daySleep,
                     tremorReadings: dayReadings,

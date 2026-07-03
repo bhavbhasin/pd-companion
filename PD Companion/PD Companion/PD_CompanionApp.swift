@@ -69,6 +69,7 @@ struct PD_CompanionApp: App {
                     // corrected classifier — runs off the main thread on its own context.
                     FoodAttributeBackfill.runIfNeeded(container: AppContainer.shared)
                     connectivity.cleanupDuplicates()
+                    connectivity.requestNotificationAuthorization()
                     await healthKit.requestAuthorization()
                     await healthKit.fetchTodaySnapshot()
                     Self.scheduleTremorSync()
@@ -80,6 +81,8 @@ struct PD_CompanionApp: App {
                         connectivity.requestFreshTremorData()
                         // Wake the Watch app so it can sync without the user opening it.
                         connectivity.launchWatchAppForSync()
+                        // Banner only while in-app; the notification fires from the BG task.
+                        connectivity.evaluateSyncFreshness()
                     case .background:
                         Self.scheduleTremorSync()
                     default:
@@ -109,6 +112,8 @@ struct PD_CompanionApp: App {
 
         Task { @MainActor in
             PhoneConnectivityManager.shared.requestFreshTremorData()
+            // Background wake with no fresh watch data past the threshold → the one nudge.
+            PhoneConnectivityManager.shared.evaluateSyncFreshness(sendNudgeIfStale: true)
             task.setTaskCompleted(success: true)
         }
     }

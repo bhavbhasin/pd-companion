@@ -3,6 +3,7 @@ import SwiftData
 import HealthKit
 import Foundation
 import Combine
+import UserNotifications
 
 @MainActor
 class PhoneConnectivityManager: NSObject, ObservableObject {
@@ -12,6 +13,9 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
     @Published var isWatchPaired = false
     @Published var isWatchAppInstalled = false
     @Published var isWatchReachable = false
+    // Drives the "Open Kampa on your Watch" banner when a paired watch that has synced before
+    // has gone quiet past the stale threshold. See docs/design/watch-sync-payload-options.md (step 4).
+    @Published var syncIsStale = false
 
     // Hold the container, not a context. A persistent ModelContext from the SwiftUI
     // environment is unreliable on background-launched WCSession callbacks
@@ -97,6 +101,58 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Sync freshness / stale nudge
+
+    // A paired watch that has produced data before but has gone silent this long reads as stale:
+    // the UI shows a banner and (from a background refresh) one notification fires. 8h clears a
+    // normal overnight off-wrist charge without false-alarming.
+    private let staleThresholdHours: Double = 8
+    // One notification per stale episode; reset the moment fresh data lands.
+    private var nudgedForCurrentGap = false
+
+    /// Recompute whether watch data has gone stale. Cheap; safe on every foreground and after each
+    /// incoming batch. Only flags stale for a paired watch that has synced before — a brand-new
+    /// user with no data yet is cold-start, not stale.
+    func evaluateSyncFreshness(sendNudgeIfStale: Bool = false) {
+        guard isWatchPaired, let latest = latestStoredSampleTimestamp() else {
+            syncIsStale = false
+            nudgedForCurrentGap = false
+            return
+        }
+        let hours = Date().timeIntervalSince(latest) / 3600
+        let stale = hours > staleThresholdHours
+        syncIsStale = stale
+        if stale {
+            print("[sync] stale: \(String(format: "%.1f", hours))h since last watch data")
+            if sendNudgeIfStale { sendStaleNudgeIfNeeded() }
+        } else {
+            nudgedForCurrentGap = false
+        }
+    }
+
+    /// Ask for notification permission (the prompt needs a foreground context). Called once on
+    /// launch; no onboarding exists yet, so this is the lazy request.
+    func requestNotificationAuthorization() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, error in
+            if let error { print("[sync] notification auth error: \(error.localizedDescription)") }
+        }
+    }
+
+    /// The single stale nudge — one human-doable step, never reboot/force-quit guidance.
+    private func sendStaleNudgeIfNeeded() {
+        guard !nudgedForCurrentGap else { return }
+        nudgedForCurrentGap = true
+        let content = UNMutableNotificationContent()
+        content.title = "Kampa"
+        content.body = "Kampa hasn't heard from your Watch in a while. Open Kampa on your Watch to sync your latest data."
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: "kampa.watch.stale", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error { print("[sync] stale nudge failed: \(error.localizedDescription)") }
+            else { print("[sync] stale nudge delivered") }
+        }
+    }
+
     private func makeContext() -> ModelContext? {
         guard let container = modelContainer else { return nil }
         return ModelContext(container)
@@ -124,6 +180,8 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
             processDyskinesiaData(data)
             handled = true
         }
+        // Fresh data advances the watermark → clears any stale banner / nudge state.
+        if handled { evaluateSyncFreshness() }
         return handled
     }
 
