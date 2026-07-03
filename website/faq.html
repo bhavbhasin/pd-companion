@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAQ — Kampa</title>
+    <meta name="description" content="Answers to common questions about Kampa - setup, the tremor chart, Insights, privacy, glucose, pricing, and how the app works. Not medical advice.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;1,14..32,400&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0a0a0a;
+            --surface-1: #111113;
+            --surface-2: #1c1c1e;
+            --border: #2c2c2e;
+            --blue: #4A8CD6;
+            --blue-dim: rgba(74, 140, 214, 0.12);
+            --blue-border: rgba(74, 140, 214, 0.30);
+            --text-1: #ffffff;
+            --text-2: rgba(235, 235, 245, 0.76);
+            --text-3: rgba(235, 235, 245, 0.36);
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-geist: 'Geist', 'Inter', sans-serif;
+            --max-w: 760px;
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            background: var(--bg);
+            color: var(--text-1);
+            font-family: var(--font);
+            -webkit-font-smoothing: antialiased;
+            line-height: 1.7;
+            font-weight: 300;
+        }
+        nav {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 32px;
+            background: rgba(10, 10, 10, 0.72);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .wordmark { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+        .wordmark .name {
+            font-family: var(--font-geist); font-weight: 500; font-size: 18px;
+            letter-spacing: -0.02em; color: #fff;
+        }
+        .wordmark .name .a-blue { color: var(--blue); }
+        .nav-back { color: var(--text-2); text-decoration: none; font-size: 14px; transition: color 0.18s; }
+        .nav-back:hover { color: var(--text-1); }
+        .container { max-width: var(--max-w); margin: 0 auto; padding: 72px 32px 96px; }
+        .eyebrow {
+            font-size: 11.5px; font-weight: 650; letter-spacing: 0.11em;
+            text-transform: uppercase; color: var(--blue); margin-bottom: 14px;
+        }
+        h1 {
+            font-size: clamp(30px, 4vw, 42px); font-weight: 700;
+            letter-spacing: -0.03em; line-height: 1.1; margin-bottom: 12px;
+        }
+        .meta { font-size: 13.5px; color: var(--text-3); margin-bottom: 40px; }
+        .intro {
+            background: var(--surface-1); border: 1px solid var(--border);
+            border-radius: 14px; padding: 24px 26px; margin-bottom: 36px;
+            font-size: 16px; color: var(--text-2); line-height: 1.75;
+        }
+        .toc {
+            display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 48px;
+        }
+        .toc a {
+            font-size: 13px; color: var(--text-2); text-decoration: none;
+            background: var(--surface-2); border: 1px solid var(--border);
+            border-radius: 999px; padding: 7px 14px; transition: border-color 0.18s, color 0.18s;
+        }
+        .toc a:hover { border-color: var(--blue); color: var(--text-1); }
+        section { scroll-margin-top: 80px; }
+        h2 {
+            font-size: 20px; font-weight: 600; letter-spacing: -0.02em;
+            color: var(--text-1); margin: 48px 0 8px;
+            padding-bottom: 12px; border-bottom: 1px solid var(--border);
+        }
+        h3 { font-size: 15.5px; font-weight: 600; color: var(--text-1); margin: 28px 0 8px; }
+        p { color: var(--text-2); margin-bottom: 14px; font-size: 15.5px; }
+        strong { font-weight: 500; color: var(--text-1); }
+        a { color: var(--blue); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s; }
+        a:hover { border-bottom-color: var(--blue); }
+        .callout {
+            background: var(--blue-dim); border: 1px solid var(--blue-border);
+            border-radius: 10px; padding: 16px 20px; margin: 22px 0;
+        }
+        .callout p { margin: 0; color: var(--text-1); font-weight: 400; font-size: 15px; }
+        .contact {
+            margin-top: 56px; padding: 24px 26px; background: var(--surface-1);
+            border: 1px solid var(--border); border-radius: 14px;
+        }
+        .contact h2 { border: none; margin: 0 0 8px; padding: 0; }
+        .contact p { margin: 0; }
+        footer {
+            border-top: 1px solid var(--border); padding: 32px;
+            text-align: center; font-size: 12.5px; color: var(--text-3);
+        }
+        footer a { color: var(--text-2); }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a href="index.html" class="wordmark" aria-label="Kampa home">
+        <svg width="38" height="23" viewBox="0 0 240 144" fill="none" xmlns="http://www.w3.org/2000/svg" style="color:#fff; flex-shrink:0;">
+            <path d="M8 90 C 28 90, 30 30, 56 30 C 78 30, 80 110, 104 95 C 124 82, 126 60, 150 60 C 168 60, 172 78, 192 78 L 232 78" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="232" cy="78" r="5" fill="currentColor"/>
+        </svg>
+        <span class="name">k<span class="a-blue">ā</span>mpa</span>
+    </a>
+    <a href="index.html" class="nav-back">← Back to site</a>
+</nav>
+
+<div class="container">
+
+    <p class="eyebrow">Help</p>
+    <h1>Frequently asked questions</h1>
+    <p class="meta">How Kampa works - setup, your data, privacy, and more. Not medical advice.</p>
+
+    <div class="intro">
+        Answers to the questions people ask most about Kampa. If you don't find what you need here, email <a href="mailto:info@kampa.health">info@kampa.health</a> - it reaches the person who builds the app. For anything medical, talk to your doctor or neurologist.
+    </div>
+
+    <nav class="toc" aria-label="Sections">
+        <a href="#getting-started">Getting started</a>
+        <a href="#your-data">Understanding your data</a>
+        <a href="#privacy">Privacy</a>
+        <a href="#logging">Logging &amp; voice</a>
+        <a href="#glucose">Glucose (CGM)</a>
+        <a href="#cost">Cost</a>
+        <a href="#about">About Kampa</a>
+    </nav>
+
+    <section id="getting-started">
+        <h2>Getting started</h2>
+
+        <h3>What do I need to run Kampa?</h3>
+        <p>An iPhone 11 or newer running iOS 26 or later, and an Apple Watch Series 4 or newer running watchOS 10 or later. The Watch is essential - it is where tremor and dyskinesia are sensed. Kampa works with older Watches like the Series 5 and first-generation SE.</p>
+
+        <h3>I installed Kampa and it says "no data yet." Is something wrong?</h3>
+        <p>No - this is expected. Tremor sensing needs a few days of regular Watch wear before patterns appear. Wear your Watch through your normal days, and Kampa will start showing data as it accumulates. If you see nothing after 3-4 days of wear, check that Kampa has Motion and Health permissions in Settings.</p>
+
+        <h3>Do I need to open the app every day?</h3>
+        <p>No, but open it every few days. Your Watch stores about a week of tremor data and hands it to your iPhone when the app opens. If the app stays closed longer than that, the oldest days can be lost. Kampa will remind you if it has not heard from your Watch in a while - that reminder is the one notification we will always send, because your data matters. We are working toward fully automatic background sync.</p>
+
+        <h3>Which permissions does Kampa ask for, and why?</h3>
+        <p>Health access (to read sleep, exercise, heart data, medications, and to save what you log), Motion access on the Watch (tremor and dyskinesia sensing), and optionally notifications (used only for the handful of things worth interrupting you for - like the Watch losing sync). Kampa asks for nothing it does not use.</p>
+
+        <h3>How do I log my medications?</h3>
+        <p>In the Apple Health app, which is the system of record for medications on iPhone. Log a dose there (or via Siri with Apple's own medication features) and Kampa reads it automatically and places it on your timeline. Kampa deliberately does not keep a separate medication list - one list, no double entry.</p>
+    </section>
+
+    <section id="your-data">
+        <h2>Understanding your data</h2>
+
+        <h3>What does the 0-4 tremor scale mean?</h3>
+        <p>It is a None-to-Strong severity estimate produced automatically from your Apple Watch. The labels echo the severity language clinicians use, but the number is a passive estimate from wrist sensing - not a doctor's exam, and not a clinical score. Use it to compare your own days against each other, not to compare yourself against anyone else.</p>
+
+        <h3>Why does my tremor number look different from another app I use?</h3>
+        <p>Different apps measure different things. Kampa's chart shows tremor intensity - how strong the tremor was, hour by hour. Some other apps report duration - how many minutes of tremor occurred. Both are legitimate lenses; a day can have long mild tremor or brief strong tremor. Neither number is wrong; they answer different questions.</p>
+
+        <h3>What is dyskinesia, and why does mine show zero?</h3>
+        <p>Dyskinesia refers to involuntary movements that can occur as a side effect of levodopa medication, usually at peak dose. Not everyone experiences it - if you don't, a flat line is the correct reading, not a broken feature. Wrist sensing can also register some ordinary movement as possible dyskinesia, so Kampa is deliberately conservative about what it shows.</p>
+
+        <h3>Why do tremor and dyskinesia sometimes look like opposites on the chart?</h3>
+        <p>Because pharmacologically they often are. Tremor tends to peak before a dose (medication worn off) and dyskinesia at peak dose. Seeing them rise and fall in opposite rhythm around your doses is the levodopa cycle made visible - many people find this one chart explains their day better than anything else.</p>
+
+        <h3>What is the difference between Observations and Insights?</h3>
+        <p>Observations describe today: "Tremor eased 68% in the hour after your 8 AM dose." They are honest descriptions of what co-occurred, not proof of cause. Insights are patterns that hold up across many days and pass statistical checks before you ever see them. Observations are the daily read; Insights are the accumulated evidence.</p>
+
+        <h3>What do the confidence labels on Insights mean?</h3>
+        <p>Emerging, moderate, and strong reflect how much evidence supports a pattern - how many days, how large the effect, and how consistently it repeats. Kampa shows the basis plainly ("based on 23 days"). If a pattern stops holding, its card is downgraded or retired. We would rather show you nothing than something that is not real.</p>
+
+        <h3>Why do I have so few Insights? / Why did a card disappear?</h3>
+        <p>Because Kampa applies real statistical standards before claiming anything, and honest standards mean fewer, better cards. Some things genuinely have no effect on your symptoms - learning that is valuable too. Cards appear when evidence clears the bar and retire when it no longer does; the screen reflects the current state of evidence, never a highlight reel.</p>
+
+        <h3>Will Kampa ever tell me to change my medication?</h3>
+        <p>No. Never. Kampa may surface an observation worth discussing - for example, that your afternoon doses seem to act more slowly than your morning ones - and help you prepare a summary for your neurologist. What to do about it is a decision for you and your doctor.</p>
+    </section>
+
+    <section id="privacy">
+        <h2>Privacy and your data</h2>
+
+        <h3>Where does my health data live?</h3>
+        <p>On your iPhone and in your own private iCloud. Kampa has no servers. We cannot see your data - not because of a policy, but because of how the app is built. Nothing is sold, shared, or used for research without your explicit consent.</p>
+
+        <h3>Does Kampa use my data to train AI?</h3>
+        <p>No. Optional AI-powered features (like plain-language explanations) send only derived summary statistics - never your raw health data, never your identity - and only if you opt in. Everything else runs entirely on your device.</p>
+
+        <h3>Can I get my data out?</h3>
+        <p>Yes, always. Kampa exports your data as CSV files you can keep, inspect, or share. It is your data; export is free and always will be.</p>
+
+        <h3>What happens to my data if I stop using Kampa?</h3>
+        <p>It stays in your iCloud and your Apple Health store, under your control. Deleting the app removes Kampa's copies; your Health data remains yours in Apple Health.</p>
+
+        <div class="callout">
+            <p>For the complete details, see the <a href="privacy.html">full privacy policy</a>.</p>
+        </div>
+    </section>
+
+    <section id="logging">
+        <h2>Logging and voice</h2>
+
+        <h3>How does voice logging work?</h3>
+        <p>Say something like "Hey Siri, log coffee with Kampa" or "log a 20 minute meditation." Kampa reads back what it understood and asks you to confirm before saving anything. It was designed for days when typing is hard.</p>
+
+        <h3>Why can't I log a medication dose by voice through Kampa?</h3>
+        <p>Apple allows apps to read medication doses from Apple Health but not to write them. Saying "log my meds" opens Apple Health's own medication screen instead. This is an Apple platform rule, and it exists for a good reason - one trusted list of record for something as important as medication.</p>
+    </section>
+
+    <section id="glucose">
+        <h2>Glucose (CGM)</h2>
+
+        <h3>Kampa shows a glucose panel. Do I need a glucose monitor?</h3>
+        <p>No. Kampa works fully without one. If you choose to wear an over-the-counter continuous glucose sensor (such as Abbott Lingo or Dexcom Stelo - no prescription needed), Kampa can display your glucose curve time-aligned under your tremor chart, with doses and meals marked across both.</p>
+
+        <h3>Why would glucose matter for tremor or medication?</h3>
+        <p>Levodopa is absorbed and reaches the brain through transport systems that food - especially protein and large meals - can compete with. Your glucose curve is an objective record of your body's meal response, which can help make sense of days when a dose seemed slow or weak. Kampa treats this as an area to observe honestly, not a promise.</p>
+
+        <h3>How do I connect my sensor?</h3>
+        <p>Enable Apple Health sharing inside your sensor's own app (for example Lingo). Kampa reads glucose from Apple Health automatically - no separate pairing.</p>
+    </section>
+
+    <section id="cost">
+        <h2>Cost</h2>
+
+        <h3>What does Kampa cost?</h3>
+        <p>Nothing right now - Kampa is free to use. Sensing, charts, daily observations, logging, and data export are all included.</p>
+    </section>
+
+    <section id="about">
+        <h2>About Kampa</h2>
+
+        <h3>Who makes Kampa?</h3>
+        <p>Kampa is built by Bhav Bhasin, a product builder who has spent 25+ years on large-scale technology and now builds independently, working closely with the Parkinson's community. Kampa began as an attempt to answer questions that existing tools would not: not "what happened," but "what actually affects me?"</p>
+
+        <h3>What does "Kampa" mean?</h3>
+        <p>Kampa (कम्प) is Sanskrit for "tremor," from Kampavata - the term ancient Ayurvedic medicine used for what modern medicine calls Parkinson's disease. We chose a name that faces the condition honestly.</p>
+
+        <h3>I have essential tremor, not Parkinson's. Will Kampa work for me?</h3>
+        <p>Parts of it. Kampa's lifestyle logging and correlation tools apply broadly, but the Watch's tremor sensing is tuned by Apple for Parkinson's resting tremor, and some features (like dose-response analysis) are specific to Parkinson's medication. We have not yet validated Kampa for essential tremor, and we won't claim it works until we have.</p>
+
+        <h3>Is Kampa a medical device?</h3>
+        <p>No. Kampa is a personal wellness and symptom-tracking tool. It is not a medical device and does not provide medical advice, diagnosis, or treatment. Always consult a qualified healthcare professional about any medical condition.</p>
+
+        <h3>I found a bug / I have an idea. Where do I send it?</h3>
+        <p><a href="mailto:info@kampa.health">info@kampa.health</a> - it lands with the person who builds the app, usually within a day or two. Ideas from people living with the condition have shaped most of what Kampa is.</p>
+    </section>
+
+    <div class="contact">
+        <h2>Still have a question?</h2>
+        <p>Email <a href="mailto:info@kampa.health">info@kampa.health</a> - it reaches the person who builds Kampa, usually within a day or two.</p>
+    </div>
+
+</div>
+
+<footer>
+    © 2026 Kampa Health · <a href="index.html">kampa.health</a> · <a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Use</a>
+</footer>
+
+</body>
+</html>

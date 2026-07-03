@@ -485,6 +485,7 @@
             align-items: start;
         }
         .insight-shot { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+        .insight-shot .phone { width: 100%; max-width: 320px; }
         .insight-shot img { width: 100%; display: block; }
         .insight-cap { text-align: center; }
         .insight-cap strong { display: block; font-size: 14px; font-weight: 600; color: var(--text-1); margin-bottom: 3px; }
@@ -562,6 +563,24 @@
         .legend-item span { font-size: 17px; }
         .legend-item strong { display: block; font-size: 12.5px; font-weight: 600; }
         .legend-item p { font-size: 11.5px; color: var(--text-3); }
+
+        /* ── Glucose (CGM) lede — mirrors .watch-lede grammar ── */
+        .phone video { width: 100%; display: block; }
+        .cgm-lede {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 64px;
+            align-items: center;
+        }
+        .cgm-lede .phone { width: 285px; }
+        .cgm-copy h3 { margin-bottom: 14px; }
+        .cgm-copy p { font-size: 16px; color: var(--text-2); line-height: 1.65; max-width: 520px; font-weight: 380; margin-bottom: 16px; }
+        .cgm-copy p:last-child { margin-bottom: 0; }
+        .cgm-copy strong { color: var(--text-1); font-weight: 600; }
+        @media (max-width: 760px) {
+            .cgm-lede { grid-template-columns: 1fr; justify-items: center; text-align: center; gap: 36px; }
+            .cgm-copy p { margin-left: auto; margin-right: auto; }
+        }
 
         /* ── Dual-signal showcase ── */
         .signal-grid {
@@ -1143,6 +1162,22 @@
     </div>
 </div>
 
+<!-- ── Glucose (CGM) ── -->
+<div class="section-wrap">
+    <div class="cgm-lede">
+        <div class="phone-wrap">
+            <div class="phone"><video src="images/cgm-scrub.mp4" poster="images/cgm-scrub-poster.jpg" autoplay loop muted playsinline></video></div>
+            <div class="phone-glow"></div>
+        </div>
+        <div class="cgm-copy">
+            <p class="eyebrow">Glucose</p>
+            <h3 class="section-h">On the same timeline.</h3>
+            <p>Wear an over-the-counter glucose sensor - Abbott Lingo, Dexcom Stelo, no prescription - and Kampa reads it straight from Apple Health, drawing your glucose curve in its own panel, time-aligned right under your tremor chart.</p>
+            <p><strong>Touch and hold anywhere, and a crosshair sweeps every panel at once</strong> - a dose, a meal, a tremor uptick, and a glucose swing all line up to the same minute. Collapse a panel when you want fewer signals in view. Kampa works fully without a sensor, too.</p>
+        </div>
+    </div>
+</div>
+
 <!-- ── Insights (cross-day) ── -->
 <div class="section-wrap" id="insights">
     <p class="eyebrow">Insights</p>
@@ -1150,15 +1185,15 @@
     <p class="section-p">A single day shows what happened. Across weeks and months, the Insights view surfaces the longer patterns - how your medication really performs, when wearing-off tends to hit, how your walking is trending - each with an honest confidence level, and only when the data actually supports it.</p>
     <div class="insight-shots">
         <div class="insight-shot">
-            <img src="images/insight-1.jpg" alt="Kampa Insights list - several findings, each labeled with a confidence level">
+            <div class="phone"><img src="images/insight-1.jpg" alt="Kampa Insights list - several findings, each labeled with a confidence level"></div>
             <div class="insight-cap"><strong>Ranked by confidence</strong><span>Emerging, Moderate, or Strong - never overstated</span></div>
         </div>
         <div class="insight-shot">
-            <img src="images/insight-2.jpg" alt="An insight expanded with a chart and a 'Try an experiment' button">
+            <div class="phone"><img src="images/insight-2.jpg" alt="An insight expanded with a chart and a 'Try an experiment' button"></div>
             <div class="insight-cap"><strong>A hypothesis you can test</strong><span>Framed as an association to test, not proof</span></div>
         </div>
         <div class="insight-shot">
-            <img src="images/insight-3.jpg" alt="Medication dose-response chart comparing morning, pre-lunch and afternoon doses">
+            <div class="phone"><img src="images/insight-3.jpg" alt="Medication dose-response chart comparing morning, pre-lunch and afternoon doses"></div>
             <div class="insight-cap"><strong>Worth a doctor's eye</strong><span>Clear enough to bring to your neurologist</span></div>
         </div>
     </div>
@@ -1241,6 +1276,13 @@
     <h2 class="section-h">Recently shipped.</h2>
     <p class="section-p">What's landed in the app lately. Each release gets a closer look on <a href="https://www.linkedin.com/company/kampa-health/" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;">LinkedIn</a>.</p>
     <div class="changelog-list">
+        <div class="changelog-item">
+            <div class="changelog-date">Jul 2026</div>
+            <div>
+                <div class="changelog-title">Glucose, on the same timeline</div>
+                <div class="changelog-desc">Wear an over-the-counter glucose sensor - Abbott Lingo, Dexcom Stelo, no prescription - and Kampa reads it straight from Apple Health and draws your glucose curve in its own panel, time-aligned right under your tremor chart. Touch and hold anywhere and a crosshair sweeps every panel at once, so a dose, a meal, a tremor uptick, and a glucose swing all line up to the same minute. It works fully without a sensor, too.</div>
+            </div>
+        </div>
         <div class="changelog-item">
             <div class="changelog-date">Jun 2026</div>
             <div>
@@ -1334,8 +1376,8 @@
         </div>
         <div class="roadmap-item">
             <div class="roadmap-label">Up next</div>
-            <div class="roadmap-title">Glucose - movement correlation</div>
-            <p class="roadmap-desc">Continuous glucose monitoring read through Apple Health. No PD app currently measures how glucose spikes affect levodopa absorption and tremor - the sensors are in hand and integration is the next signal to land.</p>
+            <div class="roadmap-title">Per-medication response</div>
+            <p class="roadmap-desc">Immediate-release levodopa, extended-release, and Mucuna each act on a different curve. Kampa will read dose-response for each one separately - not pooled together.</p>
         </div>
         <div class="roadmap-item">
             <div class="roadmap-label">Roadmap</div>
@@ -1404,6 +1446,8 @@
         </div>
         <div class="footer-meta">
             <div style="margin-bottom:6px;">
+                <a href="faq.html" style="color:var(--text-2);text-decoration:none;">FAQ</a>
+                <span style="color:var(--text-3);margin:0 4px;">·</span>
                 <a href="privacy.html" style="color:var(--text-2);text-decoration:none;">Privacy</a>
                 <span style="color:var(--text-3);margin:0 4px;">·</span>
                 <a href="terms.html" style="color:var(--text-2);text-decoration:none;">Terms</a>

@@ -41,3 +41,6 @@ website/images/detail-food.PNG
 website/images/detail-meditation.PNG
 website/images/detail-food-card.jpg
 website/images/detail-meditation-card.jpg
+
+# Raw screen recordings (source only, not deployed)
+website/images/*.mov
