@@ -167,7 +167,15 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
             context.insert(TremorReading(from: sample))
             inserted += 1
         }
-        try? context.save()
+        // Loud save — never swallow a save error. A silent `try?` made a failed persist
+        // indistinguishable from "never arrived", hiding the last step of the
+        // receive→dedup→insert→save pipeline. See docs/design/watch-sync-payload-options.md (Step 1).
+        do {
+            try context.save()
+            print("[sync] persistSamples saved inserted=\(inserted)")
+        } catch {
+            print("[sync] persistSamples SAVE FAILED inserted=\(inserted): \(error)")
+        }
         return inserted
     }
 
@@ -188,7 +196,13 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
             context.insert(DyskinesiaReading(from: sample))
             inserted += 1
         }
-        try? context.save()
+        // Loud save — see persistSamples above / docs/design/watch-sync-payload-options.md (Step 1).
+        do {
+            try context.save()
+            print("[sync] persistDyskinesiaSamples saved inserted=\(inserted)")
+        } catch {
+            print("[sync] persistDyskinesiaSamples SAVE FAILED inserted=\(inserted): \(error)")
+        }
         return inserted
     }
 
