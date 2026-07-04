@@ -30,12 +30,28 @@ struct DayAheadPanel: View {
         }
     }
 
+    // An OBSERVED OFF is shaded by how severe the measured tremor actually was, so the band
+    // agrees with the tremor line above instead of painting every wearing-off window the same
+    // alarm-red (offThreshold sits at "Slight" on a 0–4 scale — a Mild OFF shouldn't look like
+    // a Strong one). ON and projected stay flat: projected has no measurement to defer to.
+    private func fillOpacity(_ seg: CorrelationEngine.DayForecast.Segment) -> Double {
+        guard seg.observed else { return 0.32 }                    // projected: faded, flat
+        guard seg.phase == .off, let t = seg.meanTremor else { return 0.9 }  // ON / no reading
+        let lo = CorrelationEngine.offThreshold, hi = 3.5          // threshold … Strong
+        let s = min(max((t - lo) / (hi - lo), 0), 1)
+        return 0.45 + 0.45 * s
+    }
+
     private var phaseAtNow: CorrelationEngine.DayForecast.Phase? {
         forecast.segments.first { forecast.now >= $0.start && forecast.now < $0.end }?.phase
     }
 
+    // Rounded to the nearest 15 min: a personal dose-response estimate doesn't support
+    // minute precision — "around 4:02 PM" overclaims; "around 4:00 PM" matches "around".
     private func time(_ date: Date) -> String {
-        date.formatted(date: .omitted, time: .shortened)
+        let secs = (date.timeIntervalSinceReferenceDate / 900).rounded() * 900
+        return Date(timeIntervalSinceReferenceDate: secs)
+            .formatted(date: .omitted, time: .shortened)
     }
 
     private var whenText: String {
@@ -130,7 +146,7 @@ struct DayAheadPanel: View {
                     yStart: .value("lo", 0),
                     yEnd: .value("hi", 1)
                 )
-                .foregroundStyle(color(seg.phase).opacity(seg.observed ? 0.9 : 0.32))
+                .foregroundStyle(color(seg.phase).opacity(fillOpacity(seg)))
             }
             RuleMark(x: .value("Now", forecast.now))
                 .foregroundStyle(Color.primary.opacity(0.75))
@@ -167,6 +183,11 @@ struct DayAheadPanel: View {
                 AxisGridLine()
                 AxisValueLabel(format: .dateTime.hour())
             }
+        }
+        // Round just the colored plot region (not the axis labels below): the band's four
+        // outer corners soften while the internal ON/OFF phase boundaries stay crisp.
+        .chartPlotStyle { plot in
+            plot.clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .frame(height: 60)
     }
@@ -214,9 +235,9 @@ private struct NowPulse: View {
     let now = t(14.5)
     typealias Seg = CorrelationEngine.DayForecast.Segment
     let segments: [Seg] = [
-        Seg(start: t(8),    end: t(9.3),  phase: .off,     observed: true),
+        Seg(start: t(8),    end: t(9.3),  phase: .off,     observed: true,  meanTremor: 3.1), // strong
         Seg(start: t(9.3),  end: t(12.4), phase: .on,      observed: true),
-        Seg(start: t(12.4), end: t(13.3), phase: .off,     observed: true),
+        Seg(start: t(12.4), end: t(13.3), phase: .off,     observed: true,  meanTremor: 1.4), // mild
         Seg(start: t(13.3), end: now,     phase: .on,      observed: true),
         Seg(start: now,     end: t(16.5), phase: .on,      observed: false),
         Seg(start: t(16.5), end: t(24),   phase: .off,     observed: false),

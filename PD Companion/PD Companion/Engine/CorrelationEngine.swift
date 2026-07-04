@@ -1490,6 +1490,11 @@ nonisolated extension CorrelationEngine {
             let end: Date
             let phase: Phase
             let observed: Bool   // true = reconstructed from measured tremor; false = projected
+            // Mean measured tremor over the segment (observed only; nil for projected or a
+            // not-worn gap). Lets the view shade an OFF band by how severe it actually was —
+            // a Mild wearing-off ≠ a Strong one — instead of one flat alarm-red. `var` with a
+            // default so the many nil call sites stay untouched.
+            var meanTremor: Double? = nil
         }
         let segments: [Segment]              // chronological, covers [dayStart, dayEnd]
         let now: Date
@@ -1642,28 +1647,32 @@ nonisolated extension CorrelationEngine {
         let binSec = forecastObservedBinMin * 60
         var bounds: [(start: Date, end: Date)] = []
         var raw: [DayForecast.Phase] = []
+        var binMean: [Double?] = []   // nil = not-worn bin (no reading)
         var binStart = dayStart
         while binStart < end {
             let binEnd = min(binStart.addingTimeInterval(binSec), end)
             let inBin = readings.filter { $0.timestamp >= binStart && $0.timestamp < binEnd }
             if inBin.isEmpty {
-                raw.append(.unknown)
+                raw.append(.unknown); binMean.append(nil)
             } else {
                 let mean = inBin.map(\.tremorScore).reduce(0, +) / Double(inBin.count)
-                raw.append(mean >= offThreshold ? .off : .on)
+                raw.append(mean >= offThreshold ? .off : .on); binMean.append(mean)
             }
             bounds.append((binStart, binEnd))
             binStart = binEnd
         }
+        guard !bounds.isEmpty else { return [] }
         let phases = despeckle(raw, minRun: forecastMinRunBins)
+        // Coalesce equal-phase runs, averaging the measured tremor across each run so the
+        // segment carries how severe it actually was (drives OFF shading in the view).
         var segs: [DayForecast.Segment] = []
-        for (i, b) in bounds.enumerated() {
-            if let last = segs.last, last.phase == phases[i] {
-                segs[segs.count - 1] = .init(start: last.start, end: b.end,
-                                             phase: phases[i], observed: true)
-            } else {
-                segs.append(.init(start: b.start, end: b.end, phase: phases[i], observed: true))
-            }
+        var runLo = 0
+        for i in 1...bounds.count where i == bounds.count || phases[i] != phases[runLo] {
+            let means = (runLo..<i).compactMap { binMean[$0] }
+            let avg = means.isEmpty ? nil : means.reduce(0, +) / Double(means.count)
+            segs.append(.init(start: bounds[runLo].start, end: bounds[i - 1].end,
+                              phase: phases[runLo], observed: true, meanTremor: avg))
+            runLo = i
         }
         return segs
     }
@@ -1708,7 +1717,8 @@ nonisolated extension CorrelationEngine {
         let seam = min(max(now, dayStart), dayEnd)
         var out = observed.compactMap { seg -> DayForecast.Segment? in
             guard seg.start < seam else { return nil }
-            return .init(start: seg.start, end: min(seg.end, seam), phase: seg.phase, observed: true)
+            return .init(start: seg.start, end: min(seg.end, seam), phase: seg.phase,
+                         observed: true, meanTremor: seg.meanTremor)
         }
         for seg in projected where seg.end > seam {
             out.append(.init(start: max(seg.start, seam), end: seg.end,
