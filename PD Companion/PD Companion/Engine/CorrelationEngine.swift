@@ -1463,3 +1463,270 @@ nonisolated extension CorrelationEngine {
         return h
     }
 }
+
+// MARK: - Day-ahead forecast (Tier-1: run the wearing-off model forward)
+//
+// The retrospective wearing-off card describes what HAPPENED; this projects the SAME
+// validated per-user curve FORWARD from today's logged doses to show the rest of the
+// day's expected ON/OFF cycle. Pure + Sendable like the rest of the engine; rendered
+// by DayAheadPanel on the Day-in-Review screen (today only). No new statistics — it
+// reuses the parity-pinned survival + onset primitives; the only new work is arithmetic.
+//
+// SAFETY: forecast/observation only. It never proposes a dose. The OFF window is framed
+// as "what to expect", and the panel carries the same .clinicalReferral posture as the
+// wearing-off card (bring the pattern to your neurologist).
+//
+// EXTENSIBILITY: `WindowAdjustment` is the typed seam for a future gate-2-promoted lever
+// (e.g. a validated workout→window effect). v1 passes none — doses only. See
+// docs/intelligence-architecture.md (two-gate promotion; a lever feeds the forecast only
+// once its validated effect is shaped as an ON/OFF-window adjustment).
+
+nonisolated extension CorrelationEngine {
+
+    struct DayForecast: Sendable {
+        enum Phase: Sendable { case on, off, unknown }
+        struct Segment: Sendable {
+            let start: Date
+            let end: Date
+            let phase: Phase
+            let observed: Bool   // true = reconstructed from measured tremor; false = projected
+        }
+        let segments: [Segment]              // chronological, covers [dayStart, dayEnd]
+        let now: Date
+        let nextOffStart: Date?              // first projected OFF onset after `now`, if any
+        let nextOffRange: ClosedRange<Date>? // uncertainty band around nextOffStart
+        let confidence: Insight.Confidence
+    }
+
+    /// A signed adjustment a future validated lever applies to the projection (shifts
+    /// onset and/or ON-duration, with its own confidence) — the shape a gate-2-promoted
+    /// wearing-off-family primitive must emit. v1 wires none.
+    struct WindowAdjustment: Sendable {
+        let onsetDelta: TimeInterval
+        let durationDelta: TimeInterval
+        let confidence: Insight.Confidence
+    }
+
+    private static let forecastObservedBinMin = 30.0
+    // A measured ON/OFF flip must persist ≥ this many bins to count as a distinct episode.
+    // Binary-thresholding a continuous tremor that hovers near the OFF line produces
+    // spurious single-bin flips; a real wearing-off episode isn't sub-hour. 2 × 30-min = a
+    // 60-min floor — the de-noise, not a tuning knob.
+    private static let forecastMinRunBins = 2
+
+    /// Project the validated wearing-off / dose-response curve forward from today's logged
+    /// doses. Returns nil (panel hidden) when the model isn't estimable — the correct
+    /// cold-start behavior. The elapsed part of the day is reconstructed from measured
+    /// tremor (`observed`), the rest is projected.
+    static func dayForecast(
+        history: [TremorPoint],
+        allDoses: [Dose],
+        todaysDoses: [Dose],
+        todaysReadings: [TremorPoint],
+        dayStart: Date,
+        dayEnd: Date,
+        now: Date,
+        adjustments: [WindowAdjustment] = []
+    ) -> DayForecast? {
+        let doses = todaysDoses.sorted { $0.timestamp < $1.timestamp }
+        guard !doses.isEmpty else { return nil }
+
+        // Fit ON-duration from full history via the survival primitive; gate on the same
+        // dose-count floor + tier the wearing-off card uses (one shared estimability bar).
+        let sig = history.map { (time: $0.timestamp, value: $0.tremorScore) }
+        let surv = survivalDuration(signal: sig, events: allDoses.map(\.timestamp),
+                                    onThreshold: offThreshold)
+        guard surv.durations.count >= 20, surv.kmMedian.isFinite,
+              let confidence = gate(wearingOffGate, n: surv.durations.count) else { return nil }
+        let onDuration = doseOnWindowMinutes(samples: history, doses: allDoses)   // clamped/fallback
+
+        // Onset (dose → ON-start) per time-of-day bucket, pooled fallback for a thin
+        // bucket. If NO clean onset is estimable we can't time the day → nil (rather than
+        // invent a constant — no magic default).
+        let dr = doseResponseByTimeOfDay(signal: sig, events: allDoses.map(\.timestamp),
+                                         preMin: preMin, postMin: postMin)
+        let pooledOnset = nanmean(dr.traces.filter { !$0.tHalf.isNaN }.map(\.tHalf))
+        guard pooledOnset.isFinite else { return nil }
+        func onsetMinutes(_ bucket: Bucket) -> Double {
+            let o = dr.onset(bucket)
+            return (o.n > 0 && o.mean.isFinite) ? o.mean : pooledOnset
+        }
+
+        let onsetAdj = adjustments.reduce(0) { $0 + $1.onsetDelta }
+        let durAdj = adjustments.reduce(0) { $0 + $1.durationDelta }
+
+        // Projected ON intervals, one per dose, merged where they overlap (closely spaced
+        // doses → one continuous ON). ON spans [dose+onset, dose+duration]; both are
+        // measured from the dose (matches the onset/survival primitives). OFF is the
+        // complement across the day.
+        var onIntervals: [(start: Date, end: Date)] = []
+        for d in doses {
+            let onsetSec = onsetMinutes(bucketOf(hourOfDay(d.timestamp))) * 60 + onsetAdj
+            let durSec = onDuration * 60 + durAdj
+            let start = d.timestamp.addingTimeInterval(onsetSec)
+            let end = d.timestamp.addingTimeInterval(max(onsetSec + 60, durSec)) // ON stays positive
+            if end > start { onIntervals.append((start, end)) }
+        }
+        let projected = phaseTimeline(on: mergeIntervals(onIntervals),
+                                      dayStart: dayStart, dayEnd: dayEnd)
+
+        // Observed phase for the elapsed day from measured tremor (honest reconstruction).
+        let observed = observedTimeline(readings: todaysReadings, dayStart: dayStart,
+                                        end: min(now, dayEnd))
+
+        // Compose: observed up to `now`, projected after; split the straddling segment.
+        let segments = spliceAtNow(observed: observed, projected: projected,
+                                   now: now, dayStart: dayStart, dayEnd: dayEnd)
+
+        // Next OFF onset = end of the merged ON interval still open after `now`.
+        let nextOffStart = mergeIntervals(onIntervals).first { $0.end > now }?.end
+        // Uncertainty half-width from the spread of OBSERVED ON-durations (IQR/2) — a
+        // data-derived band, not an arbitrary ±.
+        var nextOffRange: ClosedRange<Date>? = nil
+        if let off = nextOffStart {
+            let half = iqr(surv.durations.filter { $0.observed && !$0.durationMin.isNaN }
+                               .map(\.durationMin)) / 2 * 60
+            if half > 0 { nextOffRange = off.addingTimeInterval(-half)...off.addingTimeInterval(half) }
+        }
+
+        return DayForecast(segments: segments, now: now,
+                           nextOffStart: nextOffStart, nextOffRange: nextOffRange,
+                           confidence: confidence)
+    }
+
+    // MARK: forecast helpers
+
+    /// Union of overlapping/touching intervals, sorted by start.
+    static func mergeIntervals(_ intervals: [(start: Date, end: Date)]) -> [(start: Date, end: Date)] {
+        var out: [(start: Date, end: Date)] = []
+        for iv in intervals.sorted(by: { $0.start < $1.start }) {
+            if var last = out.last, iv.start <= last.end {
+                last.end = max(last.end, iv.end)
+                out[out.count - 1] = last
+            } else {
+                out.append(iv)
+            }
+        }
+        return out
+    }
+
+    /// ON/OFF timeline over [dayStart, dayEnd] from merged ON intervals (everything
+    /// outside an ON interval is OFF). Every segment here is a projection.
+    static func phaseTimeline(on: [(start: Date, end: Date)],
+                              dayStart: Date, dayEnd: Date) -> [DayForecast.Segment] {
+        var segs: [DayForecast.Segment] = []
+        var cursor = dayStart
+        for iv in on {
+            let s = max(iv.start, dayStart), e = min(iv.end, dayEnd)
+            guard e > cursor else { continue }
+            if s > cursor {
+                segs.append(.init(start: cursor, end: s, phase: .off, observed: false))
+                cursor = s
+            }
+            segs.append(.init(start: cursor, end: e, phase: .on, observed: false))
+            cursor = e
+            if cursor >= dayEnd { break }
+        }
+        if cursor < dayEnd {
+            segs.append(.init(start: cursor, end: dayEnd, phase: .off, observed: false))
+        }
+        return segs
+    }
+
+    /// Observed ON/OFF over [dayStart, end] from measured tremor: 30-min bins, OFF when
+    /// the bin mean ≥ offThreshold, ON below, unknown when the bin has no readings
+    /// (not-worn). De-noised (sub-hour flips absorbed) then coalesced. Marked observed=true.
+    static func observedTimeline(readings: [TremorPoint], dayStart: Date, end: Date)
+        -> [DayForecast.Segment] {
+        guard end > dayStart else { return [] }
+        let binSec = forecastObservedBinMin * 60
+        var bounds: [(start: Date, end: Date)] = []
+        var raw: [DayForecast.Phase] = []
+        var binStart = dayStart
+        while binStart < end {
+            let binEnd = min(binStart.addingTimeInterval(binSec), end)
+            let inBin = readings.filter { $0.timestamp >= binStart && $0.timestamp < binEnd }
+            if inBin.isEmpty {
+                raw.append(.unknown)
+            } else {
+                let mean = inBin.map(\.tremorScore).reduce(0, +) / Double(inBin.count)
+                raw.append(mean >= offThreshold ? .off : .on)
+            }
+            bounds.append((binStart, binEnd))
+            binStart = binEnd
+        }
+        let phases = despeckle(raw, minRun: forecastMinRunBins)
+        var segs: [DayForecast.Segment] = []
+        for (i, b) in bounds.enumerated() {
+            if let last = segs.last, last.phase == phases[i] {
+                segs[segs.count - 1] = .init(start: last.start, end: b.end,
+                                             phase: phases[i], observed: true)
+            } else {
+                segs.append(.init(start: b.start, end: b.end, phase: phases[i], observed: true))
+            }
+        }
+        return segs
+    }
+
+    /// Absorb ON/OFF runs shorter than `minRun` bins into their stronger (longer)
+    /// non-unknown neighbor, repeatedly, until none remain — the eye's "ignore a lone
+    /// flip near the threshold." Unknown (not-worn) runs are LEFT intact: a real data gap
+    /// is honest signal, not noise. A short run flanked only by unknowns is also left (no
+    /// evidence to absorb it into).
+    static func despeckle(_ phases: [DayForecast.Phase], minRun: Int) -> [DayForecast.Phase] {
+        guard phases.count > 1, minRun > 1 else { return phases }
+        var out = phases
+        while true {
+            var runs: [(phase: DayForecast.Phase, lo: Int, hi: Int)] = []
+            for (i, p) in out.enumerated() {
+                if var last = runs.last, last.phase == p { last.hi = i; runs[runs.count - 1] = last }
+                else { runs.append((p, i, i)) }
+            }
+            func length(_ idx: Int) -> Int { idx < 0 || idx >= runs.count ? -1 : runs[idx].hi - runs[idx].lo + 1 }
+            // Shortest sub-minRun ON/OFF run that has a non-unknown neighbor to absorb into.
+            var target = -1, targetLen = Int.max
+            for (idx, r) in runs.enumerated() where r.phase != .unknown {
+                let len = r.hi - r.lo + 1
+                let prevOK = idx > 0 && runs[idx - 1].phase != .unknown
+                let nextOK = idx < runs.count - 1 && runs[idx + 1].phase != .unknown
+                if len < minRun, prevOK || nextOK, len < targetLen { target = idx; targetLen = len }
+            }
+            guard target >= 0 else { break }
+            let prevOK = target > 0 && runs[target - 1].phase != .unknown
+            let nextOK = target < runs.count - 1 && runs[target + 1].phase != .unknown
+            let usePrev = prevOK && (!nextOK || length(target - 1) >= length(target + 1))
+            let newPhase = usePrev ? runs[target - 1].phase : runs[target + 1].phase
+            for i in runs[target].lo...runs[target].hi { out[i] = newPhase }
+        }
+        return out
+    }
+
+    /// Observed segments up to `now`, projected segments after — splitting whichever
+    /// segment straddles `now` so the seam is exact.
+    static func spliceAtNow(observed: [DayForecast.Segment], projected: [DayForecast.Segment],
+                            now: Date, dayStart: Date, dayEnd: Date) -> [DayForecast.Segment] {
+        let seam = min(max(now, dayStart), dayEnd)
+        var out = observed.compactMap { seg -> DayForecast.Segment? in
+            guard seg.start < seam else { return nil }
+            return .init(start: seg.start, end: min(seg.end, seam), phase: seg.phase, observed: true)
+        }
+        for seg in projected where seg.end > seam {
+            out.append(.init(start: max(seg.start, seam), end: seg.end,
+                             phase: seg.phase, observed: false))
+        }
+        return out
+    }
+
+    /// Interquartile range (Q3 − Q1); 0 when the sample is too small to bracket. Linear
+    /// interpolation on the sorted order — enough for a display uncertainty band.
+    static func iqr(_ xs: [Double]) -> Double {
+        let s = xs.sorted()
+        guard s.count >= 4 else { return 0 }
+        func q(_ p: Double) -> Double {
+            let idx = p * Double(s.count - 1)
+            let lo = Int(idx.rounded(.down)), hi = Int(idx.rounded(.up))
+            return lo == hi ? s[lo] : s[lo] + (idx - Double(lo)) * (s[hi] - s[lo])
+        }
+        return q(0.75) - q(0.25)
+    }
+}

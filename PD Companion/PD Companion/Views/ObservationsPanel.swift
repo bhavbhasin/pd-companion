@@ -470,6 +470,7 @@ struct ObservationsPanel: View {
     let sleep: SleepBreakdown?
     let hrvSamples: [HRVSample]
     let daylightMinutes: Double?
+    @AppStorage("dayReview.expanded.observations") private var expanded = true
 
     private var observations: [DayObservation] {
         ObservationEngine.generate(
@@ -481,23 +482,34 @@ struct ObservationsPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(.yellow)
-                Text("Daily Observations")
-                    .font(.headline)
+            Button {
+                withAnimation(.snappy) { expanded.toggle() }
+            } label: {
+                HStack {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(.yellow)
+                    Text("Daily Observations")
+                        .font(.headline)
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
-            if observations.isEmpty {
-                Text(readings.isEmpty
-                     ? "No tremor data for this day — observations appear once readings are captured."
-                     : "No clear patterns detected today. Log events (medication, food, workouts) to surface correlations.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(observations) { obs in
-                        ObservationCard(observation: obs)
+            if expanded {
+                if observations.isEmpty {
+                    Text(readings.isEmpty
+                         ? "No tremor data for this day — observations appear once readings are captured."
+                         : "No clear patterns detected today. Log events (medication, food, workouts) to surface correlations.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(observations) { obs in
+                            ObservationCard(observation: obs)
+                        }
                     }
                 }
             }

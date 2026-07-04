@@ -1,0 +1,156 @@
+//
+//  DayForecastTests.swift
+//  PD CompanionTests
+//
+//  Unit tests for the Tier-1 day-ahead forecast (CorrelationEngine.dayForecast) — the
+//  wearing-off / dose-response curve run FORWARD from today's logged doses. Synthetic
+//  data only (no backup dependency), fully deterministic. The underlying survival + onset
+//  primitives are pinned by the parity test; here we test the forward projection, the
+//  estimability gate, the observed-vs-projected split, and the uncertainty band.
+//
+
+import Foundation
+import Testing
+@testable import PD_Companion
+
+struct DayForecastTests {
+
+    private static let base = Date(timeIntervalSince1970: 1_700_000_000)
+    private static let hour = 3600.0
+
+    /// A clean per-dose wearing-off profile (minutes since dose): OFF baseline → ON dip
+    /// after onset → ON plateau → rise back to OFF. Varying `plateauEnd` per dose spreads
+    /// the ON-durations so the KM median is real and the IQR band is non-zero.
+    private static func profile(_ m: Double, plateauEnd: Double) -> Double {
+        if m < 0 { return 2.0 }                                   // pre-dose OFF
+        if m < 40 { return 2.0 - (m / 40) * 1.6 }                 // onset ramp → 0.4 by 40 min
+        if m < plateauEnd { return 0.4 }                          // ON plateau
+        if m < plateauEnd + 30 { return 0.4 + ((m - plateauEnd) / 30) * 1.6 } // wear-off ramp
+        return 2.0                                                // OFF again
+    }
+
+    /// `doseCount` isolated daily doses at 09:00, each with the clean profile densely
+    /// sampled every 5 min over [-30, +300]. Returns the full-history corpus the forecast
+    /// fits its curve from.
+    private static func corpus(doseCount: Int) -> (history: [TremorPoint], doses: [Dose]) {
+        var history: [TremorPoint] = []
+        var doses: [Dose] = []
+        for i in 0..<doseCount {
+            let doseTime = base.addingTimeInterval(Double(i) * 24 * hour + 9 * hour)
+            doses.append(Dose(timestamp: doseTime, name: "Sinemet"))
+            let plateauEnd = 150.0 + Double(i % 5) * 10.0
+            for m in stride(from: -30.0, through: 300.0, by: 5.0) {
+                history.append(TremorPoint(timestamp: doseTime.addingTimeInterval(m * 60),
+                                           tremorScore: profile(m, plateauEnd: plateauEnd)))
+            }
+        }
+        return (history, doses)
+    }
+
+    // A synthetic "today": distinct from the corpus days, one dose at 09:00, "now" at 11:00.
+    private static let dayStart = base.addingTimeInterval(100 * 24 * hour)
+    private static var dayEnd: Date { dayStart.addingTimeInterval(24 * hour) }
+    private static var todayDose: Date { dayStart.addingTimeInterval(9 * hour) }
+    private static var now: Date { dayStart.addingTimeInterval(11 * hour) }
+
+    /// With an estimable history + a dose logged today, the forecast projects a full-day
+    /// timeline and a next-OFF onset after `now` (the dose's ON window wearing off).
+    @Test func producesForecastFromLoggedDoses() throws {
+        let c = Self.corpus(doseCount: 22)
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [Dose(timestamp: Self.todayDose, name: "Sinemet")],
+            todaysReadings: [], dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now))
+
+        #expect(f.confidence == .moderate)                  // n=22: ≥ moderate, < strong(40)
+        #expect(!f.segments.isEmpty)
+        #expect(f.segments.first?.start == Self.dayStart)   // covers the whole day
+        #expect(f.segments.last?.end == Self.dayEnd)
+
+        let off = try #require(f.nextOffStart)
+        #expect(off > Self.todayDose)   // OFF only after the dose's ON window
+        #expect(off > Self.now)         // still in the future
+        #expect(off < Self.dayEnd)
+    }
+
+    /// Too little history to estimate the curve → nil (panel hidden), the correct cold-start.
+    @Test func hiddenWhenModelNotEstimable() {
+        let c = Self.corpus(doseCount: 5)   // < 20 durations → below the gate floor
+        #expect(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [Dose(timestamp: Self.todayDose, name: "Sinemet")],
+            todaysReadings: [], dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now) == nil)
+    }
+
+    /// No dose logged today → nothing to project forward → nil.
+    @Test func hiddenWithoutTodaysDose() {
+        let c = Self.corpus(doseCount: 22)
+        #expect(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [], todaysReadings: [],
+            dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now) == nil)
+    }
+
+    /// The elapsed day is drawn from MEASURED tremor, not the projection. If the dose
+    /// visibly did NOT work today (tremor stayed OFF where the curve predicts ON), the
+    /// past segment reads observed-OFF — reality overrides the forecast up to `now`.
+    @Test func measuredPastOverridesProjection() throws {
+        let c = Self.corpus(doseCount: 22)
+        var measured: [TremorPoint] = []
+        for m in stride(from: 0.0, through: 120.0, by: 5.0) {
+            measured.append(TremorPoint(timestamp: Self.todayDose.addingTimeInterval(m * 60),
+                                        tremorScore: 2.0))   // stayed OFF all morning
+        }
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [Dose(timestamp: Self.todayDose, name: "Sinemet")],
+            todaysReadings: measured, dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now))
+
+        // dose+30min: the projection would call this ON; the measurement says OFF.
+        let probe = Self.todayDose.addingTimeInterval(30 * 60)
+        let seg = try #require(f.segments.first { probe >= $0.start && probe < $0.end })
+        #expect(seg.observed)
+        #expect(seg.phase == .off)
+    }
+
+    // MARK: de-noise (despeckle)
+
+    typealias Phase = CorrelationEngine.DayForecast.Phase
+
+    /// A lone single-bin flip between two same-phase neighbors is noise → absorbed.
+    @Test func despeckleAbsorbsSingleBinBlip() {
+        let out = CorrelationEngine.despeckle([.off, .off, .on, .off, .off], minRun: 2)
+        #expect(out == [.off, .off, .off, .off, .off])
+    }
+
+    /// A genuine ≥2-bin (≥1h) run is a real episode → left intact.
+    @Test func despeckleKeepsSustainedRun() {
+        let input: [Phase] = [.off, .off, .on, .on, .off, .off]
+        #expect(CorrelationEngine.despeckle(input, minRun: 2) == input)
+    }
+
+    /// A not-worn gap (unknown) is honest signal, never absorbed; a short run flanked
+    /// only by unknown has no evidence to merge into and is left alone.
+    @Test func despeckleLeavesGapsIntact() {
+        let a: [Phase] = [.on, .on, .unknown, .off, .off]
+        #expect(CorrelationEngine.despeckle(a, minRun: 2) == a)
+        let b: [Phase] = [.unknown, .on, .unknown]
+        #expect(CorrelationEngine.despeckle(b, minRun: 2) == b)
+    }
+
+    /// The next-OFF uncertainty band is derived from the spread of observed ON-durations
+    /// (IQR), not a hard-coded ±. Varied plateau lengths → a real band bracketing the onset.
+    @Test func offRangeSpreadFromDurationSpread() throws {
+        let c = Self.corpus(doseCount: 22)
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [Dose(timestamp: Self.todayDose, name: "Sinemet")],
+            todaysReadings: [], dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now))
+
+        let off = try #require(f.nextOffStart)
+        let range = try #require(f.nextOffRange)
+        #expect(range.lowerBound < off)
+        #expect(range.upperBound > off)
+        #expect(range.contains(off))
+    }
+}

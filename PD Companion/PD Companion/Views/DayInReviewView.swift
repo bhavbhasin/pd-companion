@@ -203,7 +203,7 @@ struct DayInReviewView: View {
 /// Shared layout constants for the stacked Review panels. The y-axis gutter width is
 /// pinned equal across Tremor and Glucose so their plot rectangles match and the shared
 /// x-domain lines up pixel-for-pixel — the vertical read across panels depends on it.
-private enum DayReviewLayout {
+enum DayReviewLayout {
     static let yAxisWidth: CGFloat = 46   // fits the widest tremor label ("Strong")
 }
 
@@ -226,6 +226,11 @@ private struct DayReviewContent: View {
     // value readout at that instant — the vertical read as a number, not just by eye.
     // Anchored to a time (scrolls with the data); tap the pill's × or change day to clear.
     @State private var selectedTime: Date?
+
+    // Tier-1 "rest of your day" forecast (today only). Computed off-main from full
+    // history + today's doses; nil = not estimable (cold start) or not today → panel
+    // hidden. Recomputed when the day, its doses, or its readings change (see task id).
+    @State private var forecast: CorrelationEngine.DayForecast?
 
     @Query private var dayReadings: [TremorReading]
     @Query private var dayDyskinesia: [DyskinesiaReading]
@@ -290,6 +295,41 @@ private struct DayReviewContent: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
+    // Re-fire the forecast task on day change and whenever today's events (doses) or
+    // readings move — so a freshly logged dose or a just-synced reading updates it live.
+    private var forecastKey: String {
+        "\(dayStart.timeIntervalSince1970)|\(healthKit.dayEvents.count)|\(dayReadings.count)"
+    }
+
+    /// Compute the Tier-1 forecast for today only. Snapshots full history + today's data
+    /// into Sendable values on the main actor (a one-shot fetch — not a live full-table
+    /// @Query, which this screen deliberately avoids), then runs the engine off-main.
+    private func recomputeForecast() async {
+        guard Calendar.current.isDate(dayStart, inSameDayAs: Date()) else {
+            forecast = nil
+            return
+        }
+        let allDoses = await healthKit.fetchLevodopaDoses()
+        let ds = dayStart, de = dayEnd
+        let todays = allDoses.filter { $0.timestamp >= ds && $0.timestamp < de }
+        guard !todays.isEmpty else {
+            forecast = nil
+            return
+        }
+        let history = ((try? modelContext.fetch(FetchDescriptor<TremorReading>())) ?? [])
+            .map { TremorPoint(timestamp: $0.timestamp, tremorScore: $0.tremorScore) }
+        let todaysReadings = dayReadings.map {
+            TremorPoint(timestamp: $0.timestamp, tremorScore: $0.tremorScore)
+        }
+        let now = Date()
+        forecast = await Task.detached(priority: .userInitiated) {
+            CorrelationEngine.dayForecast(
+                history: history, allDoses: allDoses,
+                todaysDoses: todays, todaysReadings: todaysReadings,
+                dayStart: ds, dayEnd: de, now: now)
+        }.value
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -313,6 +353,13 @@ private struct DayReviewContent: View {
                     selectedTime: $selectedTime,
                     onEventTap: onEventTap
                 )
+                // Directly under the tremor line + sharing its 12h scroll, so the forecast
+                // band reads straight down from the chart (dose/workout markers align).
+                // Today only; hidden when the wearing-off model isn't estimable.
+                if let forecast {
+                    DayAheadPanel(forecast: forecast, dayStart: dayStart, dayEnd: dayEnd,
+                                  scrollX: $chartScrollX)
+                }
                 // Day-gated: only for a CGM (Lingo) user, and only when this day has a
                 // curve (else a quiet note). Sits directly under Tremor with a matched
                 // x-domain and shared scroll so meals/doses read straight down across panels.
@@ -344,6 +391,8 @@ private struct DayReviewContent: View {
             }
             .padding()
         }
+        // Recompute the forecast on day change, and when today's doses or readings move.
+        .task(id: forecastKey) { await recomputeForecast() }
         // Option B: when a sync lands a new reading for the visible day, nudge the parent
         // to re-read the latest-reading timestamp so the header label stays live.
         .onChange(of: dayReadings.last?.timestamp) { _, _ in onDataChanged() }
@@ -516,7 +565,10 @@ private struct TremorTimelinePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Tremor").font(.headline)
+            HStack(spacing: 8) {
+                Image(systemName: "waveform.path.ecg").foregroundStyle(.blue)
+                Text("Tremor").font(.headline)
+            }
             if hourlyBuckets.isEmpty {
                 emptyStateView
             } else {
@@ -954,7 +1006,7 @@ private struct GlucosePanel: View {
     let dayEnd: Date
     @Binding var scrollX: Date
     @Binding var selectedTime: Date?
-    @State private var expanded = true
+    @AppStorage("dayReview.expanded.glucose") private var expanded = true
 
     // Break the line across sensor gaps > 15 min so we never draw a straight segment over
     // missing data (warmup / between-sensor / dropout). Each contiguous run becomes its own
@@ -1006,6 +1058,7 @@ private struct GlucosePanel: View {
                     withAnimation(.snappy) { expanded.toggle() }
                 } label: {
                     HStack(spacing: 8) {
+                        Image(systemName: "drop.fill").foregroundStyle(.pink)
                         Text("Glucose").font(.headline).foregroundStyle(.primary)
                         Image(systemName: expanded ? "chevron.up" : "chevron.down")
                             .font(.caption2).foregroundStyle(.tertiary)
@@ -1188,7 +1241,7 @@ private struct SleepStagesPanel: View {
     // Collapsed by default: total sleep already shows in the glance card, so the
     // hypnogram detail is opt-in. The interruptions badge stays visible collapsed —
     // it's the one sleep datum not surfaced elsewhere.
-    @State private var expanded = false
+    @AppStorage("dayReview.expanded.sleep") private var expanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1196,6 +1249,7 @@ private struct SleepStagesPanel: View {
                 withAnimation(.snappy) { expanded.toggle() }
             } label: {
                 HStack {
+                    Image(systemName: "bed.double.fill").foregroundStyle(.indigo)
                     Text("Sleep").font(.headline).foregroundStyle(.primary)
                     Spacer()
                     if let s = sleep, s.interruptions > 0 {
