@@ -69,7 +69,6 @@ struct PD_CompanionApp: App {
                     // corrected classifier — runs off the main thread on its own context.
                     FoodAttributeBackfill.runIfNeeded(container: AppContainer.shared)
                     connectivity.cleanupDuplicates()
-                    connectivity.requestNotificationAuthorization()
                     await healthKit.requestAuthorization()
                     await healthKit.fetchTodaySnapshot()
                     Self.scheduleTremorSync()
@@ -112,8 +111,8 @@ struct PD_CompanionApp: App {
 
         Task { @MainActor in
             PhoneConnectivityManager.shared.requestFreshTremorData()
-            // Background wake with no fresh watch data past the threshold → the one nudge.
-            PhoneConnectivityManager.shared.evaluateSyncFreshness(sendNudgeIfStale: true)
+            // Refresh the stale flag for the in-app banner; no push (see PhoneConnectivityManager).
+            PhoneConnectivityManager.shared.evaluateSyncFreshness()
             task.setTaskCompleted(success: true)
         }
     }
