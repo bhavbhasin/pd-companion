@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ask Kampa - prototype</title>
+<style>
+  /* Kampa brand: blue #4A8CD6, dark theme, Geist. Standalone prototype - on the real site,
+     copy the .ask-kampa block + script into the page and inherit the site's font stack. */
+  :root {
+    --kampa-blue: #4A8CD6;
+    --bg: #0e1116;
+    --panel: #171c24;
+    --panel-2: #1f2632;
+    --text: #e8edf4;
+    --muted: #9aa7b8;
+  }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: 'Geist', -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;
+         display: flex; justify-content: center; padding: 40px 16px; }
+
+  .ask-kampa { width: 100%; max-width: 560px; background: var(--panel);
+               border: 1px solid #232b38; border-radius: 16px; overflow: hidden;
+               display: flex; flex-direction: column; height: 640px; }
+
+  .ak-header { padding: 18px 22px; border-bottom: 1px solid #232b38; }
+  .ak-header h2 { margin: 0; font-size: 17px; font-weight: 600; }
+  .ak-header h2 span { color: var(--kampa-blue); }
+  .ak-header p { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
+
+  .ak-messages { flex: 1; overflow-y: auto; padding: 20px 22px; display: flex;
+                 flex-direction: column; gap: 12px; }
+  .ak-msg { max-width: 86%; padding: 11px 15px; border-radius: 14px;
+            font-size: 14.5px; line-height: 1.55; white-space: pre-wrap; }
+  .ak-msg.user { align-self: flex-end; background: var(--kampa-blue); color: #fff;
+                 border-bottom-right-radius: 5px; }
+  .ak-msg.bot  { align-self: flex-start; background: var(--panel-2);
+                 border-bottom-left-radius: 5px; }
+  .ak-msg.bot.thinking { color: var(--muted); font-style: italic; }
+
+  .ak-suggest { padding: 0 22px 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .ak-suggest button { background: transparent; border: 1px solid #2c3648; color: var(--muted);
+                       border-radius: 999px; padding: 7px 13px; font-size: 12.5px; cursor: pointer;
+                       font-family: inherit; }
+  .ak-suggest button:hover { border-color: var(--kampa-blue); color: var(--text); }
+
+  .ak-inputrow { display: flex; gap: 10px; padding: 14px 16px; border-top: 1px solid #232b38; }
+  .ak-inputrow input { flex: 1; background: var(--panel-2); border: 1px solid #2c3648;
+                       border-radius: 12px; padding: 12px 14px; color: var(--text);
+                       font-size: 15px; font-family: inherit; outline: none; }
+  .ak-inputrow input:focus { border-color: var(--kampa-blue); }
+  .ak-inputrow button { background: var(--kampa-blue); border: none; border-radius: 12px;
+                        color: #fff; padding: 0 20px; font-size: 15px; font-weight: 600;
+                        cursor: pointer; font-family: inherit; }
+  .ak-inputrow button:disabled { opacity: .5; cursor: default; }
+  #akMic { background: var(--panel-2); border: 1px solid #2c3648; font-size: 18px; padding: 0 14px; }
+  #akMic.listening { border-color: var(--kampa-blue); background: #21406b; animation: akPulse 1.2s infinite; }
+  @keyframes akPulse { 50% { opacity: .6; } }
+  .ak-foot input[type="checkbox"] { accent-color: var(--kampa-blue); }
+
+  .ak-foot { padding: 0 22px 14px; font-size: 11px; color: var(--muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<div class="ask-kampa">
+  <div class="ak-header">
+    <h2>Ask <span>Kampa</span></h2>
+    <p>Questions about the app, privacy, or how a feature works. Not medical advice.</p>
+  </div>
+
+  <div class="ak-messages" id="akMessages">
+    <div class="ak-msg bot">Hi - I can answer questions about how Kampa works: setup, the tremor chart, Insights, privacy, pricing. What would you like to know?</div>
+  </div>
+
+  <div class="ak-suggest" id="akSuggest">
+    <button>What do I need to run Kampa?</button>
+    <button>Where does my data go?</button>
+    <button>Why does it say "no data yet"?</button>
+    <button>What's the difference between Observations and Insights?</button>
+  </div>
+
+  <div class="ak-inputrow">
+    <button id="akMic" title="Ask by voice" aria-label="Ask by voice" style="display:none">&#127908;</button>
+    <input id="akInput" type="text" maxlength="500" placeholder="Type a question..."
+           autocomplete="off" aria-label="Ask a question about Kampa">
+    <button id="akSend">Ask</button>
+  </div>
+
+  <div class="ak-foot">
+    <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;cursor:pointer">
+      <input type="checkbox" id="akSpeak"> Read answers aloud
+    </label>
+    Answers are AI-generated from Kampa's documentation and can be imperfect.
+    Please don't include personal health details. For anything medical, talk to your doctor.
+    Voice questions use your browser's speech service. Need a human? info@kampa.health
+  </div>
+</div>
+
+<script>
+(function () {
+  var ENDPOINT = '/.netlify/functions/ask';
+  var messages = document.getElementById('akMessages');
+  var input = document.getElementById('akInput');
+  var send = document.getElementById('akSend');
+  var suggest = document.getElementById('akSuggest');
+  var mic = document.getElementById('akMic');
+  var speakToggle = document.getElementById('akSpeak');
+  var history = []; // {role, content} pairs sent for conversational context
+  var busy = false;
+
+  // --- Voice: feature-detect. Mic hidden where unsupported (e.g. some Safari versions). ---
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var recognizer = null;
+  if (SR) {
+    mic.style.display = '';
+    recognizer = new SR();
+    recognizer.lang = 'en-US';
+    recognizer.interimResults = false;
+    recognizer.maxAlternatives = 1;
+    recognizer.onresult = function (e) {
+      var text = e.results[0][0].transcript;
+      mic.classList.remove('listening');
+      if (text) { speakToggle.checked = true; ask(text, true); } // voice in -> voice out
+    };
+    recognizer.onerror = function () { mic.classList.remove('listening'); };
+    recognizer.onend = function () { mic.classList.remove('listening'); };
+    mic.addEventListener('click', function () {
+      if (mic.classList.contains('listening')) { recognizer.stop(); return; }
+      window.speechSynthesis && speechSynthesis.cancel();
+      mic.classList.add('listening');
+      recognizer.start();
+    });
+  }
+
+  function speak(text) {
+    if (!window.speechSynthesis || !speakToggle.checked) return;
+    speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(text);
+    u.rate = 0.95; // slightly slower - listenability for an older audience
+    speechSynthesis.speak(u);
+  }
+
+  function add(role, text, thinking) {
+    var el = document.createElement('div');
+    el.className = 'ak-msg ' + role + (thinking ? ' thinking' : '');
+    el.textContent = text;
+    messages.appendChild(el);
+    messages.scrollTop = messages.scrollHeight;
+    return el;
+  }
+
+  async function ask(q, viaVoice) {
+    if (busy || !q.trim()) return;
+    busy = true; send.disabled = true; input.value = '';
+    suggest.style.display = 'none';
+    add('user', q);
+    var wait = add('bot', 'Thinking...', true);
+
+    try {
+      var resp = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, history: history, mode: viaVoice ? 'voice' : 'text' })
+      });
+      var data = await resp.json();
+      wait.remove();
+      if (resp.ok && data.answer) {
+        add('bot', data.answer);
+        speak(data.answer);
+        history.push({ role: 'user', content: q }, { role: 'assistant', content: data.answer });
+        if (history.length > 6) history = history.slice(-6);
+      } else {
+        add('bot', 'Sorry - I could not get an answer just now. You can always reach a human at info@kampa.health.');
+      }
+    } catch (e) {
+      wait.remove();
+      add('bot', 'Sorry - something went wrong reaching the server. Try again in a moment, or email info@kampa.health.');
+    }
+    busy = false; send.disabled = false; input.focus();
+  }
+
+  send.addEventListener('click', function () { ask(input.value); });
+  input.addEventListener('keydown', function (e) { if (e.key === 'Enter') ask(input.value); });
+  suggest.addEventListener('click', function (e) {
+    if (e.target.tagName === 'BUTTON') ask(e.target.textContent);
+  });
+})();
+</script>
+
+</body>
+</html>
