@@ -3,10 +3,11 @@ import HealthKit
 import SwiftUI
 
 extension Color {
-    /// App-wide dyskinesia accent. Teal — deliberately distinct from tremor (blue, its
-    /// chart-mate on the timeline) and glucose (pink), and clear of HRV's purple on the
-    /// glance card. Change here to restyle dyskinesia everywhere.
-    static let dyskinesia = Color.teal
+    /// App-wide dyskinesia accent. Orange — the colorblind-safe complement to tremor blue (its
+    /// chart-mate on the timeline); teal read too close to blue and the two lines blurred
+    /// together. Clear of glucose (pink), HRV (purple), and the event glyphs (med red, workout
+    /// green, food brown). Change here to restyle dyskinesia everywhere.
+    static let dyskinesia = Color.orange
 }
 
 struct HRVSample: Equatable {

@@ -403,7 +403,7 @@ private struct GlanceCard: View {
     let dyskinesiaReadings: [DyskinesiaReading]
     let hrv: Double?
 
-    // Constant identity colors (blue = tremor, teal = dyskinesia) match the chart's two
+    // Constant identity colors (blue = tremor, orange = dyskinesia) match the chart's two
     // waveforms exactly — this card doubles as the chart's implicit legend. Height/number
     // encode severity; color only says *which signal*. (The old value-varying severity
     // gradient was a redundant 3rd encoding that over-signalled a noisy daily average.)
@@ -533,28 +533,44 @@ private struct TremorTimelinePanel: View {
                         )
                         .symbol { eventIcon(for: event) }
                     }
-                    ForEach(chartBuckets, id: \.hour) { bucket in
-                        AreaMark(
-                            x: .value("Time", bucket.hour),
-                            y: .value("Tremor", bucket.value)
-                        )
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color.blue.opacity(0.35), Color.blue.opacity(0.05)],
-                                startPoint: .top, endPoint: .bottom
+                    // One series per contiguous run of buckets → both the fill and the line
+                    // break where the Watch reported no data for a true gap (see `tremorSegments`),
+                    // instead of interpolating a straight span across it. A lone bucket flanked by
+                    // gaps can't draw as a 1-point line, so render it as a dot (like the glucose panel).
+                    ForEach(tremorSegments, id: \.id) { segment in
+                        if segment.points.count == 1, let p = segment.points.first {
+                            PointMark(
+                                x: .value("Time", p.hour),
+                                y: .value("Tremor", p.value)
                             )
-                        )
-                    }
-                    ForEach(chartBuckets, id: \.hour) { bucket in
-                        LineMark(
-                            x: .value("Time", bucket.hour),
-                            y: .value("Tremor", bucket.value),
-                            series: .value("Signal", "Tremor")
-                        )
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(Color.blue)
-                        .lineStyle(StrokeStyle(lineWidth: 2))
+                            .foregroundStyle(Color.blue)
+                            .symbolSize(28)
+                        } else {
+                            ForEach(segment.points, id: \.hour) { bucket in
+                                AreaMark(
+                                    x: .value("Time", bucket.hour),
+                                    y: .value("Tremor", bucket.value),
+                                    series: .value("Segment", "tremor-area-\(segment.id)")
+                                )
+                                .interpolationMethod(.catmullRom)
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Color.blue.opacity(0.35), Color.blue.opacity(0.05)],
+                                        startPoint: .top, endPoint: .bottom
+                                    )
+                                )
+                            }
+                            ForEach(segment.points, id: \.hour) { bucket in
+                                LineMark(
+                                    x: .value("Time", bucket.hour),
+                                    y: .value("Tremor", bucket.value),
+                                    series: .value("Segment", "tremor-line-\(segment.id)")
+                                )
+                                .interpolationMethod(.catmullRom)
+                                .foregroundStyle(Color.blue)
+                                .lineStyle(StrokeStyle(lineWidth: 2))
+                            }
+                        }
                     }
                     // Dyskinesia overlay — same 0–4 axis (NOT a 2nd axis, which would
                     // manufacture a correlation). Pink, and an *unshaded* line (not a 2nd
@@ -563,15 +579,30 @@ private struct TremorTimelinePanel: View {
                     // explicit `series:` is load-bearing: without it Charts merges these
                     // points into the tremor line (one color + a spurious connecting line).
                     // Draws nothing when the day has no dyskinesia (honest empty — Bhav ~0).
-                    ForEach(dyskinesiaBuckets, id: \.hour) { bucket in
-                        LineMark(
-                            x: .value("Time", bucket.hour),
-                            y: .value("Dyskinesia", bucket.value),
-                            series: .value("Signal", "Dyskinesia")
-                        )
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(Color.dyskinesia)
-                        .lineStyle(StrokeStyle(lineWidth: 2))
+                    // Broken at true gaps on the same >60min rule as tremor (dyskinesiaSegments):
+                    // a not-worn stretch shows no dyskinesia line either — consistent across signals,
+                    // and correct for a user who *does* have dyskinesia to report. Per-segment series
+                    // names stay distinct from the tremor line's so Charts never merges the two.
+                    ForEach(dyskinesiaSegments, id: \.id) { segment in
+                        if segment.points.count == 1, let p = segment.points.first {
+                            PointMark(
+                                x: .value("Time", p.hour),
+                                y: .value("Dyskinesia", p.value)
+                            )
+                            .foregroundStyle(Color.dyskinesia)
+                            .symbolSize(28)
+                        } else {
+                            ForEach(segment.points, id: \.hour) { bucket in
+                                LineMark(
+                                    x: .value("Time", bucket.hour),
+                                    y: .value("Dyskinesia", bucket.value),
+                                    series: .value("Signal", "dyskinesia-\(segment.id)")
+                                )
+                                .interpolationMethod(.catmullRom)
+                                .foregroundStyle(Color.dyskinesia)
+                                .lineStyle(StrokeStyle(lineWidth: 2))
+                            }
+                        }
                     }
                     if let t = selectedTime {
                         RuleMark(x: .value("Selected", t))
@@ -693,25 +724,28 @@ private struct TremorTimelinePanel: View {
         onEventTap(nearest)
     }
 
-    /// Tremor score at the crosshair time — nearest 30-min bucket (matches the drawn line),
-    /// on the 0–4 severity scale to one decimal, or "—" when the tap is far from any data.
+    /// Tremor score at the crosshair time — the bucket for the slot the crosshair sits in, on the
+    /// 0–4 severity scale to one decimal, or "—" when that slot is empty (not worn) or off the day.
     private func tremorReadout(at time: Date) -> String {
-        guard let b = nearestBucket(hourlyBuckets, to: time) else { return "—" }
+        guard let b = bucketForSlot(hourlyBuckets, containing: time) else { return "—" }
         return String(format: "%.1f", b.value)
     }
 
-    /// Dyskinesia intensity at the crosshair time (same 0–4 display mapping as the waveform),
-    /// to one decimal; no nearby data reads as 0.0 (honest — Bhav is ~0).
+    /// Dyskinesia intensity at the crosshair time (same 0–4 display mapping as the waveform), to one
+    /// decimal. A worn-but-calm slot reads 0.0 (honest — Bhav is ~0); an *empty* slot reads "—"
+    /// (not worn ⇒ unknown, not a measured zero — matches the broken curve).
     private func dyskinesiaReadout(at time: Date) -> String {
-        guard let b = nearestBucket(dyskinesiaBuckets, to: time) else { return "0.0" }
+        guard let b = bucketForSlot(dyskinesiaBuckets, containing: time) else { return "—" }
         return String(format: "%.1f", b.value)
     }
 
-    private func nearestBucket(_ buckets: [HourBucket], to time: Date) -> HourBucket? {
-        guard let b = buckets.min(by: {
-            abs($0.hour.timeIntervalSince(time)) < abs($1.hour.timeIntervalSince(time))
-        }), abs(b.hour.timeIntervalSince(time)) < 45 * 60 else { return nil }
-        return b
+    /// The bucket whose 30-min slot contains `time`, or nil if that slot is empty (not worn). Slot-
+    /// containment — not nearest-within-N — so the readout can't snap across a gap to a slot up to
+    /// N minutes away and report a value for a stretch the Watch never measured.
+    private func bucketForSlot(_ buckets: [HourBucket], containing time: Date) -> HourBucket? {
+        buckets.first { b in
+            time >= b.hour && time < b.hour.addingTimeInterval(30 * 60)
+        }
     }
 
     @ViewBuilder
@@ -783,9 +817,39 @@ private struct TremorTimelinePanel: View {
 
     private var chartEvents: [DayEvent] { events }
 
-    private var chartBuckets: [HourBucket] {
-        hourlyBuckets
+    // Break the curve across an empty 30-min slot — that *is* a true data gap. Apple's Movement
+    // Disorder API emits ~1 sample/min while the Watch is worn, and a slot needs only ONE sample
+    // to be "present", so an empty slot means "not worn" (charger / off wrist), never "calm" or
+    // sampling jitter. No separate not-worn threshold is needed: the 30-min bucketing already IS
+    // the noise filter (jitter can't empty a slot), so the bucket width does the job a threshold
+    // otherwise would. Consequence worth knowing: a removal shorter than a slot that leaves a
+    // sliver of data in every slot it touches (e.g. off 4:05–4:45 → 4:00 keeps 4:00–4:05, 4:30
+    // keeps 4:45–5:00) empties no slot and won't break — fine for charging (≥60 min always fully
+    // empties ≥1 slot). This rule can never false-break a worn line (worn ⇒ every slot present).
+    // > 30 min (not ≥) keeps exact-neighbor slots connected, incl. the dayEnd anchor at +30 min.
+    private static let gapBreak: TimeInterval = 30 * 60
+
+    // Split 30-min buckets into contiguous runs, cutting wherever consecutive present buckets are
+    // more than one slot apart — i.e. ≥1 empty slot sits between them. Each run becomes its own
+    // chart series so catmullRom (and any fill) never bridges a slot the Watch didn't report.
+    // Shared by both signals so tremor and dyskinesia break on the *same* empty slots — a not-worn
+    // stretch shows neither line.
+    private func segments(_ buckets: [HourBucket]) -> [(id: Int, points: [HourBucket])] {
+        guard !buckets.isEmpty else { return [] }
+        var runs: [[HourBucket]] = [[buckets[0]]]
+        for b in buckets.dropFirst() {
+            if let last = runs[runs.count - 1].last,
+               b.hour.timeIntervalSince(last.hour) > Self.gapBreak {
+                runs.append([b])
+            } else {
+                runs[runs.count - 1].append(b)
+            }
+        }
+        return runs.enumerated().map { (id: $0.offset, points: $0.element) }
     }
+
+    private var tremorSegments: [(id: Int, points: [HourBucket])] { segments(hourlyBuckets) }
+    private var dyskinesiaSegments: [(id: Int, points: [HourBucket])] { segments(dyskinesiaBuckets) }
 
     private var hourlyBuckets: [HourBucket] {
         guard !readings.isEmpty else { return [] }
