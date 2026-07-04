@@ -33,7 +33,7 @@ when feature traction warrants it — cadence follows the building, not a fixed 
 
 > `ready` = can write now · `needs-feature` = waiting on a build to ship first
 
-- [ ] **Glucose on your timeline (CGM + finger-prick)** — DRAFTED `2026-07-01-glucose/post.md`. Brand-agnostic CGM ingestion + finger-prick-via-Health, stacked/synced Tremor+Glucose panels, tap-hold crosshair. Feature shipped `6f488e0`, **live in build 9** (F&F) + **website already updated** (`13b5e40` CGM showcase). ⚠ No claim glucose predicts tremor (engine doesn't use it — step 1 = observe by eye). — `ready` (publish the post; feature + site both live)
+- [ ] **Glucose on your timeline (CGM + finger-prick)** — DRAFTED `2026-07-01-glucose/post.md`. Brand-agnostic CGM ingestion + finger-prick-via-Health, stacked/synced Tremor+Glucose panels, tap-hold crosshair. Feature shipped `6f488e0`, **live in build 9** (F&F) + **website already updated** (`13b5e40` CGM showcase). ⚠ No claim glucose predicts tremor (engine doesn't use it — step 1 = observe by eye). — `scheduled` (Mon Jul 6 AM; feature + site both live)
 
 - [ ] **A clinical report for your neurologist** — the in-app PDF export: charts + observed-medications block + Geist branding, neurologist-ready. Tangible payoff of the "bring to your appointment" line; strong for the clinical/research audience + Parkinson's Foundation contact. — `ready` (feature shipped Jun 19; **post NOT yet published**)
 - [ ] **Ambient voice insight ("the magic")** — plain-language daily summary, hands-free. — `needs-feature`
