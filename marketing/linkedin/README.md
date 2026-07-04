@@ -33,6 +33,8 @@ when feature traction warrants it — cadence follows the building, not a fixed 
 
 > `ready` = can write now · `needs-feature` = waiting on a build to ship first
 
+- [ ] **Glucose on your timeline (CGM + finger-prick)** — DRAFTED `2026-07-01-glucose/post.md`. Brand-agnostic CGM ingestion + finger-prick-via-Health, stacked/synced Tremor+Glucose panels, tap-hold crosshair. Feature committed `6f488e0` but **NOT in a TestFlight build** → hold publish + website `changelog` until **build 7** ships (batch the deploy). Site treatment = `changelog` ("Glucose on your timeline"). ⚠ No claim glucose predicts tremor (engine doesn't use it — step 1 = observe by eye). — `needs-feature` (build 7)
+
 - [ ] **A clinical report for your neurologist** — the in-app PDF export: charts + observed-medications block + Geist branding, neurologist-ready. Tangible payoff of the "bring to your appointment" line; strong for the clinical/research audience + Parkinson's Foundation contact. — `ready` (feature shipped Jun 19; **post NOT yet published**)
 - [ ] **Ambient voice insight ("the magic")** — plain-language daily summary, hands-free. — `needs-feature`
 - [ ] **Insight intelligence architecture (the design fork)** — LLM proposes hypotheses → deterministic engine judges → LLM narrates; "we let the LLM imagine and explain, never be the statistician." Bhav's sequencing: after TestFlight post. See `docs/intelligence-architecture.md`. — `ready` (but hold per sequencing)
