@@ -1,10 +1,11 @@
 import Foundation
 
-/// What a spoken phrase resolved to. The same three categories the "+" sheet offers.
+/// What a spoken phrase resolved to. The same categories the "+" sheet offers.
 enum VoiceLogType {
     case food
     case medication
     case mindfulness
+    case symptom   // a GI symptom (constipation/nausea/…) → HealthKit category sample
 }
 
 /// Decides which kind of entry a transcript is, by keyword. This runs *inside* Kampa,
@@ -35,10 +36,13 @@ enum VoiceLogClassifier {
 
     static func classify(_ transcript: String) -> VoiceLogType {
         let words = transcript.lowercased().split { !$0.isLetter }.map(String.init)
+        // Medication first (safety-relevant); then mindfulness; then GI symptoms (plain,
+        // homophone-safe words); food is the default.
         if words.contains(where: medicationWords.contains) { return .medication }
         if words.contains(where: { word in mindfulnessStems.contains(where: word.hasPrefix) }) {
             return .mindfulness
         }
+        if words.contains(where: { GISymptom.match(word: $0) != nil }) { return .symptom }
         return .food            // the default — most spoken logs are meals/snacks/drinks
     }
 }
@@ -58,6 +62,10 @@ struct VoiceLogDraft {
     let durationMinutes: Int?
     /// True when a time was spoken (vs. defaulted to now) — drives the preview wording.
     let hadSpokenTime: Bool
+    /// For `.symptom`: the resolved GI symptom (nil if the word was fuzzy — the confirm
+    /// screen falls back to a picker) and its severity (defaults to `.present`).
+    let giSymptom: GISymptom?
+    let giSeverity: GISeverity
 
     init?(transcript: String, defaultDate: Date) {
         let raw = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -83,6 +91,16 @@ struct VoiceLogDraft {
         self.description = cleaned.isEmpty ? raw : cleaned
         self.durationMinutes = minutes
         self.hadSpokenTime = spokenDate != nil
+
+        // For a symptom, pull the specific GI symptom + severity out of the raw words.
+        if type == .symptom {
+            let words = raw.lowercased().split { !$0.isLetter }.map(String.init)
+            self.giSymptom = words.lazy.compactMap(GISymptom.match(word:)).first
+            self.giSeverity = words.lazy.compactMap(GISeverity.match(word:)).first ?? .present
+        } else {
+            self.giSymptom = nil
+            self.giSeverity = .present
+        }
 
         // Anchor: a spoken time wins; otherwise the viewed day at the current clock time,
         // never the future (matches LogFoodScreen / LogMindfulnessScreen behavior).

@@ -31,6 +31,9 @@ struct VoiceLogView: View {
     /// Editable mindfulness length — seeded from the spoken duration, or a sensible
     /// default the user can adjust (never silently committed as the spoken value).
     @State private var mindfulnessMinutes = 10
+    /// Editable GI symptom + severity — seeded from the parse, corrected before saving.
+    @State private var giSymptom: GISymptom = .constipation
+    @State private var giSeverity: GISeverity = .present
     @State private var committing = false
     @State private var commitError: String?
 
@@ -70,6 +73,10 @@ struct VoiceLogView: View {
                         editedText = d.description
                         editedDate = d.when
                         if d.type == .mindfulness { mindfulnessMinutes = d.durationMinutes ?? 10 }
+                        if d.type == .symptom {
+                            giSymptom = d.giSymptom ?? .constipation
+                            giSeverity = d.giSeverity
+                        }
                     }
                 }
             }
@@ -174,6 +181,27 @@ struct VoiceLogView: View {
                     Stepper("\(mindfulnessMinutes) min",
                             value: $mindfulnessMinutes, in: 1...240)
                 }
+
+            case .symptom:
+                // Editable so a misparse (wrong symptom, or a food sentence that tripped the
+                // classifier) is corrected before anything is written to Apple Health.
+                Section("Symptom") {
+                    Picker("Symptom", selection: $giSymptom) {
+                        ForEach(GISymptom.allCases) { s in
+                            Label(s.displayName, systemImage: s.iconName).tag(s)
+                        }
+                    }
+                }
+                Section("Severity") {
+                    Picker("Severity", selection: $giSeverity) {
+                        ForEach(GISeverity.allCases) { Text($0.displayName).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                Section("When") {
+                    DatePicker("Date & time", selection: $editedDate, in: ...Date.now,
+                               displayedComponents: [.date, .hourAndMinute])
+                }
             }
 
             if let commitError {
@@ -229,6 +257,22 @@ struct VoiceLogView: View {
                 }
             }
 
+        case .symptom:
+            let symptom = giSymptom
+            let severity = giSeverity
+            let when = editedDate
+            Task {
+                do {
+                    try await healthKit.writeGISymptom(symptom, severity: severity, at: when)
+                    await healthKit.fetchDayInReview(for: Calendar.current.startOfDay(for: when))
+                    onLogged(when)
+                    dismiss()
+                } catch {
+                    commitError = "Couldn't save to Apple Health: \(error.localizedDescription)"
+                    committing = false
+                }
+            }
+
         case .medication:
             // TODO: Apple Health is system-of-record for the dose itself, but the spoken
             // context ("took it late, feeling stiff") is exactly what makes voice richer
@@ -252,6 +296,7 @@ struct VoiceLogView: View {
         case .food: "fork.knife"
         case .medication: "pills.fill"
         case .mindfulness: "brain.head.profile"
+        case .symptom: GISymptom.timelineSymbol
         }
     }
 
@@ -260,6 +305,7 @@ struct VoiceLogView: View {
         case .food: .brown
         case .medication: .pink
         case .mindfulness: .cyan
+        case .symptom: GISymptom.tint
         }
     }
 
@@ -268,6 +314,7 @@ struct VoiceLogView: View {
         case .food: "Food"
         case .medication: "Medication"
         case .mindfulness: "Mindfulness"
+        case .symptom: "Symptom"
         }
     }
 }

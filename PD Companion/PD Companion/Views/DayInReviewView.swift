@@ -737,6 +737,11 @@ private struct TremorTimelinePanel: View {
             Image(systemName: "fork.knife")
                 .foregroundStyle(Color.brown)
                 .font(.system(size: 16))
+        case .giSymptom:
+            // One restrained purple glyph for the whole GI cluster (see GISymptom.tint).
+            Image(systemName: GISymptom.timelineSymbol)
+                .foregroundStyle(GISymptom.tint)
+                .font(.system(size: 16))
         }
     }
 
@@ -837,6 +842,8 @@ private struct TremorTimelinePanel: View {
             return LegendEntry(icon: "figure.mind.and.body", label: "Mindfulness", palette: false, color: .cyan)
         case .workout(_, _, _, let type):
             return LegendEntry(icon: event.iconName, label: type.displayName, palette: false, color: .green)
+        case .giSymptom:
+            return LegendEntry(icon: GISymptom.timelineSymbol, label: "Symptom", palette: false, color: GISymptom.tint)
         }
     }
 

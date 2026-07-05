@@ -11,7 +11,7 @@ struct LogEntrySheet: View {
     let defaultDate: Date
     let onLogged: (Date) -> Void
 
-    enum Destination: Hashable { case food, mindfulness }
+    enum Destination: Hashable { case food, mindfulness, symptom }
     @State private var path: [Destination] = []
     @State private var showMedInfo = false
     @State private var showVoice = false
@@ -32,6 +32,10 @@ struct LogEntrySheet: View {
                     icon: "figure.mind.and.body", iconBg: Color.cyan.opacity(0.15), iconColor: .cyan,
                     title: "Mindfulness", subtitle: "A meditation or breathing session"
                 ) { path.append(.mindfulness) }
+                menuRow(
+                    icon: GISymptom.timelineSymbol, iconBg: GISymptom.tint.opacity(0.15), iconColor: GISymptom.tint,
+                    title: "Symptom", subtitle: "A GI symptom, when present"
+                ) { path.append(.symptom) }
             }
             .listStyle(.insetGrouped)
             .alert("Logging your medications", isPresented: $showMedInfo) {
@@ -59,6 +63,8 @@ struct LogEntrySheet: View {
                     LogFoodScreen(defaultDate: defaultDate) { date in onLogged(date); dismiss() }
                 case .mindfulness:
                     LogMindfulnessScreen(defaultDate: defaultDate) { date in onLogged(date); dismiss() }
+                case .symptom:
+                    LogSymptomScreen(defaultDate: defaultDate) { date in onLogged(date); dismiss() }
                 }
             }
         }
@@ -108,7 +114,7 @@ struct LogEntrySheet: View {
                 Text("Tap to log by voice")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
-                Text("Food, medication, or mindfulness")
+                Text("Food, medication, mindfulness, or a symptom")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -289,6 +295,103 @@ struct LogMindfulnessScreen: View {
                 // otherwise re-trigger the day's fetch.
                 await healthKit.fetchDayInReview(for: Calendar.current.startOfDay(for: starts))
                 onSaved(starts)
+            } catch {
+                errorMessage = "Could not save: \(error.localizedDescription)"
+                isSaving = false
+            }
+        }
+    }
+}
+
+// MARK: - Log GI symptom screen
+//
+// Curated GI chips (not Apple Health's giant alphabetical symptom list) → severity →
+// time → Save. Writes an HKCategorySample, same close-loop pattern as mindfulness. We
+// log the problem; a normal bowel movement is the silent baseline (no HealthKit type,
+// and it adds nothing to the levodopa-absorption correlation).
+
+struct LogSymptomScreen: View {
+    @EnvironmentObject var healthKit: HealthKitManager
+    let onSaved: (Date) -> Void
+
+    @State private var symptom: GISymptom = .constipation
+    @State private var severity: GISeverity = .present
+    @State private var when: Date
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    init(defaultDate: Date, onSaved: @escaping (Date) -> Void) {
+        self.onSaved = onSaved
+        let now = Date.now
+        let cal = Calendar.current
+        let t = cal.dateComponents([.hour, .minute], from: now)
+        let onViewedDay = cal.date(bySettingHour: t.hour ?? 12, minute: t.minute ?? 0,
+                                   second: 0, of: defaultDate) ?? defaultDate
+        _when = State(initialValue: min(onViewedDay, now))
+    }
+
+    private let columns = [GridItem(.adaptive(minimum: 150), spacing: 8)]
+
+    var body: some View {
+        Form {
+            Section("Symptom") {
+                LazyVGrid(columns: columns, spacing: 8) {
+                    ForEach(GISymptom.allCases) { chip($0) }
+                }
+                .padding(.vertical, 4)
+            }
+            Section("Severity") {
+                Picker("Severity", selection: $severity) {
+                    ForEach(GISeverity.allCases) { Text($0.displayName).tag($0) }
+                }
+                .pickerStyle(.segmented)
+            }
+            Section("When") {
+                DatePicker("Date & time", selection: $when, in: ...Date.now,
+                           displayedComponents: [.date, .hourAndMinute])
+            }
+            Section {
+                Text("Saved to Apple Health. Log a symptom when it's present — a normal day needs no entry.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let errorMessage {
+                Section { Text(errorMessage).foregroundStyle(.red).font(.caption) }
+            }
+        }
+        .navigationTitle("Log symptom")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { save() }.fontWeight(.semibold).disabled(isSaving)
+            }
+        }
+    }
+
+    private func chip(_ s: GISymptom) -> some View {
+        let selected = s == symptom
+        return Button { symptom = s } label: {
+            Label(s.displayName, systemImage: s.iconName)
+                .font(.subheadline)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .multilineTextAlignment(.leading)
+                .padding(.vertical, 8).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity)
+                .background(selected ? GISymptom.tint.opacity(0.18) : Color.secondary.opacity(0.12),
+                            in: Capsule())
+                .foregroundStyle(selected ? GISymptom.tint : .primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func save() {
+        isSaving = true
+        errorMessage = nil
+        Task {
+            do {
+                try await healthKit.writeGISymptom(symptom, severity: severity, at: when)
+                await healthKit.fetchDayInReview(for: Calendar.current.startOfDay(for: when))
+                onSaved(when)
             } catch {
                 errorMessage = "Could not save: \(error.localizedDescription)"
                 isSaving = false

@@ -91,6 +91,9 @@ enum DayEvent: Identifiable {
     // in the Health app.
     case mindfulness(id: UUID, start: Date, duration: TimeInterval, isEditable: Bool)
     case food(id: UUID, time: Date, userDescription: String, attributes: [FoodAttribute])
+    // A logged GI symptom (constipation/nausea/…) at a point in time. isEditable is true
+    // only when Kampa authored the HealthKit sample (same delete rule as mindfulness).
+    case giSymptom(id: UUID, time: Date, symptom: GISymptom, severity: GISeverity, isEditable: Bool)
 
     var id: UUID {
         switch self {
@@ -98,6 +101,7 @@ enum DayEvent: Identifiable {
         case .workout(let id, _, _, _):     return id
         case .mindfulness(let id, _, _, _): return id
         case .food(let id, _, _, _):        return id
+        case .giSymptom(let id, _, _, _, _): return id
         }
     }
 
@@ -107,6 +111,7 @@ enum DayEvent: Identifiable {
         case .workout(_, let start, _, _):     return start
         case .mindfulness(_, let start, _, _): return start
         case .food(_, let time, _, _):         return time
+        case .giSymptom(_, let time, _, _, _): return time
         }
     }
 
@@ -115,6 +120,7 @@ enum DayEvent: Identifiable {
         case .medication:                  return "pill.fill"
         case .mindfulness:                 return "figure.mind.and.body"
         case .food:                        return "fork.knife"
+        case .giSymptom:                   return GISymptom.timelineSymbol
         case .workout(_, _, _, let type):
             switch type {
             case .yoga:                    return "figure.yoga"
@@ -142,6 +148,7 @@ enum DayEvent: Identifiable {
         case .mindfulness: return .cyan
         case .workout:     return .green
         case .food:        return .brown
+        case .giSymptom:   return GISymptom.tint
         }
     }
 
@@ -152,6 +159,9 @@ enum DayEvent: Identifiable {
         case .mindfulness:                     return "Mindfulness"
         case .food(_, _, let desc, _):
             return desc.isEmpty ? "Food" : String(desc.prefix(40))
+        case .giSymptom(_, _, let symptom, let severity, _):
+            return severity == .present ? symptom.displayName
+                                        : "\(symptom.displayName) · \(severity.displayName)"
         }
     }
 }

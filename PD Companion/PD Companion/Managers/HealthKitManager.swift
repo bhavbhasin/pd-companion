@@ -27,13 +27,18 @@ class HealthKitManager: ObservableObject {
     /// sees it. Set in `fetchDayInReview`; step-1 approximation (see the glucose fetch note).
     @Published var hasEverHadGlucose = false
 
-    private let writeTypes: Set<HKSampleType> = [
-        HKObjectType.categoryType(forIdentifier: .mindfulSession)!,
-        // Required so the phone can call HKHealthStore.startWatchApp(with:) to wake
-        // the Watch app for a tremor sync. We never build or save an HKWorkout —
-        // the session is only used for its background-runtime privilege.
-        HKObjectType.workoutType()
-    ]
+    private let writeTypes: Set<HKSampleType> = {
+        var types: Set<HKSampleType> = [
+            HKObjectType.categoryType(forIdentifier: .mindfulSession)!,
+            // Required so the phone can call HKHealthStore.startWatchApp(with:) to wake
+            // the Watch app for a tremor sync. We never build or save an HKWorkout —
+            // the session is only used for its background-runtime privilege.
+            HKObjectType.workoutType()
+        ]
+        // GI symptoms are logged from Kampa (+ sheet / mic / Siri) as HKCategorySamples.
+        types.formUnion(GISymptom.sampleTypes)
+        return types
+    }()
 
     private let readTypes: Set<HKObjectType> = {
         var types: [HKObjectType] = [
@@ -56,7 +61,8 @@ class HealthKitManager: ObservableObject {
             HKObjectType.quantityType(forIdentifier: .basalEnergyBurned)!,
             HKObjectType.quantityType(forIdentifier: .bloodGlucose)!,
         ]
-        return Set(types)
+        // GI symptom categories, read back for the timeline + engine.
+        return Set(types).union(GISymptom.sampleTypes)
     }()
 
     func requestAuthorization() async {
@@ -268,6 +274,7 @@ class HealthKitManager: ObservableObject {
         async let hrvSamples = fetchHRVSamplesInRange(from: startOfDay, to: endOfDay)
         async let daylight = fetchTimeInDaylightInRange(from: startOfDay, to: endOfDay)
         async let glucose = fetchGlucoseSeries(from: startOfDay, to: endOfDay)
+        async let gi = fetchGISymptomsInRange(from: startOfDay, to: endOfDay)
 
         let resolvedSleep = await sleep
         let resolvedWorkouts = await workouts
@@ -277,6 +284,7 @@ class HealthKitManager: ObservableObject {
         let resolvedHRVSamples = await hrvSamples
         let resolvedDaylight = await daylight
         let resolvedGlucose = await glucose
+        let resolvedGI = await gi
 
         var events: [DayEvent] = []
         for dose in resolvedDoses {
@@ -294,6 +302,12 @@ class HealthKitManager: ObservableObject {
             events.append(.mindfulness(
                 id: session.uuid, start: session.start, duration: session.duration,
                 isEditable: session.isEditable
+            ))
+        }
+        for gi in resolvedGI {
+            events.append(.giSymptom(
+                id: gi.uuid, time: gi.time, symptom: gi.symptom,
+                severity: gi.severity, isEditable: gi.isEditable
             ))
         }
         events.sort { $0.time < $1.time }
@@ -771,6 +785,56 @@ class HealthKitManager: ObservableObject {
         let sample = HKCategorySample(type: type, value: 0,
                                       start: start, end: start.addingTimeInterval(duration))
         try await store.save(sample)
+    }
+
+    // MARK: - GI symptoms
+
+    /// Write one GI symptom as a point-in-time `HKCategorySample` (start == end). Twin of
+    /// `writeMindfulSession`; the same close-loop pattern (Apple Health is system-of-record).
+    func writeGISymptom(_ symptom: GISymptom, severity: GISeverity, at date: Date) async throws {
+        let sample = HKCategorySample(type: symptom.categoryType,
+                                      value: severity.hkSeverity.rawValue,
+                                      start: date, end: date)
+        try await store.save(sample)
+    }
+
+    func deleteGISymptom(_ symptom: GISymptom, uuid: UUID) async throws {
+        let predicate = HKQuery.predicateForObjects(with: [uuid])
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.categorySample(type: symptom.categoryType, predicate: predicate)],
+            sortDescriptors: []
+        )
+        for sample in try await descriptor.result(for: store) {
+            try await store.delete(sample)
+        }
+    }
+
+    /// All logged GI symptoms in range, one HKSampleQuery per category (events are sparse,
+    /// so 6 small queries is fine). `notPresent` samples are dropped — a confirmed-absent
+    /// marker is not a timeline event.
+    private func fetchGISymptomsInRange(from start: Date, to end: Date)
+        async -> [(uuid: UUID, time: Date, symptom: GISymptom, severity: GISeverity, isEditable: Bool)] {
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        let localBundleID = Bundle.main.bundleIdentifier
+        var out: [(uuid: UUID, time: Date, symptom: GISymptom, severity: GISeverity, isEditable: Bool)] = []
+        for symptom in GISymptom.allCases {
+            let samples: [HKCategorySample] = await withCheckedContinuation { continuation in
+                let query = HKSampleQuery(
+                    sampleType: symptom.categoryType, predicate: predicate,
+                    limit: HKObjectQueryNoLimit, sortDescriptors: [sort]
+                ) { _, samples, _ in
+                    continuation.resume(returning: (samples as? [HKCategorySample]) ?? [])
+                }
+                store.execute(query)
+            }
+            for sample in samples {
+                guard let severity = GISeverity(hkValue: sample.value) else { continue }
+                out.append((sample.uuid, sample.startDate, symptom, severity,
+                            sample.sourceRevision.source.bundleIdentifier == localBundleID))
+            }
+        }
+        return out.sorted { $0.time < $1.time }
     }
 
     func deleteMindfulSession(uuid: UUID) async throws {

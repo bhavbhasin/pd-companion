@@ -41,5 +41,13 @@ struct KampaAppShortcuts: AppShortcutsProvider {
             shortTitle: "Log Mindfulness",
             systemImageName: "brain.head.profile"
         )
+        // GI symptoms are deliberately NOT auto-shortcuts. Siri's voice matcher hijacks
+        // "Log [X] in Kampa" to the Food/Mindfulness intents (their open free-text
+        // parameters make them greedy for any such phrase), so GI phrases mis-route no
+        // matter how they're structured — concrete or parameterized. Verified on device.
+        // GI voice logging lives on the in-app "+" mic instead (Kampa owns classification,
+        // no Siri arbitration). If hands-free Siri is ever revisited, it needs an explicit
+        // "add to Siri" setup flow that binds the phrase (as StrivePD does), not zero-config
+        // auto-registration.
     }
 }

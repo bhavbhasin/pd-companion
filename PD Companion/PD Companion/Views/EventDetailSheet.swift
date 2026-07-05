@@ -85,6 +85,8 @@ struct EventDetailSheet: View {
                     healthAppNote
                 } else if case .mindfulness(_, _, _, let isEditable) = event, !isEditable {
                     healthAppNote
+                } else if case .giSymptom(_, _, _, _, let isEditable) = event, !isEditable {
+                    healthAppNote
                 }
 
                 Spacer()
@@ -112,6 +114,15 @@ struct EventDetailSheet: View {
                             .controlSize(.large)
                         }
                     } else if case .mindfulness(_, _, _, let isEditable) = event, isEditable {
+                        Button(role: .destructive) {
+                            showDeleteAlert = true
+                        } label: {
+                            Label("Delete entry", systemImage: "trash")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                    } else if case .giSymptom(_, _, _, _, let isEditable) = event, isEditable {
                         Button(role: .destructive) {
                             showDeleteAlert = true
                         } label: {
@@ -205,6 +216,23 @@ struct EventDetailSheet: View {
                 }
             }
 
+        case .giSymptom(let id, _, let symptom, _, _):
+            // id IS the HealthKit sample UUID (set in fetchGISymptomsInRange).
+            Task {
+                do {
+                    try await healthKit.deleteGISymptom(symptom, uuid: id)
+                    await MainActor.run {
+                        healthKit.dayEvents.removeAll { $0.id == id }
+                        dismiss()
+                    }
+                } catch {
+                    await MainActor.run {
+                        isDeleting = false
+                        deleteError = "Couldn't delete this symptom: \(error.localizedDescription)"
+                    }
+                }
+            }
+
         default:
             dismiss()
         }
@@ -216,6 +244,7 @@ struct EventDetailSheet: View {
         case .workout:     return "Workout"
         case .mindfulness: return "Mindfulness"
         case .food:        return "Food"
+        case .giSymptom:   return "Symptom"
         }
     }
 
@@ -231,6 +260,8 @@ struct EventDetailSheet: View {
             return "\(Int(duration / 60)) min · \(start.formatted(.dateTime.hour().minute()))"
         case .food(_, let time, _, _):
             return time.formatted(.dateTime.hour().minute())
+        case .giSymptom(_, let time, _, _, _):
+            return "Logged at \(time.formatted(.dateTime.hour().minute()))"
         }
     }
 }
