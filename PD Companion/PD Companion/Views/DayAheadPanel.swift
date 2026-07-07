@@ -16,6 +16,12 @@ struct DayAheadPanel: View {
     let dayStart: Date
     let dayEnd: Date
     @Binding var scrollX: Date
+    // Shared crosshair time (same binding the tremor/glucose panels use) so the vertical
+    // read-line sweeps straight down through the forecast band too. We draw only the LINE
+    // here — no callout: the band is categorical (ON/OFF) and already color-coded, so a
+    // text box would just restate the color. Quantitative readout stays on the panels that
+    // have a number to report.
+    @Binding var selectedTime: Date?
     @AppStorage("dayReview.expanded.forecast") private var expanded = true
 
     // ON = medication working (blue, calm). OFF = wearing-off (muted red — NOT orange,
@@ -43,7 +49,11 @@ struct DayAheadPanel: View {
     }
 
     private var phaseAtNow: CorrelationEngine.DayForecast.Phase? {
-        forecast.segments.first { forecast.now >= $0.start && forecast.now < $0.end }?.phase
+        // Prefer the responsive live-edge read for the *current* state — the 30-min-binned segments
+        // lag ~30min at the edge. Fall back to the segment containing `now` when there's too little
+        // recent tremor to call it. See docs/design/tremor-averaging.md, Symptom 2.
+        if let live = forecast.nowState { return live }
+        return forecast.segments.first { forecast.now >= $0.start && forecast.now < $0.end }?.phase
     }
 
     // Rounded to the nearest 15 min: a personal dose-response estimate doesn't support
@@ -75,6 +85,11 @@ struct DayAheadPanel: View {
     private var headline: String {
         switch phaseAtNow {
         case .on:
+            // Inside the wear-off uncertainty band already (now past its lower bound) — the
+            // "steady" claim is stale; acknowledge the transition instead of contradicting the band.
+            if let range = forecast.nextOffRange, forecast.now >= range.lowerBound {
+                return "You may be starting to wear off now."
+            }
             if let off = forecast.nextOffStart, off > forecast.now {
                 return "You're likely ON (steady) right now — wearing off expected \(whenText)."
             }
@@ -155,12 +170,21 @@ struct DayAheadPanel: View {
                 // data coordinates and scrolls locked to the line (a chartOverlay lives in
                 // screen space and would drift apart on scroll).
                 .annotation(position: .overlay, alignment: .center) { NowPulse() }
+            // The shared crosshair line, continued through the band so the eye reads one
+            // moment straight down across tremor → forecast → glucose. Line only, matching
+            // the other panels' selected-rule style; the band carries no callout.
+            if let t = selectedTime {
+                RuleMark(x: .value("Selected", t))
+                    .foregroundStyle(.gray.opacity(0.55))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+            }
         }
         .chartYScale(domain: 0...1)
         .chartXScale(domain: dayStart...dayEnd)
         .chartScrollableAxes(.horizontal)
         .chartXVisibleDomain(length: 12 * 3600)
         .chartScrollPosition(x: $scrollX)
+        .chartXSelection(value: $selectedTime)
         .chartYAxis {
             // Empty label reserving the SAME gutter (same side + width) as the tremor/glucose
             // panels — they use the default (trailing) Y-axis, so the plot's left edge is the
@@ -249,7 +273,7 @@ private struct NowPulse: View {
         confidence: .moderate)
     return ScrollView {
         DayAheadPanel(forecast: forecast, dayStart: day, dayEnd: t(24),
-                      scrollX: .constant(t(9)))
+                      scrollX: .constant(t(9)), selectedTime: .constant(nil))
             .padding()
     }
 }

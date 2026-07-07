@@ -150,16 +150,35 @@ nonisolated enum CorrelationEngine {
         // yet (the sleep cluster, etc.) return nil and stay dormant — the
         // "ship the question, light up when the data earns it" model.
         //
-        // Per-user dose-confound ON-window, from the SAME validated KM median the
-        // wearing-off card uses. Computed once here (not per entry); skip the extra
-        // survival pass when there are no non-medication exposures to guard.
+        // Every levodopa-specific analysis (wearing-off card, afternoon-onset card, the
+        // dose-confound guard) runs on the LEVODOPA-CANDIDATE doses, not the raw medication log:
+        // estimable formulations PLUS data-thin ones (< 20 doses — too few to judge, so benefit
+        // of the doubt: probably real levodopa like an occasional Mucuna), EXCLUDING only
+        // CONFIRMED non-pulsatile substances (≥ 20 doses that show no dose→ON→OFF pulse — a
+        // supplement like CDP-Choline, or an agonist). This is the SAME thin-vs-inert rule the
+        // forecast uses: a supplement can't pollute the pooled wearing-off curve or over-shadow a
+        // food/exercise window, while a rarely-taken real levodopa still counts. The gate is the
+        // classifier (measured per-user), not a drug dictionary; 20+ doses are needed to judge.
+        // Computed here in the wiring — the pinned parity functions are called directly with full
+        // doses, so this filtering never touches them.
+        let sig = samples.map { (time: $0.timestamp, value: $0.tremorScore) }
+        let estimableKeys = Set(estimableFormulations(signal: sig, doses: doses).keys)
+        let groupSizes = Dictionary(grouping: doses, by: { formulationKey($0.name) }).mapValues(\.count)
+        let levodopaDoses = doses.filter { d in
+            let k = formulationKey(d.name)
+            return estimableKeys.contains(k) || (groupSizes[k] ?? 0) < 20
+        }
+
+        // Per-user dose-confound ON-window, from the SAME validated KM median the wearing-off
+        // card uses. Computed once here (not per entry); skip the extra survival pass when
+        // there are no non-medication exposures to guard.
         let onWindow = (workouts.isEmpty && food.isEmpty)
             ? doseOnWindowFallback
-            : doseOnWindowMinutes(samples: samples, doses: doses)
+            : doseOnWindowMinutes(samples: samples, doses: levodopaDoses)
         return InsightRegistry.starter
             .filter { $0.status == .active }
-            .compactMap { run($0, samples: samples, doses: doses, gait: gait,
-                              workouts: workouts, food: food, onWindow: onWindow) }
+            .compactMap { run($0, samples: samples, doses: levodopaDoses,
+                              gait: gait, workouts: workouts, food: food, onWindow: onWindow) }
     }
 
     /// Dispatch one registry entry to the renderer that draws it.
@@ -174,6 +193,8 @@ nonisolated enum CorrelationEngine {
     static func run(_ entry: RegistryEntry, samples: [TremorPoint], doses: [Dose],
                     gait: [GaitMetric: [GaitSample]], workouts: [WorkoutEvent],
                     food: [FoodIntakeEvent], onWindow: Double = doseOnWindowFallback) -> Insight? {
+        // `doses` here is the LEVODOPA-CANDIDATE set (see generateInsights): confirmed
+        // non-pulsatile substances are already filtered out, so every renderer below is safe.
         switch entry.renderer {
         case .doseResponse:
             guard case .doseResponseByTimeOfDay(let preMin, let postMin) = entry.primitive else { return nil }
@@ -182,6 +203,7 @@ nonisolated enum CorrelationEngine {
             return insight
         case .wearingOff:
             guard case .survivalDuration(let onThreshold) = entry.primitive else { return nil }
+            // wearingOffInsight stratifies by formulation internally over the levodopa-candidate set.
             guard var insight = wearingOffInsight(samples: samples, doses: doses, onThreshold: onThreshold) else { return nil }
             insight.stage = stage(for: entry)
             return insight
@@ -955,51 +977,92 @@ nonisolated extension CorrelationEngine {
     /// composes the clinical-discussion card.
     static func wearingOffInsight(samples: [TremorPoint], doses: [Dose],
                                   onThreshold: Double = CorrelationEngine.offThreshold) -> Insight? {
-        let surv = survivalDuration(
-            signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
-            events: doses.map(\.timestamp), onThreshold: onThreshold)
-        let results = surv.durations
-        guard results.count >= 20 else { return nil }
+        let sig = samples.map { (time: $0.timestamp, value: $0.tremorScore) }
 
-        let km = surv.kmMedian
-        guard !km.isNaN else { return nil }
-
-        // Daytime inter-dose gaps (exclude overnight gaps > 600 min).
-        var dayIntervals: [Double] = []
-        for r in results where r.hour >= 6 && r.hour < 20 && !r.intervalMin.isNaN && r.intervalMin < 600 {
-            dayIntervals.append(r.intervalMin)
+        // POOLED wearing-off over all doses drives the FIRING gate + the chart, and matches the
+        // validated Python-lab curve (the parity test pins it). Firing is unchanged from before
+        // stratification; the per-formulation rows below only enrich the copy. Keeping the chart
+        // pooled is also the honest CLINICAL choice: the "gap" is a coverage concept spanning
+        // formulations, while "how long it lasts" is per-formulation — so the aggregate curve
+        // stays the visual, and the by-formulation medians go in the text.
+        let pooled = survivalDuration(signal: sig, events: doses.map(\.timestamp), onThreshold: onThreshold)
+        let pooledResults = pooled.durations
+        guard pooledResults.count >= 20, pooled.kmMedian.isFinite else { return nil }
+        var pooledDayIntervals: [Double] = []
+        for r in pooledResults where r.hour >= 6 && r.hour < 20 && !r.intervalMin.isNaN && r.intervalMin < 600 {
+            pooledDayIntervals.append(r.intervalMin)
         }
-        let medInterval = median(dayIntervals)
-        // Gate: the gap between doses must exceed how long a dose lasts.
-        guard !medInterval.isNaN, medInterval > km else { return nil }
+        let pooledMedInterval = median(pooledDayIntervals)
+        guard !pooledMedInterval.isNaN, pooledMedInterval > pooled.kmMedian else { return nil }
 
-        let durH = String(format: "%.1f", km / 60)
-        let gapH = String(format: "%.0f", medInterval / 60)
-        let kmMin = Int(km.rounded())
-        let gapMin = Int(medInterval.rounded())
-        let observedCount = surv.observedCount
-        let days = Set(results.map { calendar.startOfDay(for: $0.t0) }).count
-        let confidence: Insight.Confidence = gate(Self.wearingOffGate, n: results.count) ?? .moderate
+        // Per-formulation rows: a single median across a mixed regimen (IR vs plant-source
+        // levodopa last different lengths) describes neither. A formulation becomes a row only
+        // if it independently clears the floor AND shows the gap-exceeds-duration pattern.
+        struct Row { let key: String; let km: Double; let medInterval: Double; let count: Int; let observedCount: Int }
+        var rows: [Row] = []
+        for (key, ds) in Dictionary(grouping: doses, by: { formulationKey($0.name) }) {
+            let surv = survivalDuration(signal: sig, events: ds.map(\.timestamp), onThreshold: onThreshold)
+            let results = surv.durations
+            guard results.count >= 20, surv.kmMedian.isFinite else { continue }
+            var dayIntervals: [Double] = []
+            for r in results where r.hour >= 6 && r.hour < 20 && !r.intervalMin.isNaN && r.intervalMin < 600 {
+                dayIntervals.append(r.intervalMin)
+            }
+            let medInterval = median(dayIntervals)
+            guard !medInterval.isNaN, medInterval > surv.kmMedian else { continue }
+            rows.append(Row(key: key, km: surv.kmMedian, medInterval: medInterval,
+                            count: results.count, observedCount: surv.observedCount))
+        }
+        rows.sort { $0.count > $1.count }
 
-        let summary = "Daytime gaps (~\(gapH) h) exceed how long each dose lasts (~\(durH) h), opening predictable OFF windows."
-        let finding = "Each dose holds for a median of \(kmMin) min (about \(durH) h), but your daytime doses are spaced ~\(gapH) h apart — so tremor returns before the next dose. From \(results.count) doses over \(days) days."
-        let consider = "When the gap between doses is longer than a dose lasts, predictable OFF windows open up. Neurologists have several levers for this — for example adjusting dose timing or frequency, or a longer-acting formulation. These are decisions only your neurologist can make. The value here is bringing them this pattern, with the data behind it."
-        let bring = [
-            "Median ON-duration: \(kmMin) min (Kaplan–Meier, n=\(results.count) doses)",
-            "Median daytime gap between doses: ~\(gapH) h (\(gapMin) min)",
-            "\(observedCount) of \(results.count) doses observed wearing off before the next dose",
-        ]
+        let days = Set(pooledResults.map { calendar.startOfDay(for: $0.t0) }).count
+        let confidence: Insight.Confidence = gate(Self.wearingOffGate, n: pooledResults.count) ?? .moderate
+
+        func name(_ key: String) -> String { key.split(separator: " ").map { $0.capitalized }.joined(separator: " ") }
+        func durH(_ min: Double) -> String { String(format: "%.1f", min / 60) }   // 1-dec (dose lasts)
+        func gapH(_ min: Double) -> String { String(format: "%.0f", min / 60) }   // 0-dec (gap between)
+
+        let title: String, summary: String, finding: String, mechanism: String, consider: String
+        let bring: [String]
+
+        // Multi-formulation copy only when ≥ 2 formulations independently show the pattern;
+        // otherwise today's pooled copy — byte-identical to before for a single-formulation user.
+        if rows.count >= 2 {
+            title = "Each formulation wears off before the next dose"
+            summary = "Your formulations don't last the same length, so one dosing schedule can't fit them all — each opens its own predictable OFF window."
+            let parts = rows.map { "\(name($0.key)) holds ~\(durH($0.km)) h (doses ~\(gapH($0.medInterval)) h apart)" }
+            finding = "By formulation: " + parts.joined(separator: "; ") + ". Each is spaced wider than it lasts, so tremor returns before the next dose — and the right interval differs per formulation. From \(pooledResults.count) doses over \(days) days."
+            mechanism = "This is the classic wearing-off pattern — the gap between doses is longer than a single dose lasts — and because your formulations last different lengths, it opens at a different point for each."
+            bring = rows.map {
+                "\(name($0.key)): median ON \(Int($0.km.rounded())) min (~\(durH($0.km)) h) vs ~\(gapH($0.medInterval)) h between doses — n=\($0.count), \($0.observedCount) observed wearing off"
+            }
+            consider = "When the gap between doses is longer than a dose lasts, predictable OFF windows open up. Neurologists have several levers for this — for example adjusting dose timing or frequency, or a longer-acting formulation. On a mixed regimen the timing that fits one formulation may not fit another. These are decisions only your neurologist can make. The value here is bringing them this pattern, with the data behind it."
+        } else {
+            let kmMin = Int(pooled.kmMedian.rounded())
+            let gapMin = Int(pooledMedInterval.rounded())
+            title = "Your doses are spaced wider than they last"
+            summary = "Daytime gaps (~\(gapH(pooledMedInterval)) h) exceed how long each dose lasts (~\(durH(pooled.kmMedian)) h), opening predictable OFF windows."
+            finding = "Each dose holds for a median of \(kmMin) min (about \(durH(pooled.kmMedian)) h), but your daytime doses are spaced ~\(gapH(pooledMedInterval)) h apart — so tremor returns before the next dose. From \(pooledResults.count) doses over \(days) days."
+            mechanism = "This is the classic wearing-off pattern: the interval between doses is longer than a single dose lasts."
+            bring = [
+                "Median ON-duration: \(kmMin) min (Kaplan–Meier, n=\(pooledResults.count) doses)",
+                "Median daytime gap between doses: ~\(gapH(pooledMedInterval)) h (\(gapMin) min)",
+                "\(pooled.observedCount) of \(pooledResults.count) doses observed wearing off before the next dose",
+            ]
+            consider = "When the gap between doses is longer than a dose lasts, predictable OFF windows open up. Neurologists have several levers for this — for example adjusting dose timing or frequency, or a longer-acting formulation. These are decisions only your neurologist can make. The value here is bringing them this pattern, with the data behind it."
+        }
 
         // Stage omitted — `run()` derives it from the entry's safety class
-        // (.clinicalReferral → clinical-discussion card).
+        // (.clinicalReferral → clinical-discussion card). Chart is the POOLED aggregate curve
+        // (validated / parity-pinned); per-formulation medians live in the finding + clinical data.
         return Insight(
-            title: "Your doses are spaced wider than they last",
+            title: title,
             summary: summary,
             finding: finding,
-            mechanism: "This is the classic wearing-off pattern: the interval between doses is longer than a single dose lasts.",
+            mechanism: mechanism,
             confidence: confidence,
             evidenceDays: days,
-            chart: wearingOffChart(results: results, km: km),
+            chart: wearingOffChart(results: pooledResults, km: pooled.kmMedian),
             clinical: ClinicalDiscussion(whatTheyMightConsider: consider, bringThisData: bring)
         )
     }
@@ -1501,6 +1564,11 @@ nonisolated extension CorrelationEngine {
         let nextOffStart: Date?              // first projected OFF onset after `now`, if any
         let nextOffRange: ClosedRange<Date>? // uncertainty band around nextOffStart
         let confidence: Insight.Confidence
+        // Responsive "right now" ON/OFF from the last few minutes of raw tremor — bypasses the
+        // 30-min bin + 60-min despeckle that make `segments` lag ~30min at the live edge. Drives the
+        // headline's current-state call ONLY; the band stays smoothed (honest after the fact). nil
+        // when too little recent data to override the reconstructed segment. See design note Symptom 2.
+        var nowState: Phase? = nil
     }
 
     /// A signed adjustment a future validated lever applies to the projection (shifts
@@ -1510,6 +1578,83 @@ nonisolated extension CorrelationEngine {
         let onsetDelta: TimeInterval
         let durationDelta: TimeInterval
         let confidence: Insight.Confidence
+    }
+
+    // MARK: - Per-formulation modeling (the estimability gate is the classifier)
+
+    /// Normalize a raw medication name into a stable stratification key. Lowercase, drop
+    /// pure dosage/strength tokens (numbers, `mg`/`ml`/`mcg`, `25-100`) so "Sinemet 25-100"
+    /// and "sinemet" collapse to one stratum. NOT a drug dictionary — it only canonicalizes
+    /// the name the user logged; WHICH formulations are pulsatile levodopa is decided
+    /// downstream by the estimability gate (`estimableFormulations`), never by name here.
+    static func formulationKey(_ name: String) -> String {
+        let tokens = name.lowercased()
+            .split(whereSeparator: { $0 == " " || $0 == "," || $0 == "/" })
+            .map(String.init)
+            .filter { tok in
+                if tok == "mg" || tok == "ml" || tok == "mcg" { return false }
+                return !tok.allSatisfy { $0.isNumber || $0 == "-" || $0 == "." }
+            }
+        let key = tokens.joined(separator: " ")
+        return key.isEmpty ? "unspecified" : key
+    }
+
+    /// A fitted wearing-off / onset model for one formulation (or the combined estimable
+    /// set) — everything `dayForecast` needs to project a single dose forward. Reuses the
+    /// `survivalDuration` + `doseResponseByTimeOfDay` primitives UNCHANGED; a formulation is
+    /// just their inputs filtered to one name, so the pinned parity primitives are untouched.
+    struct PulseModel: Sendable {
+        let key: String
+        let surv: SurvivalDuration
+        let onDuration: Double              // clamped ON-window minutes (forecast duration)
+        let iqr: Double                     // spread of observed ON-durations (uncertainty band)
+        let onsetByBucket: [Bucket: Double]
+        let pooledOnset: Double             // fallback onset when a bucket has no clean estimate
+
+        /// Onset latency (min) for a dose in `bucket`, pooled-fallback for a thin bucket.
+        func onset(_ bucket: Bucket) -> Double { onsetByBucket[bucket] ?? pooledOnset }
+        var durationsCount: Int { surv.durations.count }
+        /// Estimable = enough doses + a real KM median + a real onset. Exactly the floor the
+        /// forecast has always used, now applied per formulation: an inert / non-pulsatile
+        /// substance can't clear it and self-excludes.
+        var isEstimable: Bool {
+            surv.durations.count >= 20 && surv.kmMedian.isFinite && pooledOnset.isFinite
+        }
+    }
+
+    /// Fit a `PulseModel` over one dose set. Onset uses per-time-of-day buckets with a
+    /// pooled fallback; ON-duration is the clamped KM median (same [90,360] sanity rails +
+    /// fallback as `doseOnWindowMinutes`).
+    static func fitPulseModel(
+        key: String, signal: [(time: Date, value: Double)], events: [Date]
+    ) -> PulseModel {
+        let surv = survivalDuration(signal: signal, events: events, onThreshold: offThreshold)
+        let dr = doseResponseByTimeOfDay(signal: signal, events: events, preMin: preMin, postMin: postMin)
+        var onsetByBucket: [Bucket: Double] = [:]
+        for b in Bucket.allCases {
+            let o = dr.onset(b)
+            if o.n > 0, o.mean.isFinite { onsetByBucket[b] = o.mean }
+        }
+        let pooledOnset = nanmean(dr.traces.filter { !$0.tHalf.isNaN }.map(\.tHalf))
+        let km = surv.kmMedian
+        let onDuration = (km.isFinite && km >= 90 && km <= 360) ? km : doseOnWindowFallback
+        let band = iqr(surv.durations.filter { $0.observed && !$0.durationMin.isNaN }.map(\.durationMin))
+        return PulseModel(key: key, surv: surv, onDuration: onDuration, iqr: band,
+                          onsetByBucket: onsetByBucket, pooledOnset: pooledOnset)
+    }
+
+    /// Group doses by formulation, fit a model per group, and keep ONLY the strata that
+    /// clear the wearing-off floor. This set — data-derived, per user — replaces the old
+    /// hard-coded `sinemet/mucuna` name filter everywhere: the gate IS the classifier.
+    static func estimableFormulations(
+        signal: [(time: Date, value: Double)], doses: [Dose]
+    ) -> [String: PulseModel] {
+        var out: [String: PulseModel] = [:]
+        for (key, ds) in Dictionary(grouping: doses, by: { formulationKey($0.name) }) {
+            let m = fitPulseModel(key: key, signal: signal, events: ds.map(\.timestamp))
+            if m.isEstimable, gate(wearingOffGate, n: m.durationsCount) != nil { out[key] = m }
+        }
+        return out
     }
 
     private static let forecastObservedBinMin = 30.0
@@ -1536,41 +1681,51 @@ nonisolated extension CorrelationEngine {
         let doses = todaysDoses.sorted { $0.timestamp < $1.timestamp }
         guard !doses.isEmpty else { return nil }
 
-        // Fit ON-duration from full history via the survival primitive; gate on the same
-        // dose-count floor + tier the wearing-off card uses (one shared estimability bar).
+        // Fit a wearing-off/onset model PER FORMULATION from full history. Each dose is then
+        // projected with its OWN formulation's timing (IR vs plant-source levodopa have
+        // different onset + ON-duration; pooling them describes neither). A formulation
+        // appears only if its own data clears the estimability floor — the gate is the
+        // classifier, so inert/non-pulsatile substances self-exclude with no drug list.
         let sig = history.map { (time: $0.timestamp, value: $0.tremorScore) }
-        let surv = survivalDuration(signal: sig, events: allDoses.map(\.timestamp),
-                                    onThreshold: offThreshold)
-        guard surv.durations.count >= 20, surv.kmMedian.isFinite,
-              let confidence = gate(wearingOffGate, n: surv.durations.count) else { return nil }
-        let onDuration = doseOnWindowMinutes(samples: history, doses: allDoses)   // clamped/fallback
+        let models = estimableFormulations(signal: sig, doses: allDoses)
+        guard !models.isEmpty else { return nil }
 
-        // Onset (dose → ON-start) per time-of-day bucket, pooled fallback for a thin
-        // bucket. If NO clean onset is estimable we can't time the day → nil (rather than
-        // invent a constant — no magic default).
-        let dr = doseResponseByTimeOfDay(signal: sig, events: allDoses.map(\.timestamp),
-                                         preMin: preMin, postMin: postMin)
-        let pooledOnset = nanmean(dr.traces.filter { !$0.tHalf.isNaN }.map(\.tHalf))
-        guard pooledOnset.isFinite else { return nil }
-        func onsetMinutes(_ bucket: Bucket) -> Double {
-            let o = dr.onset(bucket)
-            return (o.n > 0 && o.mean.isFinite) ? o.mean : pooledOnset
+        // Combined model over the union of estimable-formulation doses: the confidence + IQR
+        // source, AND the fallback timing for a dose whose formulation is present but too thin
+        // to time on its own (both are real levodopa → a pulse genuinely exists, so keep the
+        // band using combined timing rather than under-painting it).
+        let estimableDoses = allDoses.filter { models[formulationKey($0.name)] != nil }
+        let combined = fitPulseModel(key: "__combined__", signal: sig, events: estimableDoses.map(\.timestamp))
+        guard let confidence = gate(wearingOffGate, n: combined.durationsCount) else { return nil }
+
+        // Which model times a given dose? Group sizes tell a data-THIN formulation (too few
+        // doses to time on its own → benefit of the doubt, fall back to combined levodopa
+        // timing so a real dose still paints its band) from a CONFIRMED non-pulsatile one
+        // (enough doses but no estimable pulse → nil: never invent an ON band for a vitamin).
+        let groupSizes = Dictionary(grouping: allDoses, by: { formulationKey($0.name) }).mapValues(\.count)
+        func model(for dose: Dose) -> PulseModel? {
+            let key = formulationKey(dose.name)
+            if let m = models[key] { return m }                 // own estimable model
+            if (groupSizes[key] ?? 0) >= 20 { return nil }      // judged, no pulse → omit
+            return combined                                     // data-thin → combined fallback
         }
 
         let onsetAdj = adjustments.reduce(0) { $0 + $1.onsetDelta }
         let durAdj = adjustments.reduce(0) { $0 + $1.durationDelta }
 
         // Projected ON intervals, one per dose, merged where they overlap (closely spaced
-        // doses → one continuous ON). ON spans [dose+onset, dose+duration]; both are
-        // measured from the dose (matches the onset/survival primitives). OFF is the
-        // complement across the day.
+        // doses → one continuous ON). ON spans [dose+onset, dose+duration], both measured
+        // from the dose using THAT dose's formulation model. OFF is the complement. A dose
+        // with no projectable model (confirmed non-pulsatile) contributes no ON band.
         var onIntervals: [(start: Date, end: Date)] = []
+        var doseEnds: [(end: Date, iqr: Double)] = []   // for the per-formulation OFF-onset band
         for d in doses {
-            let onsetSec = onsetMinutes(bucketOf(hourOfDay(d.timestamp))) * 60 + onsetAdj
-            let durSec = onDuration * 60 + durAdj
+            guard let m = model(for: d) else { continue }
+            let onsetSec = m.onset(bucketOf(hourOfDay(d.timestamp))) * 60 + onsetAdj
+            let durSec = m.onDuration * 60 + durAdj
             let start = d.timestamp.addingTimeInterval(onsetSec)
             let end = d.timestamp.addingTimeInterval(max(onsetSec + 60, durSec)) // ON stays positive
-            if end > start { onIntervals.append((start, end)) }
+            if end > start { onIntervals.append((start, end)); doseEnds.append((end, m.iqr)) }
         }
         let projected = phaseTimeline(on: mergeIntervals(onIntervals),
                                       dayStart: dayStart, dayEnd: dayEnd)
@@ -1583,20 +1738,26 @@ nonisolated extension CorrelationEngine {
         let segments = spliceAtNow(observed: observed, projected: projected,
                                    now: now, dayStart: dayStart, dayEnd: dayEnd)
 
-        // Next OFF onset = end of the merged ON interval still open after `now`.
+        // Next OFF onset = end of the merged ON interval still open after `now`. The merged
+        // end equals some dose's projected end, so its formulation's IQR sets the band width
+        // (fallback: combined) — a data-derived ±, not an arbitrary one.
         let nextOffStart = mergeIntervals(onIntervals).first { $0.end > now }?.end
-        // Uncertainty half-width from the spread of OBSERVED ON-durations (IQR/2) — a
-        // data-derived band, not an arbitrary ±.
         var nextOffRange: ClosedRange<Date>? = nil
         if let off = nextOffStart {
-            let half = iqr(surv.durations.filter { $0.observed && !$0.durationMin.isNaN }
-                               .map(\.durationMin)) / 2 * 60
+            let bandIqr = doseEnds.first { abs($0.end.timeIntervalSince(off)) < 1 }?.iqr ?? combined.iqr
+            let half = bandIqr / 2 * 60
             if half > 0 { nextOffRange = off.addingTimeInterval(-half)...off.addingTimeInterval(half) }
         }
 
-        return DayForecast(segments: segments, now: now,
+        // Responsive current-state read from raw tremor near `now` (the historical part of the
+        // band stays smoothed). It drives both the headline (nowState) AND the band's trailing
+        // sliver (applyLiveEdge), so the two agree at the live edge instead of the bar lagging.
+        let live = liveEdgeState(readings: todaysReadings, now: now)
+        let segmentsWithEdge = applyLiveEdge(segments, live: live, now: now)
+
+        return DayForecast(segments: segmentsWithEdge, now: now,
                            nextOffStart: nextOffStart, nextOffRange: nextOffRange,
-                           confidence: confidence)
+                           confidence: confidence, nowState: live?.phase)
     }
 
     // MARK: forecast helpers
@@ -1662,7 +1823,7 @@ nonisolated extension CorrelationEngine {
             binStart = binEnd
         }
         guard !bounds.isEmpty else { return [] }
-        let phases = despeckle(raw, minRun: forecastMinRunBins)
+        let phases = despeckle(raw, means: binMean, minRun: forecastMinRunBins)
         // Coalesce equal-phase runs, averaging the measured tremor across each run so the
         // segment carries how severe it actually was (drives OFF shading in the view).
         var segs: [DayForecast.Segment] = []
@@ -1682,7 +1843,15 @@ nonisolated extension CorrelationEngine {
     /// flip near the threshold." Unknown (not-worn) runs are LEFT intact: a real data gap
     /// is honest signal, not noise. A short run flanked only by unknowns is also left (no
     /// evidence to absorb it into).
-    static func despeckle(_ phases: [DayForecast.Phase], minRun: Int) -> [DayForecast.Phase] {
+    ///
+    /// Confidence gate: pass per-bin `means` (aligned to `phases`) to SPARE a short run whose
+    /// severity sits a clear margin past the OFF line — a lone 30-min bin at, say, 1.6 is a real
+    /// wearing-off episode, not threshold jitter, so deleting it hides an OFF the user actually had.
+    /// `confidentMargin` is half a severity band on the 0–4 scale (bands are 1.0 wide): a bin this
+    /// far from the line has decisively left the ambiguous zone the de-noise was meant to clean up.
+    /// Empty `means` = gate off (legacy behavior: absorb every short run).
+    static func despeckle(_ phases: [DayForecast.Phase], means: [Double?] = [], minRun: Int,
+                          confidentMargin: Double = 0.5) -> [DayForecast.Phase] {
         guard phases.count > 1, minRun > 1 else { return phases }
         var out = phases
         while true {
@@ -1692,13 +1861,23 @@ nonisolated extension CorrelationEngine {
                 else { runs.append((p, i, i)) }
             }
             func length(_ idx: Int) -> Int { idx < 0 || idx >= runs.count ? -1 : runs[idx].hi - runs[idx].lo + 1 }
-            // Shortest sub-minRun ON/OFF run that has a non-unknown neighbor to absorb into.
+            // True when a run's measured severity is a clear margin past the threshold (either side)
+            // — a decisive episode the de-noise must not erase. Measurement-based, so it doesn't
+            // change as we relabel phases. Gate off when means weren't supplied.
+            func confident(_ idx: Int) -> Bool {
+                guard means.count == phases.count else { return false }
+                let ms = (runs[idx].lo...runs[idx].hi).compactMap { means[$0] }
+                guard !ms.isEmpty else { return false }
+                return abs(ms.reduce(0, +) / Double(ms.count) - offThreshold) >= confidentMargin
+            }
+            // Shortest sub-minRun ON/OFF run that has a non-unknown neighbor to absorb into AND
+            // isn't a confident (decisively-past-threshold) episode.
             var target = -1, targetLen = Int.max
             for (idx, r) in runs.enumerated() where r.phase != .unknown {
                 let len = r.hi - r.lo + 1
                 let prevOK = idx > 0 && runs[idx - 1].phase != .unknown
                 let nextOK = idx < runs.count - 1 && runs[idx + 1].phase != .unknown
-                if len < minRun, prevOK || nextOK, len < targetLen { target = idx; targetLen = len }
+                if len < minRun, prevOK || nextOK, !confident(idx), len < targetLen { target = idx; targetLen = len }
             }
             guard target >= 0 else { break }
             let prevOK = target > 0 && runs[target - 1].phase != .unknown
@@ -1706,6 +1885,71 @@ nonisolated extension CorrelationEngine {
             let usePrev = prevOK && (!nextOK || length(target - 1) >= length(target + 1))
             let newPhase = usePrev ? runs[target - 1].phase : runs[target + 1].phase
             for i in runs[target].lo...runs[target].hi { out[i] = newPhase }
+        }
+        return out
+    }
+
+    /// Linear-interpolated percentile (type-7). Shared robust-peak helper (chart buckets +
+    /// live-edge state): P90 over a ~30-sample window lands near the top few readings, so a real
+    /// spike lifts it but one lone jitter sample can't set it (unlike a raw max).
+    static func percentile(_ xs: [Double], _ p: Double) -> Double {
+        guard !xs.isEmpty else { return 0 }
+        let s = xs.sorted()
+        guard s.count > 1 else { return s[0] }
+        let rank = p * Double(s.count - 1)
+        let lo = Int(rank.rounded(.down)), hi = Int(rank.rounded(.up))
+        return s[lo] + (s[hi] - s[lo]) * (rank - Double(lo))
+    }
+
+    /// Responsive current-state read: MEDIAN of the last `windowMin` of raw tremor, OFF when that
+    /// level clears the threshold and tremor isn't clearly falling (a dose kicking in). Median (not
+    /// a peak) so a single motion-artifact minute — e.g. a walk or eating — can't flip the headline
+    /// to OFF; it still beats the reconstructed band's ~30min lag (30-min bin + despeckle floor).
+    /// Returns nil when there aren't enough recent samples to responsibly override the band.
+    static func liveEdgeState(readings: [TremorPoint], now: Date,
+                              windowMin: Double = 15) -> (phase: DayForecast.Phase, level: Double)? {
+        let lo = now.addingTimeInterval(-windowMin * 60)
+        let window = readings.filter { $0.timestamp >= lo && $0.timestamp <= now }
+            .sorted { $0.timestamp < $1.timestamp }
+        guard window.count >= 3 else { return nil }
+        let level = percentile(window.map(\.tremorScore), 0.5)
+        // Trend: later-half mean vs earlier-half mean. "Clearly falling" means improving enough that
+        // a brief lingering peak shouldn't flip us to OFF — avoids live-edge flicker as a dose lands.
+        let mid = window.count / 2
+        let earlyMean = window[..<mid].map(\.tremorScore).reduce(0, +) / Double(mid)
+        let lateMean = window[mid...].map(\.tremorScore).reduce(0, +) / Double(window.count - mid)
+        let falling = lateMean < earlyMean - 0.15
+        return (level >= offThreshold && !falling) ? (.off, level) : (.on, level)
+    }
+
+    /// Overlay the responsive live-edge read onto the tail of the band so the bar's `now` end
+    /// agrees with the headline (both use `liveEdgeState`). Only the trailing `windowMin` is
+    /// touched — the rest of the reconstruction stays smoothed. No-op when `live` is nil. An OFF
+    /// sliver carries the live median as its severity so it shades like the tremor line, matching
+    /// how observed OFF segments shade. Observed segments end at `now` (spliced), so the window
+    /// falls entirely within them.
+    static func applyLiveEdge(_ segments: [DayForecast.Segment],
+                              live: (phase: DayForecast.Phase, level: Double)?,
+                              now: Date, windowMin: Double = 15) -> [DayForecast.Segment] {
+        guard let live else { return segments }
+        let edgeStart = now.addingTimeInterval(-windowMin * 60)
+        var out: [DayForecast.Segment] = []
+        for seg in segments {
+            // Untouched: fully before the edge window, or at/after now (the projected future).
+            if seg.end <= edgeStart || seg.start >= now { out.append(seg); continue }
+            if seg.start < edgeStart {   // keep the pre-window part as-is
+                out.append(.init(start: seg.start, end: edgeStart, phase: seg.phase,
+                                 observed: seg.observed, meanTremor: seg.meanTremor))
+            }
+            let lo = max(seg.start, edgeStart), hi = min(seg.end, now)
+            if hi > lo {                 // overwrite the edge window with the live read
+                out.append(.init(start: lo, end: hi, phase: live.phase, observed: true,
+                                 meanTremor: live.phase == .off ? live.level : nil))
+            }
+            if seg.end > now {           // preserve any future part (defensive; splice prevents it)
+                out.append(.init(start: now, end: seg.end, phase: seg.phase,
+                                 observed: seg.observed, meanTremor: seg.meanTremor))
+            }
         }
         return out
     }

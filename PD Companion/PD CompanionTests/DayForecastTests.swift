@@ -138,6 +138,49 @@ struct DayForecastTests {
         #expect(CorrelationEngine.despeckle(b, minRun: 2) == b)
     }
 
+    /// Confidence gate: a lone OFF bin whose severity is a clear margin past the line (Jul 6:
+    /// a 30-min wearing-off bin at ~1.6 while flanked by ON) is a REAL episode, not jitter —
+    /// so with per-bin means supplied it must survive de-noise instead of being painted ON.
+    @Test func despeckleSparesDecisiveShortEpisode() {
+        let phases: [Phase] = [.on, .on, .off, .on, .on]
+        let means: [Double?] = [0.3, 0.4, 1.6, 0.4, 0.3]   // the lone OFF bin is decisively OFF
+        #expect(CorrelationEngine.despeckle(phases, means: means, minRun: 2) == phases)
+    }
+
+    /// But a lone OFF bin sitting just past the line (ambiguous, ~1.1) is still treated as a
+    /// flip and absorbed — the gate spares decisive episodes, not every one-bin blip.
+    @Test func despeckleAbsorbsAmbiguousShortFlip() {
+        let phases: [Phase] = [.on, .on, .off, .on, .on]
+        let means: [Double?] = [0.3, 0.4, 1.1, 0.4, 0.3]   // barely over the 1.0 line
+        #expect(CorrelationEngine.despeckle(phases, means: means, minRun: 2)
+                == [.on, .on, .on, .on, .on])
+    }
+
+    /// The responsive live-edge read is overlaid on the band's tail so the bar agrees with the
+    /// headline: a segment that was ON up to `now` gets its final 15-min window flipped to the
+    /// measured OFF, carrying the live severity, while the earlier part stays ON.
+    @Test func liveEdgeOverlaysBandTail() {
+        let now = Self.now
+        let onSeg = CorrelationEngine.DayForecast.Segment(
+            start: now.addingTimeInterval(-3600), end: now, phase: .on, observed: true)
+        let out = CorrelationEngine.applyLiveEdge([onSeg], live: (.off, 1.8), now: now, windowMin: 15)
+        let last = try! #require(out.last)
+        #expect(last.phase == .off)
+        #expect(last.end == now)
+        #expect(last.start == now.addingTimeInterval(-15 * 60))
+        #expect(last.meanTremor == 1.8)
+        let first = try! #require(out.first)
+        #expect(first.phase == .on)                         // earlier part untouched
+        #expect(first.end == now.addingTimeInterval(-15 * 60))
+    }
+
+    /// nil live read (too little recent data) leaves the band untouched.
+    @Test func liveEdgeNoOpWhenNil() {
+        let seg = CorrelationEngine.DayForecast.Segment(
+            start: Self.dayStart, end: Self.now, phase: .on, observed: true)
+        #expect(CorrelationEngine.applyLiveEdge([seg], live: nil, now: Self.now).count == 1)
+    }
+
     /// The next-OFF uncertainty band is derived from the spread of observed ON-durations
     /// (IQR), not a hard-coded ±. Varied plateau lengths → a real band bracketing the onset.
     @Test func offRangeSpreadFromDurationSpread() throws {

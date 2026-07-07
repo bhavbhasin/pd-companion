@@ -309,7 +309,7 @@ private struct DayReviewContent: View {
             forecast = nil
             return
         }
-        let allDoses = await healthKit.fetchLevodopaDoses()
+        let allDoses = await healthKit.fetchMedicationDoses()
         let ds = dayStart, de = dayEnd
         let todays = allDoses.filter { $0.timestamp >= ds && $0.timestamp < de }
         guard !todays.isEmpty else {
@@ -358,7 +358,7 @@ private struct DayReviewContent: View {
                 // Today only; hidden when the wearing-off model isn't estimable.
                 if let forecast {
                     DayAheadPanel(forecast: forecast, dayStart: dayStart, dayEnd: dayEnd,
-                                  scrollX: $chartScrollX)
+                                  scrollX: $chartScrollX, selectedTime: $selectedTime)
                 }
                 // Day-gated: only for a CGM (Lingo) user, and only when this day has a
                 // curve (else a quiet note). Sits directly under Tremor with a matched
@@ -592,7 +592,7 @@ private struct TremorTimelinePanel: View {
                     ForEach(tremorSegments, id: \.id) { segment in
                         if segment.points.count == 1, let p = segment.points.first {
                             PointMark(
-                                x: .value("Time", p.hour),
+                                x: .value("Time", p.plotX),
                                 y: .value("Tremor", p.value)
                             )
                             .foregroundStyle(Color.blue)
@@ -600,11 +600,11 @@ private struct TremorTimelinePanel: View {
                         } else {
                             ForEach(segment.points, id: \.hour) { bucket in
                                 AreaMark(
-                                    x: .value("Time", bucket.hour),
+                                    x: .value("Time", bucket.plotX),
                                     y: .value("Tremor", bucket.value),
                                     series: .value("Segment", "tremor-area-\(segment.id)")
                                 )
-                                .interpolationMethod(.catmullRom)
+                                .interpolationMethod(.monotone)
                                 .foregroundStyle(
                                     LinearGradient(
                                         colors: [Color.blue.opacity(0.35), Color.blue.opacity(0.05)],
@@ -614,11 +614,11 @@ private struct TremorTimelinePanel: View {
                             }
                             ForEach(segment.points, id: \.hour) { bucket in
                                 LineMark(
-                                    x: .value("Time", bucket.hour),
+                                    x: .value("Time", bucket.plotX),
                                     y: .value("Tremor", bucket.value),
                                     series: .value("Segment", "tremor-line-\(segment.id)")
                                 )
-                                .interpolationMethod(.catmullRom)
+                                .interpolationMethod(.monotone)
                                 .foregroundStyle(Color.blue)
                                 .lineStyle(StrokeStyle(lineWidth: 2))
                             }
@@ -638,7 +638,7 @@ private struct TremorTimelinePanel: View {
                     ForEach(dyskinesiaSegments, id: \.id) { segment in
                         if segment.points.count == 1, let p = segment.points.first {
                             PointMark(
-                                x: .value("Time", p.hour),
+                                x: .value("Time", p.plotX),
                                 y: .value("Dyskinesia", p.value)
                             )
                             .foregroundStyle(Color.dyskinesia)
@@ -646,11 +646,11 @@ private struct TremorTimelinePanel: View {
                         } else {
                             ForEach(segment.points, id: \.hour) { bucket in
                                 LineMark(
-                                    x: .value("Time", bucket.hour),
+                                    x: .value("Time", bucket.plotX),
                                     y: .value("Dyskinesia", bucket.value),
                                     series: .value("Signal", "dyskinesia-\(segment.id)")
                                 )
-                                .interpolationMethod(.catmullRom)
+                                .interpolationMethod(.monotone)
                                 .foregroundStyle(Color.dyskinesia)
                                 .lineStyle(StrokeStyle(lineWidth: 2))
                             }
@@ -667,10 +667,14 @@ private struct TremorTimelinePanel: View {
                             .symbolSize(0)
                             .annotation(position: .bottom, alignment: .center, spacing: 2,
                                         overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .plot))) {
-                                CrosshairCallout(time: t, rows: [
-                                    .init(value: tremorReadout(at: t), label: "Tremor", color: .blue),
-                                    .init(value: dyskinesiaReadout(at: t), label: "Dyskinesia", color: .dyskinesia)
-                                ])
+                                // Suppressed past `now`: today's future has no measured tremor
+                                // or glucose, so the box would be all "—". The rule line stays.
+                                if showsCallout(at: t) {
+                                    CrosshairCallout(time: t, rows: [
+                                        .init(value: tremorReadout(at: t), label: "Tremor", color: .blue),
+                                        .init(value: dyskinesiaReadout(at: t), label: "Dyskinesia", color: .dyskinesia)
+                                    ])
+                                }
                             }
                     }
                 }
@@ -788,6 +792,15 @@ private struct TremorTimelinePanel: View {
         return String(format: "%.1f", b.value)
     }
 
+    /// Whether the crosshair callout should render at `time`. On today, only over measured
+    /// time (≤ now): past `now` every panel is blank, so the box would be all "—". On a past
+    /// day there is no future portion, so it shows throughout. See the forecast band, which
+    /// carries the shared line into the projected region but never a callout.
+    private func showsCallout(at time: Date) -> Bool {
+        guard Calendar.current.isDateInToday(dayStart) else { return true }
+        return time <= Date()
+    }
+
     /// Dyskinesia intensity at the crosshair time (same 0–4 display mapping as the waveform), to one
     /// decimal. A worn-but-calm slot reads 0.0 (honest — Bhav is ~0); an *empty* slot reads "—"
     /// (not worn ⇒ unknown, not a measured zero — matches the broken curve).
@@ -801,7 +814,7 @@ private struct TremorTimelinePanel: View {
     /// N minutes away and report a value for a stretch the Watch never measured.
     private func bucketForSlot(_ buckets: [HourBucket], containing time: Date) -> HourBucket? {
         buckets.first { b in
-            time >= b.hour && time < b.hour.addingTimeInterval(30 * 60)
+            time >= b.hour && time < b.hour.addingTimeInterval(Self.bucketSeconds)
         }
     }
 
@@ -864,7 +877,10 @@ private struct TremorTimelinePanel: View {
         }
     }
 
-    private struct HourBucket { let hour: Date; let value: Double }
+    // `hour` = slot START (drives containment, gap-break, sort — unchanged). `plotX` = where the
+    // point is drawn on the x-axis (slot CENTER), so the curve sits over the half-hour it summarizes
+    // instead of skewing ~15min early. `value` = the slot's robust PEAK (P90), not its mean.
+    private struct HourBucket { let hour: Date; let plotX: Date; let value: Double }
 
     private struct LegendEntry: Identifiable {
         let icon: String
@@ -885,8 +901,12 @@ private struct TremorTimelinePanel: View {
     // sliver of data in every slot it touches (e.g. off 4:05–4:45 → 4:00 keeps 4:00–4:05, 4:30
     // keeps 4:45–5:00) empties no slot and won't break — fine for charging (≥60 min always fully
     // empties ≥1 slot). This rule can never false-break a worn line (worn ⇒ every slot present).
-    // > 30 min (not ≥) keeps exact-neighbor slots connected, incl. the dayEnd anchor at +30 min.
-    private static let gapBreak: TimeInterval = 30 * 60
+    // Chart buckets are 10 min (was 30): tremor moves faster than a half-hour, so a 30-min slot
+    // smears a rising edge — a late peak gets back-dated onto the slot's start. See design note.
+    private static let bucketSeconds: TimeInterval = 10 * 60
+    // Break the line across any gap wider than one slot (a not-worn stretch); 1.5× the slot size
+    // tolerates exact spacing without false-breaking a worn line, incl. the dayEnd anchor at +10 min.
+    private static let gapBreak: TimeInterval = 15 * 60
 
     // Split 30-min buckets into contiguous runs, cutting wherever consecutive present buckets are
     // more than one slot apart — i.e. ≥1 empty slot sits between them. Each run becomes its own
@@ -913,23 +933,30 @@ private struct TremorTimelinePanel: View {
     private var hourlyBuckets: [HourBucket] {
         guard !readings.isEmpty else { return [] }
         let cal = Calendar.current
-        var sums: [Date: (sum: Double, count: Int)] = [:]
+        var slots: [Date: [Double]] = [:]
         for r in readings {
             let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: r.timestamp)
             var bucketComps = comps
-            bucketComps.minute = (comps.minute ?? 0) >= 30 ? 30 : 0
+            bucketComps.minute = ((comps.minute ?? 0) / 10) * 10
             bucketComps.second = 0
             guard let bucket = cal.date(from: bucketComps) else { continue }
-            let cur = sums[bucket] ?? (0, 0)
-            sums[bucket] = (cur.sum + r.tremorScore, cur.count + 1)
+            slots[bucket, default: []].append(r.tremorScore)
         }
-        var result = sums.map { HourBucket(hour: $0.key, value: $0.value.sum / Double($0.value.count)) }
-            .sorted { $0.hour < $1.hour }
-        // If the last bucket covers the day's final half-hour, anchor the curve
-        // to dayEnd so it sits flush against the next-day boundary instead of
-        // terminating ~15min early. Honest extension — same value, full coverage.
-        if let last = result.last, last.hour >= dayEnd.addingTimeInterval(-30 * 60) {
-            result.append(HourBucket(hour: dayEnd, value: last.value))
+        // Value = MEAN of the 10-min slot. At this granularity the short window itself localizes the
+        // peak (no long-window smearing), and the mean keeps brief-but-real tremor breakthroughs
+        // visible instead of discarding them the way a median would — Bhav's call: show spikes, don't
+        // hide them. Trade-off accepted: a lone motion-artifact minute nudges a slot up ~0.3. Plotted
+        // at slot CENTER. See docs/design/tremor-averaging.md.
+        var result = slots.map {
+            HourBucket(hour: $0.key,
+                       plotX: $0.key.addingTimeInterval(Self.bucketSeconds / 2),
+                       value: $0.value.reduce(0, +) / Double($0.value.count))
+        }
+        .sorted { $0.hour < $1.hour }
+        // If the last bucket covers the day's final slot, anchor the curve to dayEnd so it sits
+        // flush against the next-day boundary instead of terminating ~5min early. Honest extension.
+        if let last = result.last, last.hour >= dayEnd.addingTimeInterval(-Self.bucketSeconds) {
+            result.append(HourBucket(hour: dayEnd, plotX: dayEnd, value: last.value))
         }
         return result
     }
@@ -940,18 +967,23 @@ private struct TremorTimelinePanel: View {
     private var dyskinesiaBuckets: [HourBucket] {
         guard !dyskinesia.isEmpty else { return [] }
         let cal = Calendar.current
-        var sums: [Date: (sum: Double, count: Int)] = [:]
+        var slots: [Date: [Double]] = [:]
         for r in dyskinesia {
             let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: r.startDate)
             var bucketComps = comps
-            bucketComps.minute = (comps.minute ?? 0) >= 30 ? 30 : 0
+            bucketComps.minute = ((comps.minute ?? 0) / 10) * 10
             bucketComps.second = 0
             guard let bucket = cal.date(from: bucketComps) else { continue }
-            let cur = sums[bucket] ?? (0, 0)
-            sums[bucket] = (cur.sum + DyskinesiaDisplay.intensity(r.percentLikely), cur.count + 1)
+            slots[bucket, default: []].append(DyskinesiaDisplay.intensity(r.percentLikely))
         }
-        return sums.map { HourBucket(hour: $0.key, value: $0.value.sum / Double($0.value.count)) }
-            .sorted { $0.hour < $1.hour }
+        // Mean + slot-center + 10-min, matching tremor — both lines share the 0–4 axis and must use
+        // the same statistic, or they silently mean different things. See design note.
+        return slots.map {
+            HourBucket(hour: $0.key,
+                       plotX: $0.key.addingTimeInterval(Self.bucketSeconds / 2),
+                       value: $0.value.reduce(0, +) / Double($0.value.count))
+        }
+        .sorted { $0.hour < $1.hour }
     }
 
     private func yLabel(for level: Int) -> String {
@@ -1131,9 +1163,13 @@ private struct GlucosePanel: View {
                             .lineStyle(StrokeStyle(lineWidth: 1))
                             .annotation(position: .top, alignment: .center, spacing: 4,
                                         overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .plot))) {
-                                CrosshairCallout(time: t, rows: [
-                                    .init(value: glucoseReadout(at: t), label: "", color: .pink)
-                                ])
+                                // Suppressed past `now` (see tremor panel): no measured glucose
+                                // in today's future. The rule line stays; only the box hides.
+                                if showsCallout(at: t) {
+                                    CrosshairCallout(time: t, rows: [
+                                        .init(value: glucoseReadout(at: t), label: "", color: .pink)
+                                    ])
+                                }
                             }
                     }
                 }
@@ -1180,6 +1216,13 @@ private struct GlucosePanel: View {
             abs($0.date.timeIntervalSince(time)) < abs($1.date.timeIntervalSince(time))
         }), abs(s.date.timeIntervalSince(time)) < 10 * 60 else { return "— mg/dL" }
         return "\(Int(s.value.rounded())) mg/dL"
+    }
+
+    /// Matches the tremor panel: suppress the callout past `now` on today (no measured glucose
+    /// in the future), show throughout on past days. The rule line is unaffected.
+    private func showsCallout(at time: Date) -> Bool {
+        guard Calendar.current.isDateInToday(dayStart) else { return true }
+        return time <= Date()
     }
 
     /// Shown on a CGM user's *gap* day (sensor warmup / between sensors / dropout) so the

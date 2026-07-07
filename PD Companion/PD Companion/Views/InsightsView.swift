@@ -337,7 +337,7 @@ struct InsightsView: View {
             let samples = allReadings.map {
                 TremorPoint(timestamp: $0.timestamp, tremorScore: $0.tremorScore)
             }
-            let doses = await healthKit.fetchLevodopaDoses()
+            let doses = await healthKit.fetchMedicationDoses()
             meds = Self.medSummaries(from: doses)
             gaitSources = await healthKit.fetchGaitSources()
             let gait = await healthKit.fetchGaitSeries(excludedSources: excludedSources)

@@ -603,21 +603,19 @@ class HealthKitManager: ObservableObject {
         }
     }
 
-    /// All "taken" levodopa doses (Sinemet / Mucuna) over the last `days` days,
-    /// mapped to the engine's `Dose` type. Mirrors the Python loader's
-    /// levodopa-only + taken-only filter so the correlation engine sees the same
-    /// inputs it was validated against.
-    func fetchLevodopaDoses(days: Int = 120) async -> [Dose] {
+    /// All "taken" medication/supplement doses over the last `days` days, mapped to the
+    /// engine's `Dose` type — keyed by name, with NO substance allowlist. The old
+    /// `sinemet/mucuna` hard-coding is gone: the engine now stratifies by formulation and
+    /// lets the estimability gate decide which substances show a real levodopa pulse
+    /// (`CorrelationEngine.estimableFormulations`), so every logged substance is modeled and
+    /// inert ones self-exclude. A dose whose medication isn't set up in Apple Health (nil
+    /// name) is kept under `"Unspecified"` rather than discarded.
+    func fetchMedicationDoses(days: Int = 120) async -> [Dose] {
         let end = Date()
         let start = Calendar.current.date(byAdding: .day, value: -days, to: end)
             ?? end.addingTimeInterval(-Double(days) * 86400)
         let raw = await fetchMedicationDosesInRange(from: start, to: end)
-        return raw.compactMap { entry in
-            guard let name = entry.name else { return nil }
-            let key = name.lowercased()
-            guard key.contains("sinemet") || key.contains("mucuna") else { return nil }
-            return Dose(timestamp: entry.time, name: name)
-        }
+        return raw.map { Dose(timestamp: $0.time, name: $0.name ?? "Unspecified") }
     }
 
     /// Fetch the four mobility-metric series across (effectively) the user's full
