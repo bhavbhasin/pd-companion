@@ -582,6 +582,24 @@
             .cgm-copy p { margin-left: auto; margin-right: auto; }
         }
 
+        /* ── Today's forecast lede — mirrors .cgm-lede, image on the right for rhythm ── */
+        .forecast-lede {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 64px;
+            align-items: center;
+        }
+        .forecast-lede .phone { width: 285px; }
+        .forecast-copy h3 { margin-bottom: 14px; }
+        .forecast-copy p { font-size: 16px; color: var(--text-2); line-height: 1.65; max-width: 520px; font-weight: 380; margin-bottom: 16px; }
+        .forecast-copy p:last-child { margin-bottom: 0; }
+        .forecast-copy strong { color: var(--text-1); font-weight: 600; }
+        @media (max-width: 760px) {
+            .forecast-lede { grid-template-columns: 1fr; justify-items: center; text-align: center; gap: 36px; }
+            .forecast-copy p { margin-left: auto; margin-right: auto; }
+            .forecast-lede .phone { order: -1; }
+        }
+
         /* ── Dual-signal showcase ── */
         .signal-grid {
             display: grid;
@@ -910,6 +928,7 @@
         .beta-btn:hover {
             filter: brightness(1.08);
         }
+        .cta-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 
         /* ── Footer ── */
         .footer-wrap {
@@ -1142,8 +1161,8 @@
         <p class="section-p" style="margin: 56px 0 26px; max-width: none;">A meal, a dose, a mindfulness session - the things you note yourself, you just say. Kampa transcribes on device, works out what you meant, and files it at the right time. Even "last night at 9 PM" lands on the right day.</p>
         <div class="voice-strip">
             <div class="voice-step">
-                <div class="phone"><img src="images/voice-menu.jpg" alt="Kampa Log entry screen with Food, Medication and Mindfulness, and a Tap to log by voice mic button"></div>
-                <div class="voice-cap"><span class="voice-num">1</span><strong>Start anywhere</strong><span>Tap + and hit the mic - food, medication, or mindfulness</span></div>
+                <div class="phone"><img src="images/voice-menu.jpg" alt="Kampa Log entry screen with Food, Medication, Mindfulness and Symptom, and a Tap to log by voice mic button"></div>
+                <div class="voice-cap"><span class="voice-num">1</span><strong>Start anywhere</strong><span>Tap + and hit the mic - food, medication, mindfulness, or a symptom</span></div>
             </div>
             <div class="voice-step">
                 <div class="phone"><img src="images/voice-speak.jpg" alt="Kampa Speak to log screen transcribing 'I ate blueberries and vanilla ice cream last night at 9 PM'"></div>
@@ -1162,6 +1181,22 @@
     </div>
 </div>
 
+<!-- ── Today's forecast ── -->
+<div class="section-wrap" id="forecast">
+    <div class="forecast-lede">
+        <div class="forecast-copy">
+            <p class="eyebrow">Today's forecast</p>
+            <h3 class="section-h">What to expect today - before it happens.</h3>
+            <p>Kampa learns how <strong>your</strong> doses actually play out - when each one kicks in, how long it holds, when it fades - then runs the rest of your day forward: the ON windows when you're steady, and the OFF windows when you're likely to wear off.</p>
+            <p><strong>Not a textbook drug curve.</strong> Each of your medications gets its own timing - learned from how it actually behaves for you, even how the same dose lands differently in the morning than at night. It tells you what to expect, never what to do - a pattern to plan around and bring to your neurologist, never a dosing instruction.</p>
+        </div>
+        <div class="phone-wrap">
+            <div class="phone"><img src="images/forecast-dark.jpg" alt="Kampa's Today's forecast panel for Tuesday, July 7: a colored timeline showing ON (blue) and OFF (red) windows across the day with a marker at the current time, above the message 'You're likely ON (steady) right now — wearing off expected 3:00 PM to 4:00 PM.'"></div>
+            <div class="phone-glow"></div>
+        </div>
+    </div>
+</div>
+
 <!-- ── Glucose (CGM) ── -->
 <div class="section-wrap">
     <div class="cgm-lede">
@@ -1173,7 +1208,7 @@
             <p class="eyebrow">Glucose</p>
             <h3 class="section-h">On the same timeline.</h3>
             <p>Wear an over-the-counter glucose sensor - Abbott Lingo, Dexcom Stelo, no prescription - and Kampa reads it straight from Apple Health, drawing your glucose curve in its own panel, time-aligned right under your tremor chart.</p>
-            <p><strong>Touch and hold anywhere, and a crosshair sweeps every panel at once</strong> - a dose, a meal, a tremor uptick, and a glucose swing all line up to the same minute. Collapse a panel when you want fewer signals in view. Kampa works fully without a sensor, too.</p>
+            <p><strong>Touch and hold anywhere, and a crosshair sweeps every panel at once</strong> - a dose, a meal, a tremor uptick, an ON/OFF forecast window, and a glucose swing all line up to the same minute. Collapse a panel when you want fewer signals in view. Kampa works fully without a sensor, too.</p>
         </div>
     </div>
 </div>
@@ -1279,6 +1314,27 @@
         <div class="changelog-item">
             <div class="changelog-date">Jul 2026</div>
             <div>
+                <div class="changelog-title">The beta is open</div>
+                <div class="changelog-desc">Kampa is now on <a href="https://testflight.apple.com/join/1Tt8n1ZD" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;">TestFlight</a> - if you have an iPhone and an Apple Watch, you can try it yourself: passive tremor and dyskinesia tracking, dose correlation, and your day-ahead forecast, all running on your own data.</div>
+            </div>
+        </div>
+        <div class="changelog-item">
+            <div class="changelog-date">Jul 2026</div>
+            <div>
+                <div class="changelog-title">What to expect today</div>
+                <div class="changelog-desc">Kampa now runs your wearing-off curve forward from the doses you've logged and draws the likely shape of your day - your probable on and off windows - as a band right under your tremor chart. A heads-up for planning the day ahead, never a dosing instruction.</div>
+            </div>
+        </div>
+        <div class="changelog-item">
+            <div class="changelog-date">Jul 2026</div>
+            <div>
+                <div class="changelog-title">Log gut symptoms by voice</div>
+                <div class="changelog-desc">Tap + and say it - "bloated after lunch," "nausea this morning." Kampa saves it to Apple Health and marks it on your timeline, so slow-digestion days sit alongside how your doses landed. Constipation and gut motility are among the most common non-motor patterns in Parkinson's.</div>
+            </div>
+        </div>
+        <div class="changelog-item">
+            <div class="changelog-date">Jul 2026</div>
+            <div>
                 <div class="changelog-title">Glucose, on the same timeline</div>
                 <div class="changelog-desc">Wear an over-the-counter glucose sensor - Abbott Lingo, Dexcom Stelo, no prescription - and Kampa reads it straight from Apple Health and draws your glucose curve in its own panel, time-aligned right under your tremor chart. Touch and hold anywhere and a crosshair sweeps every panel at once, so a dose, a meal, a tremor uptick, and a glucose swing all line up to the same minute. It works fully without a sensor, too.</div>
             </div>
@@ -1329,7 +1385,7 @@
             <div class="changelog-date">Jun 2026</div>
             <div>
                 <div class="changelog-title">Kampa enters private testing</div>
-                <div class="changelog-desc">Kampa is now running on real devices beyond the builder's own, with a small, invitation-only group of testers. Interested in joining? Email <a href="mailto:info@kampa.health" style="color:var(--blue);text-decoration:none;">info@kampa.health</a>.</div>
+                <div class="changelog-desc">Kampa reaches real devices beyond the builder's own, with a small, invitation-only group of testers.</div>
             </div>
         </div>
         <div class="changelog-item">
@@ -1370,14 +1426,19 @@
     <p class="section-p" style="margin-bottom: 40px;">The foundation is running. The roadmap builds toward a complete picture of how Parkinson's moves through a life.</p>
     <div class="roadmap-grid">
         <div class="roadmap-item">
-            <div class="roadmap-label">In development</div>
-            <div class="roadmap-title">Predictive nudges</div>
-            <p class="roadmap-desc">Proactive wrist alerts built from your own patterns - not generic reminders. "Your typical wear-off is at 4 hours. Your last dose was 3h 50m ago."</p>
+            <div class="roadmap-label">Now underway</div>
+            <div class="roadmap-title">Now in testing</div>
+            <p class="roadmap-desc">Kampa is out on real devices beyond the builder's own, in an open TestFlight beta - validating whether the patterns it surfaces hold across individuals or are deeply personal.</p>
         </div>
         <div class="roadmap-item">
             <div class="roadmap-label">Up next</div>
-            <div class="roadmap-title">Per-medication response</div>
-            <p class="roadmap-desc">Immediate-release levodopa, extended-release, and Mucuna each act on a different curve. Kampa will read dose-response for each one separately - not pooled together.</p>
+            <div class="roadmap-title">Lifestyle in the forecast</div>
+            <p class="roadmap-desc">Today's forecast projects from your logged doses. Next: the lifestyle factors Kampa already surfaces as daily insights - exercise, sleep, HRV - will feed the forward forecast itself, so a hard workout or a short night shifts your expected on and off windows, not just that day's notes.</p>
+        </div>
+        <div class="roadmap-item">
+            <div class="roadmap-label">Exploring</div>
+            <div class="roadmap-title">Deviation alerts</div>
+            <p class="roadmap-desc">The day-ahead forecast already shows your expected on and off windows. A deviation alert would watch your live tremor against that forecast and speak up only when today diverges from your own pattern - wearing off earlier than usual, say - never a generic "you're due" reminder.</p>
         </div>
         <div class="roadmap-item">
             <div class="roadmap-label">Roadmap</div>
@@ -1392,12 +1453,7 @@
         <div class="roadmap-item">
             <div class="roadmap-label">Roadmap</div>
             <div class="roadmap-title">Gut - absorption patterns</div>
-            <p class="roadmap-desc">Constipation is among the most common non-motor symptoms in Parkinson's, and gut motility shapes how levodopa is absorbed. Kampa will read GI patterns from Apple Health and line them up with dose response.</p>
-        </div>
-        <div class="roadmap-item">
-            <div class="roadmap-label">Now underway</div>
-            <div class="roadmap-title">Small testing group</div>
-            <p class="roadmap-desc">Kampa is now on real devices beyond the builder's own, with a small invitation-only group - validating whether the patterns it surfaces are consistent across individuals or deeply personal.</p>
+            <p class="roadmap-desc">You already log gut symptoms by voice. Next, Kampa lines them up against dose response - because gut motility shapes how well levodopa is absorbed.</p>
         </div>
     </div>
 </div>
@@ -1405,31 +1461,21 @@
 <!-- ── Contact ── -->
 <div class="contact-wrap">
     <div class="contact-inner">
-        <h2 class="contact-h">Interested in Kampa?</h2>
-        <p class="contact-p">Want testing access, to collaborate on research, or to share clinical feedback?</p>
-        <a href="mailto:info@kampa.health?subject=Requesting%20TestFlight%20access%20for%20Kampa&amp;body=Hi%20-%20I%20would%20like%20to%20join%20the%20Kampa%20TestFlight%20beta.%0D%0A%0D%0AMy%20iPhone%3A%20___%20(iOS%20___)%0D%0AMy%20Apple%20Watch%3A%20___%20(watchOS%20___)" class="email-btn">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
-            Request beta access
-        </a>
+        <h2 class="contact-h">The beta is open.</h2>
+        <p class="contact-p">Try Kampa on your own iPhone and Apple Watch - or reach out to collaborate on research or share clinical feedback.</p>
+        <div class="cta-row">
+            <a href="https://testflight.apple.com/join/1Tt8n1ZD" target="_blank" rel="noopener" class="beta-btn">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5 21.5 20H2.5L12 2.5zm0 5L6.6 17.3h10.8L12 7.5z"/></svg>
+                Join the beta on TestFlight
+            </a>
+            <a href="mailto:info@kampa.health?subject=Kampa%20-%20collaboration%20%2F%20feedback" class="email-btn">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
+                Get in touch
+            </a>
+        </div>
         <p class="contact-reqs">
             Requires an iPhone on iOS&nbsp;26 (iPhone&nbsp;11 or later, including iPhone&nbsp;SE 2nd gen) and an Apple&nbsp;Watch on watchOS&nbsp;10 (Series&nbsp;4 or later).
         </p>
-        <!-- ════════ STAGED: TestFlight "Join the beta" CTA ════════
-             DO NOT uncomment until build 1 is APPROVED and the public TestFlight link is live.
-             A live "beta is open" CTA with a dead link is worse than no CTA.
-
-             Flip steps (≈one minute):
-               1. Replace TESTFLIGHT_URL below with the real public TestFlight link.
-               2. Delete this comment's opening/closing markers so the <a> renders.
-               3. Optional: change the heading above to "The beta is open." and demote the
-                  email button (swap class to .email-btn-secondary) so the beta button is primary.
-               4. Fire the queued "Kampa is in testing - request access" LinkedIn post (dual moment).
-
-        <a href="TESTFLIGHT_URL" target="_blank" rel="noopener" class="beta-btn">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5 21.5 20H2.5L12 2.5zm0 5L6.6 17.3h10.8L12 7.5z"/></svg>
-            Join the beta on TestFlight
-        </a>
-        ════════ END STAGED ════════ -->
     </div>
 </div>
 

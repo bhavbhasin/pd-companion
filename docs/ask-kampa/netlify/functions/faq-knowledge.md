@@ -46,6 +46,10 @@ Dyskinesia refers to involuntary movements that can occur as a side effect of le
 
 Because pharmacologically they often are. Tremor tends to peak before a dose (medication worn off) and dyskinesia at peak dose. Seeing them rise and fall in opposite rhythm around your doses is the levodopa cycle made visible - many people find this one chart explains their day better than anything else.
 
+### What is the "what to expect today" forecast?
+
+On today's Review, Kampa projects the likely shape of your day - your probable on and wearing-off windows - from the doses you've logged and how each of your medications has tended to act for you, learned from your own history rather than a textbook drug curve. It is a heads-up for planning, not a dosing instruction. As always, decisions about medication are for you and your neurologist.
+
 ### What is the difference between Observations and Insights?
 
 Observations describe today: "Tremor eased 68% in the hour after your 8 AM dose." They are honest descriptions of what co-occurred, not proof of cause. Insights are patterns that hold up across many days and pass statistical checks before you ever see them. Observations are the daily read; Insights are the accumulated evidence.
@@ -88,7 +92,11 @@ It stays in your iCloud and your Apple Health store, under your control. Deletin
 
 ### How does voice logging work?
 
-Say something like "Hey Siri, log coffee with Kampa" or "log a 20 minute meditation." Kampa reads back what it understood and asks you to confirm before saving anything. It was designed for days when typing is hard.
+The simplest way is inside the app: tap + on the Review screen, then speak. Say "5 almonds with tea," "bloated after lunch," or "ten minutes of breathing" and Kampa sorts each into the right place - food, a gut symptom, or a mindfulness session. It reads back what it understood so you can confirm before anything is saved. You can also start food and mindfulness logs hands-free with Siri ("log a 20 minute meditation"). It was designed for days when typing is hard.
+
+### Can I log gut or digestive symptoms?
+
+Yes. Tap + on the Review screen and describe it in plain words ("bloated after lunch," "nausea this morning"). Kampa saves it to Apple Health and marks it on your timeline, so slow-digestion days can be seen alongside how your doses landed.
 
 ### Why can't I log a medication dose by voice through Kampa?
 
