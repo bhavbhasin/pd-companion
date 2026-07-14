@@ -481,6 +481,10 @@ nonisolated extension CorrelationEngine {
         floor:    GateBar(minN: 1))
 
     /// Gait trend: significance (slope t-test p) + n (months of medians).
+    /// ⚠ Scores PRESENCE of a trend, but the gait card claims ABSENCE ("hasn't declined") —
+    /// so a flat/stable slope is capped at Emerging, backwards. Fix = equivalence test with
+    /// margin `max(user's own detectable margin, clinical MCID ~0.06 m/s)`. Full rationale +
+    /// citations: docs/design/confidence-presence-vs-absence.md.
     static let gaitTrendGate = GateSpec(
         strong:   GateBar(minN: 24, maxP: 0.01),
         moderate: GateBar(minN: 12, maxP: 0.05),
