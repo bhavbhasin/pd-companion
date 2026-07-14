@@ -181,6 +181,38 @@ struct DayForecastTests {
         #expect(CorrelationEngine.applyLiveEdge([seg], live: nil, now: Self.now).count == 1)
     }
 
+    // MARK: projected-timeline de-jitter (mergeIntervals gap bridge)
+
+    /// Two consecutive doses whose ON windows leave a sub-bin (<30min) OFF gap between them
+    /// must NOT paint a hairline OFF sliver — the projected side gets the same de-jitter floor
+    /// the observed side already has. Bridged into one continuous ON.
+    @Test func mergeBridgesSubBinGap() {
+        let b = Self.base
+        let ivs = [(start: b, end: b.addingTimeInterval(60 * 60)),                       // 0–60
+                   (start: b.addingTimeInterval(80 * 60), end: b.addingTimeInterval(140 * 60))] // 80–140 (20min gap)
+        let out = CorrelationEngine.mergeIntervals(ivs, gapTolSec: 30 * 60)
+        #expect(out.count == 1)
+        #expect(out.first?.start == b)
+        #expect(out.first?.end == b.addingTimeInterval(140 * 60))
+    }
+
+    /// A gap LONGER than the tolerance is a real OFF episode → the two ON windows stay separate.
+    @Test func mergeKeepsGenuineGap() {
+        let b = Self.base
+        let ivs = [(start: b, end: b.addingTimeInterval(60 * 60)),                        // 0–60
+                   (start: b.addingTimeInterval(105 * 60), end: b.addingTimeInterval(165 * 60))] // 105–165 (45min gap)
+        let out = CorrelationEngine.mergeIntervals(ivs, gapTolSec: 30 * 60)
+        #expect(out.count == 2)
+    }
+
+    /// Default tolerance (0) preserves the original touching-only union: a 1-second gap is kept.
+    @Test func mergeDefaultToleranceUnchanged() {
+        let b = Self.base
+        let ivs = [(start: b, end: b.addingTimeInterval(60 * 60)),
+                   (start: b.addingTimeInterval(60 * 60 + 1), end: b.addingTimeInterval(120 * 60))]
+        #expect(CorrelationEngine.mergeIntervals(ivs).count == 2)   // not bridged at tol=0
+    }
+
     /// The next-OFF uncertainty band is derived from the spread of observed ON-durations
     /// (IQR), not a hard-coded ±. Varied plateau lengths → a real band bracketing the onset.
     @Test func offRangeSpreadFromDurationSpread() throws {

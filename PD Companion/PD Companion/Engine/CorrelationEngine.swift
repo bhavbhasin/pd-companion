@@ -1727,7 +1727,12 @@ nonisolated extension CorrelationEngine {
             let end = d.timestamp.addingTimeInterval(max(onsetSec + 60, durSec)) // ON stays positive
             if end > start { onIntervals.append((start, end)); doseEnds.append((end, m.iqr)) }
         }
-        let projected = phaseTimeline(on: mergeIntervals(onIntervals),
+        // Bridge ON windows separated by a gap shorter than one observed bin so a few-minute
+        // wearing-off dip between two close doses isn't painted as a real OFF sliver — the same
+        // de-jitter floor the observed side gets. Reused for `nextOffStart` so the bar and the
+        // headline's next-OFF time agree.
+        let mergedOn = mergeIntervals(onIntervals, gapTolSec: forecastObservedBinMin * 60)
+        let projected = phaseTimeline(on: mergedOn,
                                       dayStart: dayStart, dayEnd: dayEnd)
 
         // Observed phase for the elapsed day from measured tremor (honest reconstruction).
@@ -1741,7 +1746,7 @@ nonisolated extension CorrelationEngine {
         // Next OFF onset = end of the merged ON interval still open after `now`. The merged
         // end equals some dose's projected end, so its formulation's IQR sets the band width
         // (fallback: combined) — a data-derived ±, not an arbitrary one.
-        let nextOffStart = mergeIntervals(onIntervals).first { $0.end > now }?.end
+        let nextOffStart = mergedOn.first { $0.end > now }?.end
         var nextOffRange: ClosedRange<Date>? = nil
         if let off = nextOffStart {
             let bandIqr = doseEnds.first { abs($0.end.timeIntervalSince(off)) < 1 }?.iqr ?? combined.iqr
@@ -1762,11 +1767,16 @@ nonisolated extension CorrelationEngine {
 
     // MARK: forecast helpers
 
-    /// Union of overlapping/touching intervals, sorted by start.
-    static func mergeIntervals(_ intervals: [(start: Date, end: Date)]) -> [(start: Date, end: Date)] {
+    /// Union of overlapping/touching intervals, sorted by start. `gapTolSec` also bridges
+    /// intervals separated by a gap no longer than the tolerance — used by the forecast to
+    /// absorb a sub-bin OFF sliver between two closely-spaced doses' projected ON windows, the
+    /// SAME de-jitter floor `observedTimeline`/`despeckle` already apply to the measured side.
+    /// Without it a few-minute wearing-off dip between consecutive doses paints a hairline OFF.
+    static func mergeIntervals(_ intervals: [(start: Date, end: Date)],
+                               gapTolSec: TimeInterval = 0) -> [(start: Date, end: Date)] {
         var out: [(start: Date, end: Date)] = []
         for iv in intervals.sorted(by: { $0.start < $1.start }) {
-            if var last = out.last, iv.start <= last.end {
+            if var last = out.last, iv.start.timeIntervalSince(last.end) <= gapTolSec {
                 last.end = max(last.end, iv.end)
                 out[out.count - 1] = last
             } else {
