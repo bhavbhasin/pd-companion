@@ -447,9 +447,29 @@ private struct InsightsList: View {
         !attention.isEmpty || !clinical.isEmpty || !results.isEmpty
     }
 
-    // Priority order is implicit now that section headers are gone: actionable
-    // first (hypotheses/experiments), then the clinical discussion, then results.
-    private var orderedInsights: [Binding<Insight>] { attention + clinical + results }
+    // Value-ranked (section headers are gone, so this is the only ordering signal):
+    // most-confident first, so the trustworthy share-with-your-neurologist findings lead
+    // and honest "no clear effect yet" nulls sink. Ties break by stage — a clinical
+    // finding outranks a result outranks a still-watching hypothesis at equal confidence —
+    // then by original position so the order is deterministic.
+    private static func stageRank(_ s: Insight.Stage) -> Int {
+        switch s {
+        case .clinicalDiscussion: 0
+        case .verdict:            1
+        case .hypothesis, .experiment: 2
+        }
+    }
+    private var orderedInsights: [Binding<Insight>] {
+        insights.indices.sorted { a, b in
+            let ia = insights[a], ib = insights[b]
+            if ia.confidence.filledDots != ib.confidence.filledDots {
+                return ia.confidence.filledDots > ib.confidence.filledDots   // Strong → Emerging
+            }
+            let ra = Self.stageRank(ia.stage), rb = Self.stageRank(ib.stage)
+            if ra != rb { return ra < rb }                                   // clinical → result → hypothesis
+            return a < b                                                     // stable
+        }.map { $insights[$0] }
+    }
 
     var body: some View {
         ScrollView {
