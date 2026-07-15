@@ -126,6 +126,27 @@ nonisolated enum GaitMetric: String, CaseIterable, Sendable {
         case .walkingSpeed, .stepLength: false
         }
     }
+
+    /// Minimal clinically important difference — the smallest change studies find a
+    /// clinician or patient actually calls meaningful. In NATIVE units (m/s here), never
+    /// a percentage: a % constant would silently scale the margin with the person's
+    /// baseline, handing a slower patient a smaller margin than the literature supports.
+    /// Display copy derives the % from this, not the reverse.
+    ///
+    /// Used as the published FLOOR under an absence claim, so a very clean dataset can't
+    /// flag a sub-clinical wiggle just because it has the precision to resolve one.
+    /// nil ⇒ no PD value sourced yet, so that metric's absence claim rests on the user's
+    /// own detectable margin alone.
+    ///
+    /// Walking speed: small MCID ≈ 0.06 m/s — Hass et al., *Defining the Clinically
+    /// Meaningful Difference in Gait Speed in Persons with Parkinson Disease*, JNPT 2014
+    /// (n=324). Rationale + the other metrics' TODO: docs/design/confidence-presence-vs-absence.md
+    var mcid: Double? {
+        switch self {
+        case .walkingSpeed: 0.06
+        case .stepLength, .doubleSupport, .asymmetry: nil
+        }
+    }
 }
 
 // `nonisolated`: the project defaults types to `@MainActor` isolation
@@ -464,6 +485,37 @@ nonisolated extension CorrelationEngine {
         return nil
     }
 
+    /// One-sided p for an ABSENCE claim — "this has not declined by anything that
+    /// matters" — so it can feed the same `maxP` axis `gate` already scores.
+    ///
+    /// The presence gate asks *does an effect exist?* (H₀: change = 0). That question is
+    /// backwards for a card claiming absence: a truly flat signal never reaches
+    /// significance, so it would be capped at Emerging forever no matter how much
+    /// confirming data arrives. This asks the card's actual question instead —
+    /// H₀: decline ≥ `margin` — and rejecting it earns the reassurance honestly.
+    ///
+    /// ONE-SIDED by design. The claim is "hasn't declined", not "hasn't changed", so a
+    /// genuine IMPROVEMENT must strengthen the card, not fail it. (A two-sided
+    /// equivalence test would reject a real improvement — the same shape of bug as
+    /// scoring absence with a presence gate.)
+    ///
+    /// - Parameters:
+    ///   - change: observed change over the span, oriented so BETTER IS POSITIVE.
+    ///   - stdErr: standard error of that change, same units.
+    ///   - margin: smallest decline that would matter. Never a tuned knob — it is
+    ///     `max(the user's own detectable margin, the published MCID)`; see
+    ///     docs/design/confidence-presence-vs-absence.md.
+    ///   - df: degrees of freedom of the underlying fit.
+    /// - Returns: p for H₀ *decline ≥ margin*. Small p ⇒ decline confidently ruled out.
+    static func nonInferiorityP(change: Double, stdErr: Double, margin: Double, df: Double) -> Double? {
+        guard stdErr > 0, margin > 0, df > 0, change.isFinite, stdErr.isFinite else { return nil }
+        let t = (change + margin) / stdErr
+        let twoSided = regularizedIncompleteBeta(a: df / 2, b: 0.5, x: df / (df + t * t))
+        // Halve to one tail: t>0 means the estimate sits above −margin (the direction
+        // that supports the claim), so the evidence lives in the upper tail.
+        return t > 0 ? twoSided / 2 : 1 - twoSided / 2
+    }
+
     // Per-hypothesis specs. The first two reproduce the previously-inline gates
     // exactly; the gait spec finally uses the t-test p-value the trend already
     // computes (it was hard-coded .moderate, discarding that p).
@@ -480,11 +532,11 @@ nonisolated extension CorrelationEngine {
         moderate: GateBar(minN: 1),
         floor:    GateBar(minN: 1))
 
-    /// Gait trend: significance (slope t-test p) + n (months of medians).
-    /// ⚠ Scores PRESENCE of a trend, but the gait card claims ABSENCE ("hasn't declined") —
-    /// so a flat/stable slope is capped at Emerging, backwards. Fix = equivalence test with
-    /// margin `max(user's own detectable margin, clinical MCID ~0.06 m/s)`. Full rationale +
-    /// citations: docs/design/confidence-presence-vs-absence.md.
+    /// Gait trend: n (months of medians) + a p-value whose MEANING depends on the card's
+    /// verdict — slope significance when it claims a decline, `nonInferiorityP` when it
+    /// claims one is absent. The tiers are deliberately shared: "how sure are we" reads the
+    /// same to the user either way, so only the question underneath differs.
+    /// See `gaitInsight` and docs/design/confidence-presence-vs-absence.md.
     static let gaitTrendGate = GateSpec(
         strong:   GateBar(minN: 24, maxP: 0.01),
         moderate: GateBar(minN: 12, maxP: 0.05),
@@ -1306,6 +1358,7 @@ nonisolated extension CorrelationEngine {
         let metric: GaitMetric
         let nMonths: Int
         let slopePerYear: Double   // native units per year
+        let slopeStdErr: Double    // SE of that slope, native units per year
         let intercept: Double      // fitted value at the first month
         let r: Double
         let pValue: Double         // two-sided, t-test on the slope
@@ -1316,6 +1369,65 @@ nonisolated extension CorrelationEngine {
         var isSignificant: Bool { pValue < 0.05 }
         /// Worsening = moving in the bad direction for this metric.
         var isWorsening: Bool { metric.higherIsWorse ? slopePerYear > 0 : slopePerYear < 0 }
+
+        // MARK: Absence-claim support ("hasn't declined")
+
+        /// Total change across the observed span, ORIENTED so better is positive —
+        /// which is what lets one test serve metrics that worsen in opposite directions
+        /// (speed falling vs. double-support rising both read as negative here).
+        var orientedChange: Double {
+            let total = slopePerYear * spanYears
+            return metric.higherIsWorse ? -total : total
+        }
+
+        /// SE of `orientedChange`. Sign-free, so orientation doesn't touch it.
+        var orientedChangeStdErr: Double { slopeStdErr * spanYears }
+
+        /// The user's OWN detectable margin: the ~95% half-width on their total change.
+        /// A move smaller than this is inside their personal measurement wobble, so it
+        /// can't honestly be claimed for them. Computed only from this user's own data —
+        /// never pooled across users (statistically wrong, since everyone's scatter
+        /// differs, and it's the privacy line the app is built on).
+        /// t≈1.96 + 2.4/df approximates the 97.5th t percentile without a quantile table;
+        /// exact enough here, and only the reported interval leans on it — the confidence
+        /// verdict itself flows through `nonInferiorityP`, which needs no quantile.
+        var ownDetectableMargin: Double {
+            guard nMonths > 2 else { return .infinity }
+            let df = Double(nMonths - 2)
+            return (1.96 + 2.4 / df) * orientedChangeStdErr
+        }
+
+        /// The margin an absence claim is tested against: the published MCID, full stop.
+        ///
+        /// ⚠️ NOT `max(own detectable, MCID)` — that rule (design note, Jul 13) is CIRCULAR
+        /// and was corrected here. The own margin is ≈1.96·SE, so whenever it binds the
+        /// test collapses to t = (0 + 1.96·SE)/SE ≈ 1.96 → p ≈ 0.03 → *always* Moderate,
+        /// however noisy the data: the margin grows with the very noise it's meant to
+        /// survive. Testing against the fixed clinical floor instead makes noisy data fail
+        /// honestly on its own, because SE sits in the test's denominator.
+        ///
+        /// `ownDetectableMargin` keeps its real job — reporting what this user can resolve
+        /// (and see `canResolveMCID`) — it just isn't an input to the test.
+        var absenceMargin: Double? { metric.mcid }
+
+        /// Whether this user's data is precise enough to speak to a clinically meaningful
+        /// change at all. False ⇒ their own wobble is larger than the MCID, so even a
+        /// "flat" reading can't rule out a decline that would matter — the honest answer
+        /// is low confidence, which `noDeclineP` produces on its own.
+        var canResolveMCID: Bool {
+            guard let mcid = metric.mcid else { return false }
+            return ownDetectableMargin <= mcid
+        }
+
+        /// p for "a decline of at least `absenceMargin` is ruled out". Small ⇒ the
+        /// reassurance is earned. nil when there's no sourced MCID for this metric or the
+        /// fit is degenerate — the gate then falls back to its n-only floor.
+        var noDeclineP: Double? {
+            guard let margin = absenceMargin else { return nil }
+            return CorrelationEngine.nonInferiorityP(
+                change: orientedChange, stdErr: orientedChangeStdErr,
+                margin: margin, df: Double(nMonths - 2))
+        }
         /// % change is meaningless when the baseline sits near zero (e.g. asymmetry ~0,
         /// where a tiny absolute move is a huge %). Mirrors the lab's |pct|>60 guard.
         var pctReliable: Bool { pctChange.isFinite && abs(pctChange) <= 60 }
@@ -1359,10 +1471,17 @@ nonisolated extension CorrelationEngine {
         let others = [GaitMetric.stepLength, .doubleSupport, .asymmetry]
             .compactMap(phrase).joined(separator: " · ")
 
-        // Confidence now flows from the hero metric's actual slope p-value + month
-        // count (was hard-coded .moderate). Floor (n≥6) always holds here, since the
-        // card already requires nMonths≥12, so the card never disappears.
-        let confidence = gate(Self.gaitTrendGate, n: speed.nMonths, p: speed.pValue) ?? .emerging
+        // Confidence branches on WHICH VERDICT FIRED, because presence and absence are
+        // different claims and need different tests:
+        //   declining → the card asserts a trend EXISTS → significance (slope p).
+        //   otherwise → the card asserts a decline is ABSENT → non-inferiority, which
+        //     rewards a long flat record instead of capping it at Emerging forever.
+        // Both feed the same tiers via `maxP`; only the question changes. Floor (n≥6)
+        // always holds here since the card already requires nMonths≥12, so it never
+        // disappears — a null p just lands it on Emerging, which is the honest read.
+        // See docs/design/confidence-presence-vs-absence.md.
+        let scoredP = declining ? speed.pValue : speed.noDeclineP
+        let confidence = gate(Self.gaitTrendGate, n: speed.nMonths, p: scoredP) ?? .emerging
 
         var insight = Insight(
             title: declining ? "Your mobility shows some change" : "Your mobility hasn't declined",
@@ -1398,6 +1517,7 @@ nonisolated extension CorrelationEngine {
     struct TrendResult: Sendable {
         let nMonths: Int
         let slopePerYear: Double
+        let slopeStdErr: Double    // SE of the per-year slope, native units
         let intercept: Double
         let r: Double
         let pValue: Double
@@ -1423,8 +1543,9 @@ nonisolated extension CorrelationEngine {
         let total = fit.slope * span
         let pct = fit.intercept != 0 ? 100 * total / fit.intercept : .nan
         return TrendResult(
-            nMonths: months.count, slopePerYear: fit.slope, intercept: fit.intercept,
-            r: fit.r, pValue: fit.pValue, spanYears: span, pctChange: pct, months: months)
+            nMonths: months.count, slopePerYear: fit.slope, slopeStdErr: fit.slopeStdErr,
+            intercept: fit.intercept, r: fit.r, pValue: fit.pValue,
+            spanYears: span, pctChange: pct, months: months)
     }
 
     /// Gait's per-metric wrapper around the generic `longTermTrend` primitive.
@@ -1433,7 +1554,7 @@ nonisolated extension CorrelationEngine {
         guard let t = longTermTrend(samples: dated, clip: metric.clip) else { return nil }
         return MetricTrend(
             metric: metric, nMonths: t.nMonths, slopePerYear: t.slopePerYear,
-            intercept: t.intercept, r: t.r, pValue: t.pValue,
+            slopeStdErr: t.slopeStdErr, intercept: t.intercept, r: t.r, pValue: t.pValue,
             spanYears: t.spanYears, pctChange: t.pctChange, months: t.months)
     }
 
@@ -1468,7 +1589,7 @@ nonisolated extension CorrelationEngine {
     /// Ordinary least squares plus the two-sided p-value SciPy's `linregress` reports:
     /// the slope's t-statistic against df = n−2, evaluated via the regularized
     /// incomplete beta (the t-distribution tail).
-    static func linregress(x: [Double], y: [Double]) -> (slope: Double, intercept: Double, r: Double, pValue: Double)? {
+    static func linregress(x: [Double], y: [Double]) -> (slope: Double, intercept: Double, r: Double, pValue: Double, slopeStdErr: Double)? {
         let n = x.count
         guard n >= 3, x.count == y.count else { return nil }
         let nD = Double(n)
@@ -1488,7 +1609,11 @@ nonisolated extension CorrelationEngine {
         let tStat = r * (df / ((1 - r + tiny) * (1 + r + tiny))).squareRoot()
         // two-sided p = I_{df/(df+t²)}(df/2, 1/2)
         let p = regularizedIncompleteBeta(a: df / 2, b: 0.5, x: df / (df + tStat * tStat))
-        return (slope, intercept, r, p)
+        // SE of the slope: √(SSE/df / Sxx), with SSE = Syy(1−r²). Needed by absence
+        // claims, which are scored on the slope's PRECISION rather than its
+        // significance (see `nonInferiorityP`).
+        let slopeStdErr = (syy * (1 - r * r) / df / sxx).squareRoot()
+        return (slope, intercept, r, p, slopeStdErr)
     }
 
     /// Regularized incomplete beta Iₓ(a,b) via the Lentz continued fraction
