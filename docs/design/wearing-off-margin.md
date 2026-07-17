@@ -130,6 +130,25 @@ Tests: `SleepClippingTests` (oracle vs Python on the real backup, + nap / night-
 
 Most of the jump is NOT the skipped-evening days — it's the **normal-night morning gap**. 10pm dose → asleep 11:25 → wake 7am → dose 8am is a 600-min gap, excluded today by *both* the cap and the hour filter. Under the new rule it contributes the 7–8am waking stretch on **most days**, not rare ones. (Bhav's hour 7 = 21% OFF, hour 8 = 47%.)
 
+### ⬜ KNOWN LIMITATION: uncovered ≠ OFF (Bhav's retreat case)
+
+**The card models uncovered time; it never checks whether the patient was symptomatic.** Uncovered = gap − pooled KM duration − sleep. It knows when the drug was gone. It does not know how you felt.
+
+**The case that breaks it (Bhav, Dec 2025 — Joe Dispenza retreats, OUTSIDE the current 69-day record):** one dose, taken before sleep, covering a 24h period; meditation carried the day. The card would announce **~16 h uncovered** on a day he was fine. Two consequences:
+
+1. **Never let the observation window run unbounded** to "fix" the once-daily case. On that retreat the engine would have watched tremor stay low for 20 h and recorded *"this dose held for 20 hours"* — crediting levodopa with what meditation did. The retreat is the strongest argument **for** a plausibility bound, not against one. Related: the known "low tremor ≠ medicated" gap [[project_kampa_tremor_smoothing]].
+2. The copy says *"predictable OFF"*. True on an ordinary day, false on a retreat day.
+
+**Candidate design — count the INTERSECTION:** minutes where no drug was on board **AND** tremor was actually above the OFF line. Retreat day → ~0. Ordinary day → unchanged. A dose that fails outright (absorption/protein) → tremor high *during* coverage → correctly NOT blamed on spacing (that's the afternoon-dose card's territory).
+
+**⚠️ But do not oversell it — Bhav's objection is correct and decisive.** The two conditions are **not independent instruments**: "drug gone" is *defined* as t0 + the median tremor-crossing time, so both halves derive from the same tremor signal. The only genuinely independent ingredient is the **clock** (minutes since the dose, from the dose log); the lone tremor-derived term is the constant 178. So the intersection is a model checked against the data it was fitted on — it catches only where the median's extrapolation fails on a given day.
+
+**On Bhav's data it would be ~a no-op**, and this explains the 502-vs-486 agreement properly: they coincide at threshold 1.0 because once his drug wears off his tremor reliably sits above 1.0 for the rest of the gap. At 2.0 they diverge (470 vs 262) — post-wear-off tremor is often above 1.0 but below 2.0. The agreement is a real finding about him, not a tautology, but it also means the intersection buys him nothing.
+
+**Verdict: log, don't build.** Robustness for edge cases and other patients (retreat-like days, wildly varying doses, patients whose tremor doesn't clear the line when unmedicated), not a correctness fix today. ⚠️ Real cost if ever built: the model needs only the dose log; the intersection needs tremor coverage. Bhav's watch covers ~933 waking min/day of ~16-17 h, so unmonitored minutes would score as "not OFF" — silence that looks like an answer, the same class of defect as the 600-min cap. It would need an explicit unmonitored bucket.
+
+**The interesting half:** the *difference* between the two (drug gone, patient fine anyway) is a signal in its own right — small on an ordinary day, the whole day on a retreat. That is where a meditation/lifestyle effect would surface, from data already collected, without new logging. A different route to [[project_kampa_mindfulness]]'s dormant question: not "does meditation lower my tremor" (needs many sessions) but "which days was my drug absent and I was fine, and what did they share?"
+
 ### The OFF threshold does NOT block this — tested, ~6% swing
 
 An earlier revision of this note claimed `offThreshold` was "the dominant term" and blocked shipping. **That was wrong** — it ran the sensitivity on *direct measurement* and asserted the same of the design without testing it. Bhav caught it. Measured:
