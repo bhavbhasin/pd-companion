@@ -115,23 +115,25 @@ Many users won't wear the Watch overnight; without a fallback they'd get silence
 
 Most of the jump is NOT the skipped-evening days — it's the **normal-night morning gap**. 10pm dose → asleep 11:25 → wake 7am → dose 8am is a 600-min gap, excluded today by *both* the cap and the hour filter. Under the new rule it contributes the 7–8am waking stretch on **most days**, not rare ones. (Bhav's hour 7 = 21% OFF, hour 8 = 47%.)
 
-### ⚠️ The number is NOT trustworthy yet — the OFF threshold is now the dominant term
+### The OFF threshold does NOT block this — tested, ~6% swing
 
-Direct measurement (count waking minutes with tremor ≥ threshold, no dose model at all) gives **485.7 min/day at 1.0**, within 3% of the design's 501.7. **Do not oversell this as convergence** — the design's duration is *defined* as time-until-tremor-crosses-1.0 and the check counts minutes-above-1.0, so they agree substantially **by construction**. It shows the KM median summarises the curve well; it is not two independent instruments agreeing.
+An earlier revision of this note claimed `offThreshold` was "the dominant term" and blocked shipping. **That was wrong** — it ran the sensitivity on *direct measurement* and asserted the same of the design without testing it. Bhav caught it. Measured:
 
-Threshold sensitivity of measured waking OFF:
-
-| OFF line | min/day | h/day | % of waking |
+| OFF line | KM duration | **design** | direct measure |
 |---|---|---|---|
-| 0.50 | 558.4 | 9.3 | 59.9% |
-| **1.00 (engine)** | **485.7** | **8.1** | **52.1%** |
-| 1.50 | 376.8 | 6.3 | 40.4% |
-| 2.00 | 262.2 | 4.4 | 28.1% |
+| 0.75 | 177.5 | **501.7** | 528.3 |
+| **1.00 (engine)** | 177.5 | **501.7** | 485.7 |
+| 1.25 | 177.5 | **501.7** | 422.2 |
+| 1.50 | 182.5 | **490.8** | 376.8 |
+| 2.00 | 192.5 | **470.2** | 262.2 |
 
-- **The conclusion is robust; the number is not.** Even at 2.0 the measured OFF (262) exceeds today's card (234) and is 4× the MCID ⇒ **the card understates wherever the line is drawn.** Build the design.
-- **But the threshold swings the answer ~2× — more than the whole design change does**, and it is Bhav's own documented-unresolved question [[project_kampa_tremor_smoothing]]: he feels real tremor at a measured **0.5**, yet a sustained **1.8** registered to him as *"slight-mild"*. Those point opposite ways.
-- ⛔ **Do not ship "you're OFF ~8 h/day" to a neurologist-facing card until the felt-vs-measured calibration is settled.** That is now upstream of this work, not adjacent to it.
-- ⬜ Unchecked: the design and direct measurement agree on the **69-day average**; day-by-day agreement was never tested.
+**The design moves 502 → 470 across a 2.7× threshold change — 6%.** The threshold is self-cancelling here: raise the line and the dose reads longer-lasting, which shrinks uncovered time by the same stroke. And it isn't the driver anyway — Bhav's gaps (390–600 min) dwarf his dose duration (~180 min), so a 15-min shift in duration can't move a 400-min shortfall. **1.0 stands; the design is unblocked.**
+
+Also retracted: the claim that design-vs-direct agreement at 1.0 is "by construction." If it were, they'd agree at *every* threshold — they diverge hard at 2.0 (470 vs 262). They measure genuinely different things (time without effective coverage vs time above a severity line); landing close at 1.0 is a real result.
+
+**Still true, but scoped elsewhere:** the felt-vs-measured calibration [[project_kampa_tremor_smoothing]] matters for surfaces where the threshold is *labelled* — the forecast bar's ON/OFF wording, the chart's severity words — because those must match what the patient feels. It does not touch this card's arithmetic.
+
+⬜ Unchecked: design and direct measurement agree on the 69-day **average**; day-by-day agreement was never tested.
 
 ### Cost
 
