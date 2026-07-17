@@ -39,11 +39,59 @@ Charging each gap against its own formulation's duration yields **234.4 min/day 
 
 **No schedule classification, no drug dictionary.** The engine already classifies substances *empirically*: `estimableFormulations` (`CorrelationEngine.swift:174-191`) admits anything showing a real dose→ON→OFF pulse, excludes confirmed non-pulsatile substances at ≥20 doses, and gives thin ones benefit of the doubt. Line 182: *"The gate is the classifier (measured per-user), not a drug dictionary."* This handles Ayurvedic supplements a drug database has never heard of — strictly better than RxNorm (`HKMedicationConcept.relatedCodings`) or an as-needed/scheduled split (`HKMedicationDoseEvent.scheduleType`), both of which were investigated and dropped.
 
-## ⬜ Open: the 600-minute cap hides 26% of days
+## ⬜ Open: sleep clipping (replaces the 600-minute cap) — DESIGN AGREED, not built
 
-`intervalMin < 600` (`CorrelationEngine.swift:1048`) stands in for "daytime". **18 of Bhav's daytime gaps exceed it** (largest 1207 min) — days he skipped the evening dose. They're dropped whole, so the card sees no evening OFF at all on 26% of days. Removing the cap → **389 min/day**, but that's wrong too: those gaps run overnight and would credit sleep as OFF.
+### The defect
 
-**Fix = clip a gap at a real daytime boundary instead of dropping it** (a 3:30pm dose would contribute its 3:30→20:00 shortfall). Lands between 234 and 389. Deferred — separate decision from the estimator, needs the boundary chosen on data, not in the abstract [[feedback_no_arbitrary_thresholds]].
+Two invented numbers stand in for "was he awake?": `intervalMin < 600` and `hour >= 6 && hour < 20` (`CorrelationEngine.swift:1048`). Both drop a gap **whole** rather than clipping it.
+
+- **18 of Bhav's 68 days (26%)** exceed the cap (largest 1207 min) — evenings he skipped the 10pm dose. The entire evening's OFF is invisible.
+- **A once-daily regimen gets NO card at all**: 24 h gap → over the cap → dropped → zero uncovered → gate can't fire. The patient with the *most* wearing-off is told nothing. This is the scenario that makes it a real bug, not a Bhav quirk.
+- Removing the cap → **389 min/day**, also wrong: it credits sleep as OFF, and the 60 min/day MCID is defined on **waking** OFF (trial diaries). The number would lose its benchmark.
+
+### The design
+
+For each gap, take the uncovered part (dose + duration → next dose), **subtract any overlap with measured sleep**, sum per day, average over dosed days. Both magic numbers disappear — sleep defines the boundary, not a clock.
+
+- Overnight gap: almost all sleep → contributes ~0. No cap needed to exclude it.
+- Skipped evening dose: the dose→bedtime part counts. Today discarded whole.
+- Once-daily: only the waking part counts. Card fires.
+- **Nap (e.g. 3–4pm): no special case** — it's a sleep interval, subtracted like any other.
+
+### ⚠️ Sleep must come out of BOTH sides, not just the gap
+
+Bhav's tremor is ~0 from 1am–6am (median 0.00; <4% of readings above the OFF line) — parkinsonian rest tremor abates in sleep regardless of drug state. So `survivalDuration` looking 300 min past a 10pm dose **never sees OFF-return** and records the dose as still working:
+
+| doses | KM duration | censored |
+|---|---|---|
+| all (engine today) | 192.5 min | 31% |
+| daytime only | 182.5 min | 15% |
+| evening/night | **won't resolve** | 67% |
+
+Evening doses are **67% censored by sleep**, and pooling them inflates the duration 182.5 → 192.5 min. A nap does the same on a smaller scale. If sleep is subtracted from the gap but left inside the survival window, the nap is removed from the gap while simultaneously inflating the duration being subtracted from it — inconsistent, and partly self-cancelling so it hides.
+
+### Fallback when there is no sleep data — **fallback ONLY**
+
+Many users won't wear the Watch overnight; without a fallback they'd get silence. Clip to **06:00–22:00**.
+
+- **Why 22:00, not 20:00:** 20:00 was never chosen — it was inherited from the existing filter. Bhav's own 10pm dose proves he's awake then; on a skipped-evening day, clipping at 20:00 counts 1.3 h of the uncovered stretch vs 3.3 h at 22:00.
+- **Deliberately conservative**, not accurate: typical adult bedtime ~10:30–11pm, PD often earlier ⇒ 22:00 slightly *under*counts. Right direction to err for a health claim.
+- **⚠️ 22:00 is wrong for Bhav specifically** — his worst hours are 20:00–23:00 (73% OFF at 21:00, 68% at 22:00) and sleep onset looks like ~midnight (36% OFF at 00:00, 15% at 01:00, 4% by 02:00). He is a night owl. This is not an argument to move the constant; it's the argument that anyone with sleep data must never touch the fallback.
+- **Rejected: deriving the window from the user's own dose times.** If the last dose marks "still awake", skipping the 10pm dose closes the window at 3:30pm — erasing the exact evening the skip created. Self-defeating.
+
+### Open questions before building
+
+1. **Does HealthKit record naps at all?** Apple's sleep tracking is built around a scheduled sleep window. If a 3pm nap isn't recorded, the mechanism silently doesn't fire for it. **Verify — do not assume** [[feedback_verify_before_recommending]].
+2. **`inBed` vs `asleep*`.** Use `asleepCore/Deep/REM` only — lying in bed awake with tremor is real OFF.
+3. **`maxWindow = 300` is untouched by this** and breaks the same once-daily scenario independently: a long-acting dose censors at 5 h and KM never resolves.
+
+### Cost
+
+Not free. `fetchSleepHours` (`HealthKitManager.swift:198`) reduces sleep to a **scalar** (hours) — needs a fetch that keeps intervals [[feedback_preserve_raw_sensor_data]]. And `run()` receives tremor, doses, gait, workouts, food — **no sleep at all**; it must be plumbed through. Result lands between 234 (drop) and 389 (count all).
+
+### Not covered by this change
+
+The calc measures **dose-to-dose** gaps only, so waking OFF **before the first dose** (e.g. 06:00 wake → 08:00 dose) is invisible either way. Separate question.
 
 ## Decisions
 
