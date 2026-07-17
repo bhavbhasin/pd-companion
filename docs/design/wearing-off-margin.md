@@ -41,6 +41,22 @@ Charging each gap against its own formulation's duration yields **234.4 min/day 
 
 ## ⬜ Open: sleep clipping (replaces the 600-minute cap) — DESIGN AGREED, not built
 
+### Plain-language statement of the problem (start here)
+
+> **The problem.** The card adds up how much of your day your medication isn't covering. To avoid counting sleep as OFF time, it throws away any gap between doses longer than 10 hours. But it throws away the *whole* gap, not just the sleeping part.
+>
+> Two things break:
+> - On 26% of Bhav's days he skips the 10pm dose. The gap runs 3:30pm to 8am, exceeds 10 hours, gets discarded — so the entire evening vanishes from the count.
+> - Someone on one pill a day has a 24-hour gap. Always discarded. **They get no card at all**, despite having the worst wearing-off.
+>
+> **The solution.** Stop throwing away long gaps. Instead, subtract just the part the user was actually asleep for, and keep the waking part. A skipped-evening day contributes 3:30pm to bedtime — real OFF they lived through.
+>
+> **The second half.** The same sleep data fixes a related thing. When you sleep, tremor drops to zero — because you're asleep, not because the drug is working. The engine sees flat tremor after the 10pm dose and concludes it worked for five hours. So doses look longer-lasting than they are (192.5 min pooled, vs 182.5 daytime-only). Fix: stop measuring a dose once the user falls asleep, and record that we simply don't know what happened after.
+>
+> **One sleep signal, two uses. Subtract it from gaps. Stop the clock on durations.**
+>
+> If a user has no sleep data, assume awake 6am–10pm.
+
 ### The defect
 
 Two invented numbers stand in for "was he awake?": `intervalMin < 600` and `hour >= 6 && hour < 20` (`CorrelationEngine.swift:1048`). Both drop a gap **whole** rather than clipping it.
@@ -79,11 +95,43 @@ Many users won't wear the Watch overnight; without a fallback they'd get silence
 - **⚠️ 22:00 is wrong for Bhav specifically** — his worst hours are 20:00–23:00 (73% OFF at 21:00, 68% at 22:00) and sleep onset looks like ~midnight (36% OFF at 00:00, 15% at 01:00, 4% by 02:00). He is a night owl. This is not an argument to move the constant; it's the argument that anyone with sleep data must never touch the fallback.
 - **Rejected: deriving the window from the user's own dose times.** If the last dose marks "still awake", skipping the 10pm dose closes the window at 3:30pm — erasing the exact evening the skip created. Self-defeating.
 
-### Open questions before building
+### Resolved on real data (Jul 16, offline run before any Swift)
 
-1. **Does HealthKit record naps at all?** Apple's sleep tracking is built around a scheduled sleep window. If a 3pm nap isn't recorded, the mechanism silently doesn't fire for it. **Verify — do not assume** [[feedback_verify_before_recommending]].
-2. **`inBed` vs `asleep*`.** Use `asleepCore/Deep/REM` only — lying in bed awake with tremor is real OFF.
-3. **`maxWindow = 300` is untouched by this** and breaks the same once-daily scenario independently: a long-acting dose censors at 5 h and KM never resolves.
+1. ✅ **HealthKit DOES record naps.** Verified on Bhav's device: a 3pm nap appears as Core sleep; Apple's own Sleep app shows *"ASLEEP 44 min, 4:08–4:52 PM"* as its own block. Question closed.
+2. ✅ **`asleep*` only, never `inBed`** — settled empirically by that nap. Bhav lay down ~3:00 but Apple detected sleep only from 4:08. That first hour he was awake with real tremor. Subtracting `inBed` would erase an hour of genuine OFF. Sleep-stage counts in-window: asleepCore 961 · awake 492 · asleepDeep 299 · asleepREM 254 · asleepUnspecified 154 · inBed 87.
+3. ✅ **Night interruptions work correctly.** An awake segment (e.g. wake 2:00–2:30am, take a rescue dose, back to sleep) is NOT subtracted, so the OFF that drove the rescue is counted. Strongest case for `asleep*`-only.
+4. ✅ **Sleep coverage is complete** — all 68 dosed days have >60 min recorded, median 408 min (6.8 h). The fallback would not have fired for him at all.
+5. ✅ **Evening dose needs no hour filter.** The 10pm dose covers to ~1am, he's asleep from 11:25 ⇒ contributes 0. Stay up to 2am and it correctly counts the last hour. **Both magic numbers really can go.**
+6. ⬜ **`maxWindow = 300` is untouched by this** and breaks the same once-daily scenario independently: a long-acting dose censors at 5 h and KM never resolves.
+
+### Measured result of the full design (offline, 69 days)
+
+| variant | KM duration | result |
+|---|---|---|
+| shipped (`4911ce6`) | 192.5 min | 234.4 min/day |
+| sleep-subtracted gaps only | 192.5 min | 488.2 min/day |
+| sleep-censored duration only | 177.5 min | 260.5 min/day |
+| **FULL DESIGN (both)** | **177.5 min** | **501.7 min/day** |
+
+Most of the jump is NOT the skipped-evening days — it's the **normal-night morning gap**. 10pm dose → asleep 11:25 → wake 7am → dose 8am is a 600-min gap, excluded today by *both* the cap and the hour filter. Under the new rule it contributes the 7–8am waking stretch on **most days**, not rare ones. (Bhav's hour 7 = 21% OFF, hour 8 = 47%.)
+
+### ⚠️ The number is NOT trustworthy yet — the OFF threshold is now the dominant term
+
+Direct measurement (count waking minutes with tremor ≥ threshold, no dose model at all) gives **485.7 min/day at 1.0**, within 3% of the design's 501.7. **Do not oversell this as convergence** — the design's duration is *defined* as time-until-tremor-crosses-1.0 and the check counts minutes-above-1.0, so they agree substantially **by construction**. It shows the KM median summarises the curve well; it is not two independent instruments agreeing.
+
+Threshold sensitivity of measured waking OFF:
+
+| OFF line | min/day | h/day | % of waking |
+|---|---|---|---|
+| 0.50 | 558.4 | 9.3 | 59.9% |
+| **1.00 (engine)** | **485.7** | **8.1** | **52.1%** |
+| 1.50 | 376.8 | 6.3 | 40.4% |
+| 2.00 | 262.2 | 4.4 | 28.1% |
+
+- **The conclusion is robust; the number is not.** Even at 2.0 the measured OFF (262) exceeds today's card (234) and is 4× the MCID ⇒ **the card understates wherever the line is drawn.** Build the design.
+- **But the threshold swings the answer ~2× — more than the whole design change does**, and it is Bhav's own documented-unresolved question [[project_kampa_tremor_smoothing]]: he feels real tremor at a measured **0.5**, yet a sustained **1.8** registered to him as *"slight-mild"*. Those point opposite ways.
+- ⛔ **Do not ship "you're OFF ~8 h/day" to a neurologist-facing card until the felt-vs-measured calibration is settled.** That is now upstream of this work, not adjacent to it.
+- ⬜ Unchecked: the design and direct measurement agree on the **69-day average**; day-by-day agreement was never tested.
 
 ### Cost
 
