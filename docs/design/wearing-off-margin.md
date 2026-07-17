@@ -1,62 +1,58 @@
 # Wearing-off: margin + the estimator defect
 
-**Status:** design note, NOTHING BUILT. Jul 14 2026. Started as "pick a margin for the wearing-off reassurance verdict" ([[confidence-presence-vs-absence]] decision 2); the margin turned out to be the easy part. **Open decision at the bottom — needs Bhav.**
+**Status:** decisions resolved Jul 16 2026; estimator switched in code. Numbers below recomputed on the `07-16-2026` export (May 9 – Jul 15, **246 taken doses, 68 days**).
 
 ## TL;DR
 
-The card compares **median gap** to **median ON-duration**. That estimator is wrong, and it **understates Bhav's wearing-off by ~3–4×**. Fix the estimator before the margin means anything.
+The card compared **median gap** to **median ON-duration**. That estimator understates daily OFF ~2×. Replaced with **`Σ max(0, gap − duration)` per day, averaged over days**.
 
 ## The margin (settled)
 
-**MCID for daily OFF time = 1.0 h/day.** Verified Jul 14 (not recalled): −1.0 to −1.3 h in the pramipexole IR/ER pivotal trials; a 1.0–1.3 h/day threshold is the accepted line for a patient-perceptible change. Take **1.0 h = 60 min/day**, the stricter end.
+**MCID for daily OFF time = 60 min/day.** Verified Jul 14: −1.0 to −1.3 h in the pramipexole IR/ER pivotal trials; take the stricter end.
 
-- Sources: [Hauser et al., MCID in PD — pramipexole ER pivotal trials (PMC3995302)](https://pmc.ncbi.nlm.nih.gov/articles/PMC3995302/) · [PubMed 24800101](https://pubmed.ncbi.nlm.nih.gov/24800101/) · [Off-time treatment options review, Neurol Ther 2022](https://link.springer.com/article/10.1007/s40120-022-00435-8)
-- **Work in daily OFF minutes, not per-dose shortfall.** The MCID is defined per day. Converting it to a per-dose margin (÷ gaps/day → ~21 min/dose for Bhav) is arithmetically fine but throws away the concentration structure that turns out to be the whole finding.
+- Sources: [Hauser et al. (PMC3995302)](https://pmc.ncbi.nlm.nih.gov/articles/PMC3995302/) · [PubMed 24800101](https://pubmed.ncbi.nlm.nih.gov/24800101/) · [Neurol Ther 2022](https://link.springer.com/article/10.1007/s40120-022-00435-8)
+- Work in **daily OFF minutes** — the unit the MCID is defined on.
 
-## The estimator defect (the real one)
+## The estimator defect
 
-Bhav's schedule is **rough, not fixed**: Sinemet ~8am / 11:30 / 3:30pm / 10pm. So his daytime gaps are **3.5 h, 4 h, and 6.5 h** — against a ~3.2 h dose. Two gaps are near-fine; the 3:30pm→10pm gap is catastrophic. **Two medians cannot see this**: a day with three fine gaps and one terrible one has the same median as a day of four mediocre ones.
+Two medians can't see one catastrophic gap: a day with three fine gaps and one terrible one has the same median as a day of four mediocre ones. Bhav's OFF is concentrated — **64% of the shortfall comes from doses at 14:00–16:00**.
 
-Daily OFF attributable to spacing, computed from the Jul 6 dose export (`medication_doses_2026-05-09_to_2026-07-06.csv`, 59 days, ON-duration = the engine's KM median 193 min):
+| estimator | value | vs 60 min/day MCID |
+|---|---|---|
+| median gap (249 min) − median ON (192.5 min) = 56 min/dose × 2.19 daytime gaps/day | **123 min/day** | above |
+| **`Σ max(0, gap − duration)`** (chosen) | **234 min/day** | above (3.9×) |
 
-| dose set | median gap | median−median est. | **Σ max(0, gap − duration)** | vs 60 min MCID |
-|---|---|---|---|---|
-| pooled (engine today) | 210 min | 52 min/day | **238 min/day** (4.5×) | (A) below · (B) **ABOVE** |
-| Sinemet only | 225 min | 95 min/day | **258 min/day** (2.7×) | (A) above · (B) **ABOVE** |
+## ⚠️ Corrections to this doc's first version (Jul 14 → Jul 16)
 
-- **~60% of the OFF comes from gaps starting 2–4pm** — the 3:30pm→10pm stretch. Matches the afternoon/evening OFF clustering already on the card (60–70%).
-- On the median estimator the **pooled** reading lands *below* the MCID → he'd get a **reassurance card while spending ~4 h/day OFF**. That is the failure mode to design against.
-- ⚠️ (B) assumes ON-duration is exactly the KM median every time; real durations vary. It's an estimate, not measured OFF — see "Route B" below.
+The Jul 14 numbers were computed from an ad-hoc script that **counted `notInteracted` rows (untouched reminder slots) as doses**. The engine filters `logStatus == .taken` (`HealthKitManager.swift:735`); the script didn't. Phantom doses close gaps ⇒ every gap-derived number was too small.
 
-## Medication type matters — three distinct ways
+1. **"32 Mucuna doses" → 16 taken** (+16 phantom) in the Jul 6 export; 18 taken in the Jul 15 export.
+2. **Median gap 210 min → 249 min.** This drove per-dose shortfall 17 → 56 min, a 3.3× error.
+3. **RETRACTED: "median-vs-median hands him a reassurance card below the MCID."** False. Corrected, median-vs-median = **123 min/day, above the MCID**. It understates (~2×) and can't see concentration — that justifies the switch — but there is **no false-reassurance failure** on real data. Do not carry that claim anywhere.
+4. Also false in framing: the card could never have *silently reassured* — `wearingOffInsight` returned nil when median gap ≤ median duration. The absence twin doesn't exist yet.
 
-Bhav's Mucuna is **PRN**, confirmed in his words: *"whenever I need that extra boost… could be the afternoon, could be 3am when I wake up and can't sleep and don't want another Sinemet."* Data agrees: 32 doses on 28 of 59 days, almost always exactly one.
+## Per-formulation stratification = **no-op on Bhav's data**
 
-1. **Durations differ** → a pooled KM median describes neither formulation. `wearingOffInsight` already computes per-formulation rows, but they only enrich the **copy** — the pooled curve still drives the **firing gate + the chart**. Live mixed-regimen trust bug. [[project_kampa_lever_audit]]
-2. **Gap semantics** → a PRN pill isn't part of the *schedule*, but the gap calc counts every dose. Pooling shortens apparent gaps (3.50 h vs 3.76 h Sinemet-only) and **understates** the shortfall (+17 vs +32 min/dose).
-3. **A PRN dose is an OUTCOME, not an input** ← the deep one. It's evidence the schedule already failed; the engine treats it as part of a schedule that's working. The KM duration measured *from* a rescue dose also starts from an OFF state, so it isn't the same quantity as a scheduled dose's. A 3am rescue is itself a signal worth surfacing.
+Charging each gap against its own formulation's duration yields **234.4 min/day — identical to pooled, to the decimal.** Sinemet is 228/246 doses, so pooled KM *is* Sinemet's KM (both 192.5 min); Mucuna (KM 152.5) is n=18, under the `>= 20` bar, so it falls back to pooled. Still correct architecturally for a genuinely mixed regimen (Rytary + Sinemet); buys nothing here. Don't sell it as part of this fix.
 
-## Also found (cheap, unrelated to the above)
+## Medication type — resolved, simpler than feared
 
-- 🔴 **`wearingOffGate` has no effect-size axis.** `GateSpec(strong: GateBar(minN: 40), …)` — n only. It fires **Strong** on *any* shortfall above zero given enough doses, never asking whether it matters. Same bug family as gait: the gate doesn't ask the card's question. The margin here is needed by the **presence** card, not just the reassurance twin.
-- 🟡 **Rounding exaggerates the gap.** `gapH` = `%.0f` vs `durH` = `%.1f` (`CorrelationEngine.swift`, in `wearingOffInsight`) → a 3.5 h gap prints "**~4 h**" against "~3.2 h", showing a ~48 min shortfall where the median is ~17. Mixed precision on the two halves of the same comparison.
+**No schedule classification, no drug dictionary.** The engine already classifies substances *empirically*: `estimableFormulations` (`CorrelationEngine.swift:174-191`) admits anything showing a real dose→ON→OFF pulse, excludes confirmed non-pulsatile substances at ≥20 doses, and gives thin ones benefit of the doubt. Line 182: *"The gate is the classifier (measured per-user), not a drug dictionary."* This handles Ayurvedic supplements a drug database has never heard of — strictly better than RxNorm (`HKMedicationConcept.relatedCodings`) or an as-needed/scheduled split (`HKMedicationDoseEvent.scheduleType`), both of which were investigated and dropped.
 
-## Route B (considered, not chosen — revisit)
+## ⬜ Open: the 600-minute cap hides 26% of days
 
-The app **measures** tremor every minute, so it could compute **observed** daily OFF minutes directly (tremor ≥ `offThreshold`) and test that against the 60 min/day MCID — n = days, plain t-test, no KM variance, and it's the exact quantity the literature defines. Rejected for *this* card because it answers a different question: "you're not spending meaningful time OFF" ≠ "your doses last as long as your gaps" (a patient could have low OFF because their disease is mild), and measured OFF includes OFF from causes other than spacing. Worth its own card later.
+`intervalMin < 600` (`CorrelationEngine.swift:1048`) stands in for "daytime". **18 of Bhav's daytime gaps exceed it** (largest 1207 min) — days he skipped the evening dose. They're dropped whole, so the card sees no evening OFF at all on 26% of days. Removing the cap → **389 min/day**, but that's wrong too: those gaps run overnight and would credit sleep as OFF.
 
-## Engineering note
-
-Absence here is **not** a cheap port of the gait fix. Gait had an OLS slope with a closed-form SE; this estimate is a **KM median minus a median interval** — neither has a closed-form SE in the current code. Cheapest honest route = **bootstrap over doses** (resample n≈239, recompute, ~500 reps): reuses `survivalDuration`, no new statistical machinery, fine off-main.
+**Fix = clip a gap at a real daytime boundary instead of dropping it** (a 3:30pm dose would contribute its 3:30→20:00 shortfall). Lands between 234 and 389. Deferred — separate decision from the estimator, needs the boundary chosen on data, not in the abstract [[feedback_no_arbitrary_thresholds]].
 
 ## Decisions
 
 1. ✅ Margin = **60 min/day of OFF** (published MCID, not tuned).
-2. ⬜ **OPEN — needs Bhav.** Is `Σ max(0, gap − duration)` the card's quantity, or does median-vs-median stay the claim with the margin bolted on? Everything downstream depends on this. Recommendation: **switch the estimator** — on median-vs-median the pooled reading hands him a reassurance card at ~4 h/day OFF.
-3. ⬜ Exclude PRN/rescue doses from schedule gaps; re-home them as an outcome signal.
-4. ⬜ Give `wearingOffGate` an effect-size axis (needs 2 first).
-5. ⬜ Fix `gapH`/`durH` precision mismatch (independent, ~1 line).
+2. ✅ **Switch the estimator** to `Σ max(0, gap − duration)`, per day, averaged over dosed days. Medians demoted to descriptive copy.
+3. ✅ **DROPPED** — no scheduled-vs-as-needed split, no drug dictionary. The estimability gate already is the classifier.
+4. ✅ `wearingOffGate` gets an effect axis (`minEffect` = the MCID). Firing condition becomes "≥ 60 min/day uncovered", replacing `medianGap > medianDuration`. The `?? .moderate` fallback that defeated the gate is removed.
+5. ✅ `gapH`/`durH` precision mismatch fixed (one formatter; `%.0f` was printing a 4.14 h gap as "~4 h").
 
 ## Consequence for the Desai email
 
-The current draft cites *"each holds a median of 193 minutes against daytime gaps of about four hours."* True but weak, and it's the understating estimator. The real finding is sharper: **the afternoon dose is followed by a 6.5 h gap against a 3.2 h dose, and that single gap accounts for most of the OFF.** Don't send the stronger version until the card can show it. [[project_kampa_apple_outreach]]
+The draft cites *"a median of 193 minutes against daytime gaps of about four hours."* True but understating. The honest sharper version: **dose spacing leaves ~234 min/day uncovered, 64% of it from the afternoon doses.** Send only once the card shows it. [[project_kampa_apple_outreach]]

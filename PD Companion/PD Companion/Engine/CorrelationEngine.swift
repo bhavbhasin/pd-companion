@@ -526,11 +526,28 @@ nonisolated extension CorrelationEngine {
         moderate: GateBar(minN: 10, minEffect: 20),
         floor:    GateBar(minN: 5,  minEffect: 15))
 
-    /// Wearing-off: n (doses) only — a survival estimate has no single effect/p axis.
+    /// Minimum clinically important difference in daily OFF time: 60 min/day, the
+    /// stricter end of the −1.0…−1.3 h seen in the pramipexole pivotal trials.
+    /// Published, not tuned on our data. docs/design/wearing-off-margin.md.
+    static let wearingOffMCIDMinPerDay = 60.0
+
+    /// Dose-sufficiency: n (doses) only. Reused by formulation estimability and the
+    /// forecast, which ask "are there enough doses to fit a curve?" — a question with no
+    /// effect axis. Do NOT add `minEffect` here: those call sites pass no effect, and a
+    /// bar they can't satisfy silently makes every formulation inestimable.
     static let wearingOffGate = GateSpec(
         strong:   GateBar(minN: 40),
         moderate: GateBar(minN: 1),
         floor:    GateBar(minN: 1))
+
+    /// The wearing-off CARD: n (doses) + daily OFF minutes attributable to spacing.
+    /// Separate from `wearingOffGate` because the card asks a different question — not
+    /// "can we estimate this?" but "does the spacing cost enough OFF to matter?" Without
+    /// the effect axis the card fired Strong on any shortfall above zero.
+    static let wearingOffCardGate = GateSpec(
+        strong:   GateBar(minN: 40, minEffect: wearingOffMCIDMinPerDay),
+        moderate: GateBar(minN: 20, minEffect: wearingOffMCIDMinPerDay),
+        floor:    GateBar(minN: 1,  minEffect: wearingOffMCIDMinPerDay))
 
     /// Gait trend: n (months of medians) + a p-value whose MEANING depends on the card's
     /// verdict — slope significance when it claims a decline, `nonInferiorityP` when it
@@ -1044,12 +1061,31 @@ nonisolated extension CorrelationEngine {
         let pooled = survivalDuration(signal: sig, events: doses.map(\.timestamp), onThreshold: onThreshold)
         let pooledResults = pooled.durations
         guard pooledResults.count >= 20, pooled.kmMedian.isFinite else { return nil }
+        // Daily OFF attributable to dose SPACING: sum every daytime gap's shortfall against
+        // how long a dose actually holds, then average over dosed days. NOT median gap minus
+        // median duration — two medians can't see one catastrophic gap (a day with three fine
+        // gaps and one terrible one has the same median as a day of four mediocre ones), which
+        // understated this ~2x on real data. The sum is also the quantity the MCID is defined
+        // on, so the gate can finally ask whether the shortfall matters. The medians survive
+        // below as descriptive copy only. docs/design/wearing-off-margin.md.
+        //
+        // ⚠️ `intervalMin < 600` stands in for "daytime" and drops a long gap WHOLE rather than
+        // clipping it at a boundary — so an evening dose skipped after a daytime dose makes that
+        // evening's OFF invisible (26% of Bhav's days). Deferred, tracked in the design note.
         var pooledDayIntervals: [Double] = []
-        for r in pooledResults where r.hour >= 6 && r.hour < 20 && !r.intervalMin.isNaN && r.intervalMin < 600 {
+        var uncoveredByDay: [Date: Double] = [:]
+        var dosedDays: Set<Date> = []
+        for r in pooledResults {
+            dosedDays.insert(calendar.startOfDay(for: r.t0))
+            guard r.hour >= 6, r.hour < 20, !r.intervalMin.isNaN, r.intervalMin < 600 else { continue }
             pooledDayIntervals.append(r.intervalMin)
+            uncoveredByDay[calendar.startOfDay(for: r.t0), default: 0]
+                += max(0, r.intervalMin - pooled.kmMedian)
         }
+        guard !dosedDays.isEmpty else { return nil }
+        let dailyUncovered = uncoveredByDay.values.reduce(0, +) / Double(dosedDays.count)
         let pooledMedInterval = median(pooledDayIntervals)
-        guard !pooledMedInterval.isNaN, pooledMedInterval > pooled.kmMedian else { return nil }
+        guard !pooledMedInterval.isNaN else { return nil }
 
         // Per-formulation rows: a single median across a mixed regimen (IR vs plant-source
         // levodopa last different lengths) describes neither. A formulation becomes a row only
@@ -1071,39 +1107,54 @@ nonisolated extension CorrelationEngine {
         }
         rows.sort { $0.count > $1.count }
 
-        let days = Set(pooledResults.map { calendar.startOfDay(for: $0.t0) }).count
-        let confidence: Insight.Confidence = gate(Self.wearingOffGate, n: pooledResults.count) ?? .moderate
+        let days = dosedDays.count
+        // The MCID is now the firing condition — no card when spacing costs less OFF than a
+        // patient could perceive. Replaces the old `medianGap > medianDuration` test, and the
+        // `?? .moderate` fallback that quietly handed out a tier the gate had refused.
+        guard let confidence = gate(Self.wearingOffCardGate, n: pooledResults.count,
+                                    effect: dailyUncovered) else { return nil }
 
         func name(_ key: String) -> String { key.split(separator: " ").map { $0.capitalized }.joined(separator: " ") }
-        func durH(_ min: Double) -> String { String(format: "%.1f", min / 60) }   // 1-dec (dose lasts)
-        func gapH(_ min: Double) -> String { String(format: "%.0f", min / 60) }   // 0-dec (gap between)
+        // ONE formatter for both halves of the comparison: `%.0f` on the gap alone printed a
+        // 4.1 h gap as "~4 h" against a "~3.2 h" dose, inflating the very shortfall being read.
+        func hrs(_ min: Double) -> String { String(format: "%.1f", min / 60) }
+        let uncoveredMin = Int(dailyUncovered.rounded())
 
         let title: String, summary: String, finding: String, mechanism: String, consider: String
         let bring: [String]
 
         // Multi-formulation copy only when ≥ 2 formulations independently show the pattern;
         // otherwise today's pooled copy — byte-identical to before for a single-formulation user.
+        let kmMin = Int(pooled.kmMedian.rounded())
+        let gapMin = Int(pooledMedInterval.rounded())
+        // The TITLE carries the number; every other line does different work. Stating the
+        // shortfall in the title, summary AND finding read as a stutter on device — three
+        // repetitions of one figure is cognitive load, not emphasis. So: title = the total,
+        // summary = why it happens, finding = the detail behind it.
+        let spacingLine = "Estimated OFF from dose spacing: ~\(uncoveredMin) min/day (summed gap shortfall, averaged over \(days) days)"
+        let mcidLine = "A change of 60 min/day in OFF time is the published threshold for a clinically meaningful difference"
+
         if rows.count >= 2 {
-            title = "Each formulation wears off before the next dose"
-            summary = "Your formulations don't last the same length, so one dosing schedule can't fit them all — each opens its own predictable OFF window."
-            let parts = rows.map { "\(name($0.key)) holds ~\(durH($0.km)) h (doses ~\(gapH($0.medInterval)) h apart)" }
-            finding = "By formulation: " + parts.joined(separator: "; ") + ". Each is spaced wider than it lasts, so tremor returns before the next dose — and the right interval differs per formulation. From \(pooledResults.count) doses over \(days) days."
+            let parts = rows.map { "\(name($0.key)) holds ~\(hrs($0.km)) h (doses ~\(hrs($0.medInterval)) h apart)" }
+            title = "Your doses leave about \(uncoveredMin) minutes a day uncovered"
+            summary = "Your formulations don't last the same length, so one schedule can't fit them all."
+            finding = "Summing every daytime gap that outlasts the dose before it: ~\(uncoveredMin) min a day of OFF from spacing alone. By formulation: " + parts.joined(separator: "; ") + ". From \(pooledResults.count) doses over \(days) days."
             mechanism = "This is the classic wearing-off pattern — the gap between doses is longer than a single dose lasts — and because your formulations last different lengths, it opens at a different point for each."
-            bring = rows.map {
-                "\(name($0.key)): median ON \(Int($0.km.rounded())) min (~\(durH($0.km)) h) vs ~\(gapH($0.medInterval)) h between doses — n=\($0.count), \($0.observedCount) observed wearing off"
-            }
+            bring = [spacingLine] + rows.map {
+                "\(name($0.key)): median ON \(Int($0.km.rounded())) min (~\(hrs($0.km)) h) vs ~\(hrs($0.medInterval)) h between doses — n=\($0.count), \($0.observedCount) observed wearing off"
+            } + [mcidLine]
             consider = "When the gap between doses is longer than a dose lasts, predictable OFF windows open up. Neurologists have several levers for this — for example adjusting dose timing or frequency, or a longer-acting formulation. On a mixed regimen the timing that fits one formulation may not fit another. These are decisions only your neurologist can make. The value here is bringing them this pattern, with the data behind it."
         } else {
-            let kmMin = Int(pooled.kmMedian.rounded())
-            let gapMin = Int(pooledMedInterval.rounded())
-            title = "Your doses are spaced wider than they last"
-            summary = "Daytime gaps (~\(gapH(pooledMedInterval)) h) exceed how long each dose lasts (~\(durH(pooled.kmMedian)) h), opening predictable OFF windows."
-            finding = "Each dose holds for a median of \(kmMin) min (about \(durH(pooled.kmMedian)) h), but your daytime doses are spaced ~\(gapH(pooledMedInterval)) h apart — so tremor returns before the next dose. From \(pooledResults.count) doses over \(days) days."
+            title = "Your doses leave about \(uncoveredMin) minutes a day uncovered"
+            summary = "Each dose holds ~\(hrs(pooled.kmMedian)) h, but your daytime gaps run ~\(hrs(pooledMedInterval)) h — so the shortfall adds up across the day."
+            finding = "Summing every daytime gap that outlasts the dose before it: ~\(uncoveredMin) min a day of OFF from spacing alone. Each dose holds a median of \(kmMin) min; your median daytime gap is \(gapMin) min. From \(pooledResults.count) doses over \(days) days."
             mechanism = "This is the classic wearing-off pattern: the interval between doses is longer than a single dose lasts."
             bring = [
+                spacingLine,
                 "Median ON-duration: \(kmMin) min (Kaplan–Meier, n=\(pooledResults.count) doses)",
-                "Median daytime gap between doses: ~\(gapH(pooledMedInterval)) h (\(gapMin) min)",
+                "Median daytime gap between doses: \(gapMin) min (~\(hrs(pooledMedInterval)) h)",
                 "\(pooled.observedCount) of \(pooledResults.count) doses observed wearing off before the next dose",
+                mcidLine,
             ]
             consider = "When the gap between doses is longer than a dose lasts, predictable OFF windows open up. Neurologists have several levers for this — for example adjusting dose timing or frequency, or a longer-acting formulation. These are decisions only your neurologist can make. The value here is bringing them this pattern, with the data behind it."
         }

@@ -214,12 +214,16 @@ struct CorrelationEngineParityTests {
 
         // Keyed on title, not stage: dose AND wearing-off now both carry
         // .clinicalDiscussion (both .clinicalReferral), so stage no longer uniquely
-        // identifies this card.
+        // identifies this card. "uncovered" is the stable word in a title that now
+        // leads with the summed daily shortfall (the number itself varies with data).
         let wearCard = try #require(
-            surfaced.first { $0.title.localizedCaseInsensitiveContains("spaced wider") },
+            surfaced.first { $0.title.localizedCaseInsensitiveContains("uncovered") },
             "wearing-off card should surface via the .wearingOff renderer")
         #expect(wearCard.confidence == .strong)
         #expect(wearCard.stage == .clinicalDiscussion)
+        // The card must state the shortfall outright, not leave the reader to subtract
+        // two medians. On this fixture: ~221 min/day, well clear of the 60 min/day MCID.
+        #expect(wearCard.title.contains("221"), "title states the summed daily shortfall")
 
         // .verdict still uniquely identifies the gait composite — it's the one card
         // whose stage is NOT safety-derived (a progression readout, set in gaitInsight),
