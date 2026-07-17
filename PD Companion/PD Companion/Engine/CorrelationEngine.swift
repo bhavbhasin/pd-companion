@@ -24,6 +24,27 @@ struct Dose: Sendable {
     let name: String
 }
 
+/// A span the patient was ASLEEP. Deliberately not "in bed": HealthKit's `inBed`
+/// includes lying down awake, and tremor during that span is real OFF the patient
+/// lived through. Verified on Bhav's 3pm nap — he lay down ~3:00 but Apple detected
+/// sleep only from 4:08, and that first hour carried genuine tremor. So the adapter
+/// maps `asleepCore/Deep/REM/Unspecified` only, and an `awake` interruption inside a
+/// night is simply absent from this list (correctly counted as waking time).
+///
+/// Sleep matters to the engine twice, in two DIFFERENT ways:
+///   1. Uncovered time is a WAKING quantity — you don't experience OFF while asleep,
+///      so sleep is SUBTRACTED from a dose gap.
+///   2. Dose duration is a WALL-CLOCK, pharmacological quantity — levodopa keeps
+///      metabolising while you sleep, so sleep is NEVER subtracted from a duration.
+///      We simply stop being able to observe (tremor flattens in sleep regardless of
+///      drug state), so the survival observation is CENSORED at sleep onset.
+/// Conflating these two inflates duration and erases OFF at the same time.
+/// docs/design/wearing-off-margin.md.
+struct SleepInterval: Sendable, Equatable {
+    let start: Date
+    let end: Date
+}
+
 /// A discrete workout event — the canonical shape the engine's event primitives
 /// (windowed-effect, etc.) consume. The activity type is carried as a raw `UInt`
 /// (HealthKit's `HKWorkoutActivityType.rawValue`) so the engine stays
@@ -165,7 +186,8 @@ nonisolated enum CorrelationEngine {
     static func generateInsights(samples: [TremorPoint], doses: [Dose],
                                  gait: [GaitMetric: [GaitSample]] = [:],
                                  workouts: [WorkoutEvent] = [],
-                                 food: [FoodIntakeEvent] = []) -> [Insight] {
+                                 food: [FoodIntakeEvent] = [],
+                                 sleep: [SleepInterval] = []) -> [Insight] {
         // The registry now DRIVES execution: walk the active questions in order
         // and dispatch each to its analysis. Entries whose primitive isn't built
         // yet (the sleep cluster, etc.) return nil and stay dormant — the
@@ -182,8 +204,14 @@ nonisolated enum CorrelationEngine {
         // classifier (measured per-user), not a drug dictionary; 20+ doses are needed to judge.
         // Computed here in the wiring — the pinned parity functions are called directly with full
         // doses, so this filtering never touches them.
+        //
+        // MEASURED sleep is what flows down here. Everything reached from this line censors
+        // an observation rather than adjusting a sum, and censoring must never rest on a
+        // guessed bedtime — see `wearingOffInsight`, which synthesises the conservative
+        // fallback itself, for the gap side only.
         let sig = samples.map { (time: $0.timestamp, value: $0.tremorScore) }
-        let estimableKeys = Set(estimableFormulations(signal: sig, doses: doses).keys)
+        let effSleep = mergeSleep(sleep)
+        let estimableKeys = Set(estimableFormulations(signal: sig, doses: doses, sleep: effSleep).keys)
         let groupSizes = Dictionary(grouping: doses, by: { formulationKey($0.name) }).mapValues(\.count)
         let levodopaDoses = doses.filter { d in
             let k = formulationKey(d.name)
@@ -195,11 +223,12 @@ nonisolated enum CorrelationEngine {
         // there are no non-medication exposures to guard.
         let onWindow = (workouts.isEmpty && food.isEmpty)
             ? doseOnWindowFallback
-            : doseOnWindowMinutes(samples: samples, doses: levodopaDoses)
+            : doseOnWindowMinutes(samples: samples, doses: levodopaDoses, sleep: effSleep)
         return InsightRegistry.starter
             .filter { $0.status == .active }
             .compactMap { run($0, samples: samples, doses: levodopaDoses,
-                              gait: gait, workouts: workouts, food: food, onWindow: onWindow) }
+                              gait: gait, workouts: workouts, food: food,
+                              onWindow: onWindow, sleep: effSleep) }
     }
 
     /// Dispatch one registry entry to the renderer that draws it.
@@ -213,7 +242,8 @@ nonisolated enum CorrelationEngine {
     /// renderer (or a primitive that doesn't match) = registered but dormant.
     static func run(_ entry: RegistryEntry, samples: [TremorPoint], doses: [Dose],
                     gait: [GaitMetric: [GaitSample]], workouts: [WorkoutEvent],
-                    food: [FoodIntakeEvent], onWindow: Double = doseOnWindowFallback) -> Insight? {
+                    food: [FoodIntakeEvent], onWindow: Double = doseOnWindowFallback,
+                    sleep: [SleepInterval] = []) -> Insight? {
         // `doses` here is the LEVODOPA-CANDIDATE set (see generateInsights): confirmed
         // non-pulsatile substances are already filtered out, so every renderer below is safe.
         switch entry.renderer {
@@ -225,7 +255,8 @@ nonisolated enum CorrelationEngine {
         case .wearingOff:
             guard case .survivalDuration(let onThreshold) = entry.primitive else { return nil }
             // wearingOffInsight stratifies by formulation internally over the levodopa-candidate set.
-            guard var insight = wearingOffInsight(samples: samples, doses: doses, onThreshold: onThreshold) else { return nil }
+            guard var insight = wearingOffInsight(samples: samples, doses: doses,
+                                                  onThreshold: onThreshold, sleep: sleep) else { return nil }
             insight.stage = stage(for: entry)
             return insight
         case .gaitComposite:
@@ -334,11 +365,12 @@ nonisolated enum CorrelationEngine {
     /// shadow). Falls back when the median isn't yet estimable (too few doses) or is
     /// physiologically implausible; the [90, 360]-min rails only catch degenerate
     /// estimates from sparse early data (sanity bounds, not tuning).
-    static func doseOnWindowMinutes(samples: [TremorPoint], doses: [Dose]) -> Double {
+    static func doseOnWindowMinutes(samples: [TremorPoint], doses: [Dose],
+                                    sleep: [SleepInterval] = []) -> Double {
         guard !doses.isEmpty else { return doseOnWindowFallback }
         let surv = survivalDuration(
             signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
-            events: doses.map(\.timestamp), onThreshold: offThreshold)
+            events: doses.map(\.timestamp), onThreshold: offThreshold, sleep: sleep)
         let km = surv.kmMedian
         guard km.isFinite, km >= 90, km <= 360 else { return doseOnWindowFallback }
         return km
@@ -901,6 +933,81 @@ nonisolated extension CorrelationEngine {
     static let gapIso = 240.0       // "isolated" dose = next dose >= this many min away
     static let sustainBins = 2      // consecutive OFF bins required to call OFF-return
 
+    // MARK: - Waking time
+    //
+    // Fallback clock window, used ONLY for a day with no recorded sleep (no overnight
+    // Watch wear). Without it such a user gets silence. 22:00 is deliberately
+    // conservative rather than accurate — typical adult bedtime is ~10:30-11pm and PD
+    // often earlier, so this slightly UNDER-counts waking OFF, the right direction to
+    // err for a health claim. It is not tuned to Bhav: his own worst hours are 20:00-23:00
+    // with sleep onset ~midnight, which is precisely why anyone WITH sleep data must
+    // never reach this path. 20:00 was never chosen — it was inherited from the old gap
+    // filter, and his 10pm dose disproves it. Rejected alternative: deriving the window
+    // from the user's own dose times — skipping the evening dose would then close the
+    // window at 3:30pm and erase the very evening the skip created.
+    static let fallbackWakeHour = 6      // 06:00
+    static let fallbackBedHour = 22      // 22:00 the PREVIOUS evening
+
+    /// Merge overlapping/touching intervals. Sleep arrives fragmented (stage changes,
+    /// multiple sources, overlapping syncs); every consumer below assumes merged+sorted.
+    static func mergeSleep(_ ivs: [SleepInterval]) -> [SleepInterval] {
+        var out: [SleepInterval] = []
+        for iv in ivs.sorted(by: { $0.start < $1.start }) where iv.end > iv.start {
+            if let last = out.last, iv.start <= last.end {
+                out[out.count - 1] = SleepInterval(start: last.start, end: max(last.end, iv.end))
+            } else {
+                out.append(iv)
+            }
+        }
+        return out
+    }
+
+    /// Recorded sleep, plus a synthetic clock night for any day with NO recorded sleep.
+    /// Making the fallback a data-prep step (rather than a branch inside the math) means
+    /// every consumer downstream sees one uniform list and can't forget the no-data case.
+    /// A day with real sleep never receives a synthetic interval.
+    static func effectiveSleep(recorded: [SleepInterval],
+                               covering range: ClosedRange<Date>) -> [SleepInterval] {
+        let real = recorded.filter { $0.end > $0.start }
+        // Attribute a night to the day it ENDED — the day the patient woke up.
+        let wokeOn = Set(real.map { calendar.startOfDay(for: $0.end) })
+        var all = real
+        var day = calendar.startOfDay(for: range.lowerBound)
+        let lastDay = calendar.startOfDay(for: range.upperBound)
+        while day <= lastDay {
+            if !wokeOn.contains(day),
+               let bed = calendar.date(byAdding: .hour, value: fallbackBedHour - 24, to: day),
+               let wake = calendar.date(byAdding: .hour, value: fallbackWakeHour, to: day) {
+                all.append(SleepInterval(start: bed, end: wake))
+            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = next
+        }
+        return mergeSleep(all)
+    }
+
+    /// Minutes of `[a, b)` spent asleep. `sleep` must be merged + sorted.
+    static func asleepMinutes(from a: Date, to b: Date, sleep: [SleepInterval]) -> Double {
+        guard b > a, !sleep.isEmpty else { return 0 }
+        var total = 0.0
+        for iv in sleep {
+            if iv.start >= b { break }
+            if iv.end <= a { continue }
+            total += min(b, iv.end).timeIntervalSince(max(a, iv.start)) / 60
+        }
+        return total
+    }
+
+    /// The moment observation of a dose must stop — the next onset of sleep, or `t`
+    /// itself if already asleep. nil = no sleep ahead in the record.
+    static func sleepOnset(after t: Date, sleep: [SleepInterval]) -> Date? {
+        for iv in sleep {
+            if iv.end <= t { continue }
+            return iv.start <= t ? t : iv.start
+        }
+        return nil
+    }
+
     struct DoseDuration {
         let t0: Date
         let hour: Double
@@ -932,8 +1039,14 @@ nonisolated extension CorrelationEngine {
     /// the signal sustains a return above `onThreshold` (OFF-return) — or right-censor
     /// at the next event — then estimate the Kaplan–Meier median duration. Variable-
     /// agnostic; the threshold comes from the registry entry.
+    /// `sleep` defaults to empty = observe purely on the dose clock, which is exactly
+    /// what the Python lab did — so the parity fixture keeps pinning a faithful port.
+    /// The APP always passes real sleep, so the censoring below applies everywhere the
+    /// duration is used (card, forecast, formulation estimability), not just one card:
+    /// a duration inflated by sleep is wrong on every surface that reads it.
     static func survivalDuration(
-        signal: [(time: Date, value: Double)], events: [Date], onThreshold: Double
+        signal: [(time: Date, value: Double)], events: [Date], onThreshold: Double,
+        sleep: [SleepInterval] = []
     ) -> SurvivalDuration {
         let series = signal.sorted { $0.time < $1.time }
         let ds = events.sorted()
@@ -969,8 +1082,21 @@ nonisolated extension CorrelationEngine {
             }
             if !anyPost { continue }
 
-            // Observation horizon: truncate at the next dose.
-            let horizon = interval.isNaN ? maxWindow : min(maxWindow, interval)
+            // Observation horizon: truncate at the next dose, and at sleep onset.
+            //
+            // Tremor flattens in sleep regardless of drug state (Bhav's 1-6am runs a
+            // median of 0.00), so looking past sleep scores "no OFF-return" from a
+            // signal we cannot read, and credits the dose with coverage it never gave.
+            // His evening doses were 67% censored that way, inflating pooled KM
+            // 177.5 -> 192.5 min. This is a CENSOR, not a subtraction: the drug keeps
+            // metabolising while he sleeps, so the dose's clock never pauses — we just
+            // stop being able to observe it, and record "held at least this long".
+            var horizon = interval.isNaN ? maxWindow : min(maxWindow, interval)
+            if let onset = sleepOnset(after: t0, sleep: sleep) {
+                horizon = min(horizon, max(0, onset.timeIntervalSince(t0) / 60))
+            }
+            // Dosed while already asleep (or within a bin of it): nothing observable.
+            if horizon <= 0 { continue }
             let (duration, observed) = offReturn(centers: centers, sm: sm, horizon: horizon, thr: onThreshold)
 
             let hour = hourOfDay(t0)
@@ -1049,8 +1175,34 @@ nonisolated extension CorrelationEngine {
     /// primitive, gates on dose count + the gap-exceeds-duration condition, and
     /// composes the clinical-discussion card.
     static func wearingOffInsight(samples: [TremorPoint], doses: [Dose],
-                                  onThreshold: Double = CorrelationEngine.offThreshold) -> Insight? {
+                                  onThreshold: Double = CorrelationEngine.offThreshold,
+                                  sleep rawSleep: [SleepInterval] = []) -> Insight? {
         let sig = samples.map { (time: $0.timestamp, value: $0.tremorScore) }
+
+        // The two uses of sleep take DIFFERENT inputs, and the difference is load-bearing.
+        //
+        //   • CENSORING a duration uses MEASURED sleep only. Censoring discards a real
+        //     observation, so it must never rest on a guess: the fallback would claim "asleep
+        //     at 22:00" for a patient who demonstrably took a dose at 22:00 — taking a pill is
+        //     evidence of being awake. Guessing here dropped 35 of 106 doses off the parity
+        //     fixture's curve. With no measured sleep we simply don't censor: we can't know
+        //     when observation stopped, so we don't pretend to.
+        //   • SUBTRACTING from a gap uses EFFECTIVE sleep (measured + a conservative
+        //     22:00-06:00 night for any day with none). Removing the 600-min cap removed the
+        //     thing that was accidentally keeping sleep out of the count, so a sleep-blind
+        //     caller would score a whole unconscious night as waking OFF. Erring conservative
+        //     on a SUM is safe in a way that erring on a MEASUREMENT is not.
+        //
+        // Normalised here rather than trusted from the caller — a default that silently means
+        // "wrong" rather than "unset" is the same footgun as one GateSpec shared across
+        // callers asking different questions. Idempotent, so callers may pre-merge.
+        let measuredSleep = mergeSleep(rawSleep)
+        let effectiveSleepIntervals: [SleepInterval]
+        if let lo = samples.map(\.timestamp).min(), let hi = samples.map(\.timestamp).max() {
+            effectiveSleepIntervals = effectiveSleep(recorded: measuredSleep, covering: lo...hi)
+        } else {
+            effectiveSleepIntervals = measuredSleep
+        }
 
         // POOLED wearing-off over all doses drives the FIRING gate + the chart, and matches the
         // validated Python-lab curve (the parity test pins it). Firing is unchanged from before
@@ -1058,33 +1210,54 @@ nonisolated extension CorrelationEngine {
         // pooled is also the honest CLINICAL choice: the "gap" is a coverage concept spanning
         // formulations, while "how long it lasts" is per-formulation — so the aggregate curve
         // stays the visual, and the by-formulation medians go in the text.
-        let pooled = survivalDuration(signal: sig, events: doses.map(\.timestamp), onThreshold: onThreshold)
+        let pooled = survivalDuration(signal: sig, events: doses.map(\.timestamp),
+                                      onThreshold: onThreshold, sleep: measuredSleep)
         let pooledResults = pooled.durations
         guard pooledResults.count >= 20, pooled.kmMedian.isFinite else { return nil }
-        // Daily OFF attributable to dose SPACING: sum every daytime gap's shortfall against
-        // how long a dose actually holds, then average over dosed days. NOT median gap minus
-        // median duration — two medians can't see one catastrophic gap (a day with three fine
-        // gaps and one terrible one has the same median as a day of four mediocre ones), which
-        // understated this ~2x on real data. The sum is also the quantity the MCID is defined
-        // on, so the gate can finally ask whether the shortfall matters. The medians survive
-        // below as descriptive copy only. docs/design/wearing-off-margin.md.
+        // Daily OFF attributable to dose SPACING: sum every gap's shortfall against how long a
+        // dose actually holds, SUBTRACT the part the patient slept through, then average over
+        // dosed days. NOT median gap minus median duration — two medians can't see one
+        // catastrophic gap (a day with three fine gaps and one terrible one has the same median
+        // as a day of four mediocre ones), which understated this ~2x. The sum is also the
+        // quantity the MCID is defined on, so the gate can ask whether the shortfall matters.
         //
-        // ⚠️ `intervalMin < 600` stands in for "daytime" and drops a long gap WHOLE rather than
-        // clipping it at a boundary — so an evening dose skipped after a daytime dose makes that
-        // evening's OFF invisible (26% of Bhav's days). Deferred, tracked in the design note.
+        // Uncovered time is a WAKING quantity — you don't experience OFF asleep — which is why
+        // sleep is subtracted HERE but only censors the duration above. The two old magic
+        // numbers (`intervalMin < 600`, `hour >= 6 && < 20`) both stood in for "was he awake?";
+        // measured sleep answers that directly, so both are gone. They dropped a long gap WHOLE
+        // rather than clipping it: that erased the evening on 26% of Bhav's days, erased the
+        // 7-8am pre-first-dose stretch on MOST days, and silenced the card entirely for a
+        // once-daily regimen (24h gap -> dropped -> zero uncovered -> no card for the patient
+        // with the worst wearing-off). docs/design/wearing-off-margin.md.
         var pooledDayIntervals: [Double] = []
+        var allIntervals: [Double] = []
         var uncoveredByDay: [Date: Double] = [:]
         var dosedDays: Set<Date> = []
         for r in pooledResults {
             dosedDays.insert(calendar.startOfDay(for: r.t0))
-            guard r.hour >= 6, r.hour < 20, !r.intervalMin.isNaN, r.intervalMin < 600 else { continue }
-            pooledDayIntervals.append(r.intervalMin)
-            uncoveredByDay[calendar.startOfDay(for: r.t0), default: 0]
-                += max(0, r.intervalMin - pooled.kmMedian)
+            guard !r.intervalMin.isNaN else { continue }
+            allIntervals.append(r.intervalMin)
+            // Descriptive only (the copy's "typical daytime gap"). Deliberately still the
+            // daytime subset: it describes the rhythm a reader recognises, while the headline
+            // number below counts every waking uncovered minute.
+            if r.hour >= 6, r.hour < 20, r.intervalMin < 600 { pooledDayIntervals.append(r.intervalMin) }
+
+            let coverageEnd = r.t0.addingTimeInterval(pooled.kmMedian * 60)
+            let nextDose = r.t0.addingTimeInterval(r.intervalMin * 60)
+            let uncovered = nextDose.timeIntervalSince(coverageEnd) / 60
+            guard uncovered > 0 else { continue }
+            let waking = uncovered - asleepMinutes(from: coverageEnd, to: nextDose,
+                                                   sleep: effectiveSleepIntervals)
+            uncoveredByDay[calendar.startOfDay(for: r.t0), default: 0] += max(0, waking)
         }
         guard !dosedDays.isEmpty else { return nil }
         let dailyUncovered = uncoveredByDay.values.reduce(0, +) / Double(dosedDays.count)
-        let pooledMedInterval = median(pooledDayIntervals)
+        // Fall back to ALL gaps when there's no daytime-to-daytime gap at all — a once-daily
+        // regimen has exactly one 24h gap, so the daytime subset is empty. Bailing on a NaN
+        // median here would silence the card for precisely the patient this change exists to
+        // serve. The median is descriptive copy, never the estimate; it must not gate firing.
+        let pooledMedInterval = pooledDayIntervals.isEmpty
+            ? median(allIntervals) : median(pooledDayIntervals)
         guard !pooledMedInterval.isNaN else { return nil }
 
         // Per-formulation rows: a single median across a mixed regimen (IR vs plant-source
@@ -1093,7 +1266,8 @@ nonisolated extension CorrelationEngine {
         struct Row { let key: String; let km: Double; let medInterval: Double; let count: Int; let observedCount: Int }
         var rows: [Row] = []
         for (key, ds) in Dictionary(grouping: doses, by: { formulationKey($0.name) }) {
-            let surv = survivalDuration(signal: sig, events: ds.map(\.timestamp), onThreshold: onThreshold)
+            let surv = survivalDuration(signal: sig, events: ds.map(\.timestamp),
+                                        onThreshold: onThreshold, sleep: measuredSleep)
             let results = surv.durations
             guard results.count >= 20, surv.kmMedian.isFinite else { continue }
             var dayIntervals: [Double] = []
@@ -1127,27 +1301,35 @@ nonisolated extension CorrelationEngine {
         // otherwise today's pooled copy — byte-identical to before for a single-formulation user.
         let kmMin = Int(pooled.kmMedian.rounded())
         let gapMin = Int(pooledMedInterval.rounded())
-        // The TITLE carries the number; every other line does different work. Stating the
-        // shortfall in the title, summary AND finding read as a stutter on device — three
-        // repetitions of one figure is cognitive load, not emphasis. So: title = the total,
-        // summary = why it happens, finding = the detail behind it.
-        let spacingLine = "Estimated OFF from dose spacing: ~\(uncoveredMin) min/day (summed gap shortfall, averaged over \(days) days)"
+        // The TITLE carries the number, in HOURS — a glance shouldn't require dividing by 60,
+        // and precise minutes belong in the detail below, not the headline. Every other line
+        // does different work: repeating one figure three times is cognitive load, not
+        // emphasis. So: title = the total (hours), summary = why it happens, finding = method
+        // + provenance (precise minutes), bullets = the clinician's numbers.
+        //
+        // ⚠️ The summary deliberately prints ONE number, not two. It used to read "doses hold
+        // ~3.0 h but your daytime gaps run ~4.1 h", which invited the reader to subtract and
+        // land on ~2 h — against a headline of 8.3. Most of the total comes from gaps that
+        // aren't daytime gaps at all (the stretch before the first dose, the evening after the
+        // last), so no pair of medians can reconcile with it. Handing someone arithmetic that
+        // doesn't add up is the same defect this card was rewritten to fix.
+        let spacingLine = "Estimated OFF from dose spacing: ~\(uncoveredMin) min/day (each gap's waking shortfall, added up and averaged over \(days) days)"
         let mcidLine = "A change of 60 min/day in OFF time is the published threshold for a clinically meaningful difference"
 
         if rows.count >= 2 {
             let parts = rows.map { "\(name($0.key)) holds ~\(hrs($0.km)) h (doses ~\(hrs($0.medInterval)) h apart)" }
-            title = "Your doses leave about \(uncoveredMin) minutes a day uncovered"
+            title = "Your doses leave about \(hrs(dailyUncovered)) hours a day uncovered"
             summary = "Your formulations don't last the same length, so one schedule can't fit them all."
-            finding = "Summing every daytime gap that outlasts the dose before it: ~\(uncoveredMin) min a day of OFF from spacing alone. By formulation: " + parts.joined(separator: "; ") + ". From \(pooledResults.count) doses over \(days) days."
+            finding = "Adding up every gap that outlasts the dose before it, counting only the time you were awake: ~\(uncoveredMin) min a day of OFF from spacing alone. By formulation: " + parts.joined(separator: "; ") + ". From \(pooledResults.count) doses over \(days) days."
             mechanism = "This is the classic wearing-off pattern — the gap between doses is longer than a single dose lasts — and because your formulations last different lengths, it opens at a different point for each."
             bring = [spacingLine] + rows.map {
                 "\(name($0.key)): median ON \(Int($0.km.rounded())) min (~\(hrs($0.km)) h) vs ~\(hrs($0.medInterval)) h between doses — n=\($0.count), \($0.observedCount) observed wearing off"
             } + [mcidLine]
             consider = "When the gap between doses is longer than a dose lasts, predictable OFF windows open up. Neurologists have several levers for this — for example adjusting dose timing or frequency, or a longer-acting formulation. On a mixed regimen the timing that fits one formulation may not fit another. These are decisions only your neurologist can make. The value here is bringing them this pattern, with the data behind it."
         } else {
-            title = "Your doses leave about \(uncoveredMin) minutes a day uncovered"
-            summary = "Each dose holds ~\(hrs(pooled.kmMedian)) h, but your daytime gaps run ~\(hrs(pooledMedInterval)) h — so the shortfall adds up across the day."
-            finding = "Summing every daytime gap that outlasts the dose before it: ~\(uncoveredMin) min a day of OFF from spacing alone. Each dose holds a median of \(kmMin) min; your median daytime gap is \(gapMin) min. From \(pooledResults.count) doses over \(days) days."
+            title = "Your doses leave about \(hrs(dailyUncovered)) hours a day uncovered"
+            summary = "Each dose holds ~\(hrs(pooled.kmMedian)) h, but your doses don't span your waking day — the uncovered stretches add up."
+            finding = "Adding up every gap that outlasts the dose before it, counting only the time you were awake: ~\(uncoveredMin) min a day of OFF from spacing alone. From \(pooledResults.count) doses over \(days) days."
             mechanism = "This is the classic wearing-off pattern: the interval between doses is longer than a single dose lasts."
             bring = [
                 spacingLine,
@@ -1806,9 +1988,11 @@ nonisolated extension CorrelationEngine {
     /// pooled fallback; ON-duration is the clamped KM median (same [90,360] sanity rails +
     /// fallback as `doseOnWindowMinutes`).
     static func fitPulseModel(
-        key: String, signal: [(time: Date, value: Double)], events: [Date]
+        key: String, signal: [(time: Date, value: Double)], events: [Date],
+        sleep: [SleepInterval] = []
     ) -> PulseModel {
-        let surv = survivalDuration(signal: signal, events: events, onThreshold: offThreshold)
+        let surv = survivalDuration(signal: signal, events: events,
+                                    onThreshold: offThreshold, sleep: sleep)
         let dr = doseResponseByTimeOfDay(signal: signal, events: events, preMin: preMin, postMin: postMin)
         var onsetByBucket: [Bucket: Double] = [:]
         for b in Bucket.allCases {
@@ -1827,11 +2011,11 @@ nonisolated extension CorrelationEngine {
     /// clear the wearing-off floor. This set — data-derived, per user — replaces the old
     /// hard-coded `sinemet/mucuna` name filter everywhere: the gate IS the classifier.
     static func estimableFormulations(
-        signal: [(time: Date, value: Double)], doses: [Dose]
+        signal: [(time: Date, value: Double)], doses: [Dose], sleep: [SleepInterval] = []
     ) -> [String: PulseModel] {
         var out: [String: PulseModel] = [:]
         for (key, ds) in Dictionary(grouping: doses, by: { formulationKey($0.name) }) {
-            let m = fitPulseModel(key: key, signal: signal, events: ds.map(\.timestamp))
+            let m = fitPulseModel(key: key, signal: signal, events: ds.map(\.timestamp), sleep: sleep)
             if m.isEstimable, gate(wearingOffGate, n: m.durationsCount) != nil { out[key] = m }
         }
         return out
@@ -1856,7 +2040,8 @@ nonisolated extension CorrelationEngine {
         dayStart: Date,
         dayEnd: Date,
         now: Date,
-        adjustments: [WindowAdjustment] = []
+        adjustments: [WindowAdjustment] = [],
+        sleep: [SleepInterval] = []
     ) -> DayForecast? {
         let doses = todaysDoses.sorted { $0.timestamp < $1.timestamp }
         guard !doses.isEmpty else { return nil }
@@ -1867,7 +2052,7 @@ nonisolated extension CorrelationEngine {
         // appears only if its own data clears the estimability floor — the gate is the
         // classifier, so inert/non-pulsatile substances self-exclude with no drug list.
         let sig = history.map { (time: $0.timestamp, value: $0.tremorScore) }
-        let models = estimableFormulations(signal: sig, doses: allDoses)
+        let models = estimableFormulations(signal: sig, doses: allDoses, sleep: sleep)
         guard !models.isEmpty else { return nil }
 
         // Combined model over the union of estimable-formulation doses: the confidence + IQR

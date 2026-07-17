@@ -221,9 +221,12 @@ struct CorrelationEngineParityTests {
             "wearing-off card should surface via the .wearingOff renderer")
         #expect(wearCard.confidence == .strong)
         #expect(wearCard.stage == .clinicalDiscussion)
-        // The card must state the shortfall outright, not leave the reader to subtract
-        // two medians. On this fixture: ~221 min/day, well clear of the 60 min/day MCID.
-        #expect(wearCard.title.contains("221"), "title states the summed daily shortfall")
+        // The card must state the shortfall outright rather than leave the reader to subtract
+        // two medians — but the VALUE is pinned in SleepClippingTests, not here. This fixture
+        // carries no sleep CSV, so the card takes the conservative fallback path; that number
+        // says nothing about whether the Swift port matches the Python lab, which is the only
+        // question this test exists to answer.
+        #expect(wearCard.title.localizedCaseInsensitiveContains("uncovered"))
 
         // .verdict still uniquely identifies the gait composite — it's the one card
         // whose stage is NOT safety-derived (a progression readout, set in gaitInsight),

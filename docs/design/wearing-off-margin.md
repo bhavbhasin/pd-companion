@@ -39,7 +39,7 @@ Charging each gap against its own formulation's duration yields **234.4 min/day 
 
 **No schedule classification, no drug dictionary.** The engine already classifies substances *empirically*: `estimableFormulations` (`CorrelationEngine.swift:174-191`) admits anything showing a real dose→ON→OFF pulse, excludes confirmed non-pulsatile substances at ≥20 doses, and gives thin ones benefit of the doubt. Line 182: *"The gate is the classifier (measured per-user), not a drug dictionary."* This handles Ayurvedic supplements a drug database has never heard of — strictly better than RxNorm (`HKMedicationConcept.relatedCodings`) or an as-needed/scheduled split (`HKMedicationDoseEvent.scheduleType`), both of which were investigated and dropped.
 
-## ⬜ Open: sleep clipping (replaces the 600-minute cap) — DESIGN AGREED, not built
+## ✅ Sleep clipping (replaced the 600-minute cap) — BUILT + device-verified Jul 16
 
 ### Plain-language statement of the problem (start here)
 
@@ -103,6 +103,21 @@ Many users won't wear the Watch overnight; without a fallback they'd get silence
 4. ✅ **Sleep coverage is complete** — all 68 dosed days have >60 min recorded, median 408 min (6.8 h). The fallback would not have fired for him at all.
 5. ✅ **Evening dose needs no hour filter.** The 10pm dose covers to ~1am, he's asleep from 11:25 ⇒ contributes 0. Stay up to 2am and it correctly counts the last hour. **Both magic numbers really can go.**
 6. ⬜ **`maxWindow = 300` is untouched by this** and breaks the same once-daily scenario independently: a long-acting dose censors at 5 h and KM never resolves.
+
+### As built
+
+Card now reads **"Your doses leave about 8.3 hours a day uncovered"** (device-verified: 495 min/day, dose duration 178 min — against the Python oracle's 501.7 / 177.5 predicted before any Swift existed).
+
+**⚠️ The two uses of sleep take DIFFERENT inputs. This was NOT in the agreed design — the parity test surfaced it.**
+
+- **Censoring a duration uses MEASURED sleep only.** Censoring discards a real observation, so it must never rest on a guess. The fallback claims "asleep at 22:00" for a patient who demonstrably took a dose at 22:00 — taking a pill is evidence of being awake. Guessing here dropped **35 of 106 doses** off the parity fixture's curve. With no measured sleep we simply don't censor.
+- **Subtracting from a gap uses EFFECTIVE sleep** (measured + a conservative 22:00–06:00 night for days with none). Erring conservative on a *sum* is safe in a way that erring on a *measurement* is not. Without it, removing the cap would score a whole unconscious night as waking OFF.
+
+Fallback path yields **483** vs 502 measured — it under-claims, by design (22:00 is early for Bhav, and nothing is censored so doses read longer-lasting).
+
+Copy contract: **title = hours** (a glance shouldn't need dividing by 60), **finding = precise minutes + method + provenance**, **bullets = the clinician's numbers**. The summary prints **ONE** number deliberately — it used to read "doses hold ~3.0 h but your daytime gaps run ~4.1 h", inviting a subtraction that lands on ~2 h against a headline of 8.3. Most of the total comes from gaps that aren't daytime gaps at all (before the first dose, after the last), so no pair of medians can reconcile with it.
+
+Tests: `SleepClippingTests` (oracle vs Python on the real backup, + nap / night-interruption / once-daily / evening-dose / fallback / never-censor-on-a-guess). Python-lab parity untouched.
 
 ### Measured result of the full design (offline, 69 days)
 

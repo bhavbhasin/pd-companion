@@ -322,11 +322,23 @@ private struct DayReviewContent: View {
             TremorPoint(timestamp: $0.timestamp, tremorScore: $0.tremorScore)
         }
         let now = Date()
+        // The forecast projects from the same KM duration the wearing-off card reads, so it
+        // needs the same sleep-censoring: a duration inflated by unobservable sleep would
+        // project ON windows that run too long. Same reason the censor lives in the primitive
+        // rather than on one card.
+        // min/max, not first/last: `history` comes from an unsorted fetch, so first/last
+        // would silently truncate the sleep window to an arbitrary sub-range.
+        let sleep: [SleepInterval]
+        if let lo = history.map(\.timestamp).min(), let hi = history.map(\.timestamp).max() {
+            sleep = await healthKit.fetchSleepIntervals(from: lo, to: hi)
+        } else {
+            sleep = []
+        }
         forecast = await Task.detached(priority: .userInitiated) {
             CorrelationEngine.dayForecast(
                 history: history, allDoses: allDoses,
                 todaysDoses: todays, todaysReadings: todaysReadings,
-                dayStart: ds, dayEnd: de, now: now)
+                dayStart: ds, dayEnd: de, now: now, sleep: sleep)
         }.value
     }
 

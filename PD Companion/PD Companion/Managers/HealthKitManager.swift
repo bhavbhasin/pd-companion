@@ -195,6 +195,45 @@ class HealthKitManager: ObservableObject {
         }
     }
 
+    /// Sleep as INTERVALS, not a total. The engine has to know WHEN the patient was asleep
+    /// — to subtract it from a dose gap, and to censor a dose's observation at sleep onset —
+    /// and a scalar of hours can answer neither question. (`fetchSleepHours` below stays as
+    /// the Review panel's nightly total; this is a separate read for the engine.)
+    ///
+    /// `asleepUnspecified` IS included: coarse sources (AutoSleep, manual entries) write only
+    /// that, and dropping it would silently score those spans as waking OFF. `inBed` is NOT:
+    /// it covers lying down awake, which is real OFF the patient lived through — verified on
+    /// Bhav's 3pm nap, where he lay down ~3:00 but Apple detected sleep only from 4:08, and
+    /// that first hour carried genuine tremor. An `awake` interruption inside a night is
+    /// likewise absent from the result, so it correctly counts as waking time.
+    func fetchSleepIntervals(from start: Date, to end: Date) async -> [SleepInterval] {
+        let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit,
+                sortDescriptors: nil
+            ) { _, samples, _ in
+                guard let samples = samples as? [HKCategorySample] else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                let asleepValues: Set<Int> = [
+                    HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                    HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
+                    HKCategoryValueSleepAnalysis.asleepREM.rawValue,
+                    HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
+                ]
+                let intervals = samples
+                    .filter { asleepValues.contains($0.value) }
+                    .map { SleepInterval(start: $0.startDate, end: $0.endDate) }
+                continuation.resume(returning: CorrelationEngine.mergeSleep(intervals))
+            }
+            store.execute(query)
+        }
+    }
+
     private func fetchSleepHours(from start: Date, to end: Date) async -> Double? {
         let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end)

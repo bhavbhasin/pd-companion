@@ -342,6 +342,16 @@ struct InsightsView: View {
             gaitSources = await healthKit.fetchGaitSources()
             let gait = await healthKit.fetchGaitSeries(excludedSources: excludedSources)
             let workouts = await healthKit.fetchWorkoutEvents()
+            // Sleep as intervals, spanning the tremor record: the engine subtracts it from
+            // dose gaps (OFF is a waking quantity) and censors dose durations at sleep onset
+            // (tremor flattens in sleep whatever the drug is doing). Empty is safe — the
+            // engine synthesises a conservative clock night for any uncovered day.
+            let sleep: [SleepInterval]
+            if let lo = samples.map(\.timestamp).min(), let hi = samples.map(\.timestamp).max() {
+                sleep = await healthKit.fetchSleepIntervals(from: lo, to: hi)
+            } else {
+                sleep = []
+            }
             // Adapt SwiftData FoodEvents → engine intake events here on the main actor.
             // Attributes come from the ML field, or FoodAttribute.detect as a fallback
             // while that field is still empty (mirrors ObservationsPanel) — without this
@@ -354,7 +364,8 @@ struct InsightsView: View {
             }
 
             insights = await Task.detached(priority: .userInitiated) {
-                CorrelationEngine.generateInsights(samples: samples, doses: doses, gait: gait, workouts: workouts, food: food)
+                CorrelationEngine.generateInsights(samples: samples, doses: doses, gait: gait,
+                                                   workouts: workouts, food: food, sleep: sleep)
             }.value
             didLoad = true
         }
