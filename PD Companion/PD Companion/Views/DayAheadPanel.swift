@@ -129,12 +129,16 @@ struct DayAheadPanel: View {
             .buttonStyle(.plain)
 
             if expanded {
-                band
+                // Band + headline as one tight pair (2pt) — the headline reads as the band's
+                // caption. The 10pt outer spacing still separates this pair from the legend.
+                VStack(alignment: .leading, spacing: 2) {
+                    band
 
-                Text(headline)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text(headline)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 legend
 
