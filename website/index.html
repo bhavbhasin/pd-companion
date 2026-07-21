@@ -680,49 +680,9 @@
             gap: 64px;
             align-items: center;
         }
-        /* Realistic Apple Watch (46mm) mockup, straight-on */
-        .watch-device { position: relative; width: 216px; flex-shrink: 0; }
-        .watch-band {
-            position: absolute; left: 50%; transform: translateX(-50%);
-            width: 116px; z-index: 0;
-            background: linear-gradient(90deg, #121214, #2a2a2e 22%, #313136 50%, #2a2a2e 78%, #121214);
-        }
-        .watch-band-top {
-            top: -44px; height: 92px; border-radius: 24px 24px 10px 10px;
-            -webkit-mask-image: linear-gradient(to top, #000 46%, transparent);
-            mask-image: linear-gradient(to top, #000 46%, transparent);
-        }
-        .watch-band-bottom {
-            bottom: -44px; height: 92px; border-radius: 10px 10px 24px 24px;
-            -webkit-mask-image: linear-gradient(to bottom, #000 46%, transparent);
-            mask-image: linear-gradient(to bottom, #000 46%, transparent);
-        }
-        .watch-crown {
-            position: absolute; z-index: 1; right: 4px; top: 31%;
-            width: 12px; height: 32px; border-radius: 5px;
-            background: linear-gradient(90deg, #6f7176, #cbcdd0 42%, #e8e9eb 55%, #9a9c9f 76%, #5e6064);
-            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.22), 1px 0 2px rgba(0,0,0,0.45);
-        }
-        .watch-crown::after {
-            content: ''; position: absolute; inset: 5px 3px; border-radius: 3px;
-            background: repeating-linear-gradient(#000 0 1px, transparent 1px 3px); opacity: 0.22;
-        }
-        .watch-button {
-            position: absolute; z-index: 1; right: 6px; top: 62%;
-            width: 7px; height: 38px; border-radius: 4px;
-            background: linear-gradient(90deg, #5e6064, #b9bbbe 50%, #66686c);
-            box-shadow: 1px 0 2px rgba(0,0,0,0.45);
-        }
-        .watch-case {
-            position: relative; z-index: 2; width: 184px; margin: 0 auto;
-            aspect-ratio: 416 / 496; border-radius: 58px; padding: 5px;
-            background: linear-gradient(135deg, #e9eaec, #abaeb3 38%, #87898e 60%, #c9cbce 100%);
-            box-shadow: 0 0 0 1px rgba(0,0,0,0.35), 0 26px 54px rgba(0,0,0,0.7), 0 0 72px rgba(74,140,214,0.08);
-        }
-        .watch-case img {
-            width: 100%; height: 100%; object-fit: cover; display: block;
-            background: #000; border-radius: 54px;
-        }
+        /* Apple Watch (Series 11) mockup image - transparent PNG, blends on dark bg */
+        .watch-device { width: 240px; flex-shrink: 0; }
+        .watch-device img { width: 100%; height: auto; display: block; }
         .watch-copy h3 { margin-bottom: 14px; }
         .watch-copy p { font-size: 16px; color: var(--text-2); line-height: 1.65; max-width: 520px; font-weight: 380; }
         @media (max-width: 768px) {
@@ -885,24 +845,6 @@
             margin-bottom: 32px;
             font-weight: 380;
         }
-        .email-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            background: var(--surface-1);
-            border: 1px solid var(--border);
-            color: var(--blue);
-            padding: 15px 32px;
-            border-radius: 100px;
-            font-size: 17px;
-            font-weight: 500;
-            text-decoration: none;
-            transition: all 0.2s;
-        }
-        .email-btn:hover {
-            background: var(--blue-dim);
-            border-color: var(--blue-border);
-        }
         .contact-reqs {
             font-size: 13px;
             color: var(--text-3);
@@ -910,7 +852,7 @@
             max-width: 440px;
             margin: 28px auto 0;
         }
-        /* Staged: primary CTA for when the TestFlight beta opens (see contact section) */
+        /* Primary CTA: request invite-only beta access via email (see contact section) */
         .beta-btn {
             display: inline-flex;
             align-items: center;
@@ -1083,13 +1025,7 @@
 <div class="section-wrap" style="padding-bottom: 40px;">
     <div class="watch-lede">
         <div class="watch-device">
-            <div class="watch-band watch-band-top"></div>
-            <div class="watch-band watch-band-bottom"></div>
-            <div class="watch-crown"></div>
-            <div class="watch-button"></div>
-            <div class="watch-case">
-                <img src="images/watch-tremor.jpg" alt="Kampa on Apple Watch showing latest tremor 0.0, a tremor sparkline, and today's average tremor 0.5 and dyskinesia 0.0">
-            </div>
+            <img src="images/watch-s11-mockup.png" alt="Kampa on Apple Watch showing latest tremor 0.0, a tremor sparkline, and today's average tremor 0.5 and dyskinesia 0.0">
         </div>
         <div class="watch-copy">
             <p class="eyebrow">On your wrist</p>
@@ -1314,8 +1250,8 @@
         <div class="changelog-item">
             <div class="changelog-date">Jul 2026</div>
             <div>
-                <div class="changelog-title">The beta is open</div>
-                <div class="changelog-desc">Kampa is now on <a href="https://testflight.apple.com/join/1Tt8n1ZD" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none;">TestFlight</a> - if you have an iPhone and an Apple Watch, you can try it yourself: passive tremor and dyskinesia tracking, dose correlation, and your day-ahead forecast, all running on your own data.</div>
+                <div class="changelog-title">In private beta</div>
+                <div class="changelog-desc">Kampa is running on real devices in a private TestFlight beta - passive tremor and dyskinesia tracking, dose correlation, and your day-ahead forecast, all on your own data. Access is invite-only for now; <a href="mailto:info@kampa.health?subject=Kampa%20beta%20access" style="color:var(--blue);text-decoration:none;">get in touch</a> if you'd like to try it.</div>
             </div>
         </div>
         <div class="changelog-item">
@@ -1428,7 +1364,7 @@
         <div class="roadmap-item">
             <div class="roadmap-label">Now underway</div>
             <div class="roadmap-title">Now in testing</div>
-            <p class="roadmap-desc">Kampa is out on real devices beyond the builder's own, in an open TestFlight beta - validating whether the patterns it surfaces hold across individuals or are deeply personal.</p>
+            <p class="roadmap-desc">Kampa is out on real devices beyond the builder's own, in a private TestFlight beta - validating whether the patterns it surfaces hold across individuals or are deeply personal.</p>
         </div>
         <div class="roadmap-item">
             <div class="roadmap-label">Up next</div>
@@ -1461,16 +1397,12 @@
 <!-- ── Contact ── -->
 <div class="contact-wrap">
     <div class="contact-inner">
-        <h2 class="contact-h">The beta is open.</h2>
-        <p class="contact-p">Try Kampa on your own iPhone and Apple Watch - or reach out to collaborate on research or share clinical feedback.</p>
+        <h2 class="contact-h">Try Kampa.</h2>
+        <p class="contact-p">Kampa is in a private, invite-only beta. Reach out with a bit about yourself and I'll send you a TestFlight invite - or get in touch to collaborate on research or share clinical feedback.</p>
         <div class="cta-row">
-            <a href="https://testflight.apple.com/join/1Tt8n1ZD" target="_blank" rel="noopener" class="beta-btn">
+            <a href="mailto:info@kampa.health?subject=Kampa%20beta%20access&body=A%20bit%20about%20me%3A%20" class="beta-btn">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5 21.5 20H2.5L12 2.5zm0 5L6.6 17.3h10.8L12 7.5z"/></svg>
-                Join the beta on TestFlight
-            </a>
-            <a href="mailto:info@kampa.health?subject=Kampa%20-%20collaboration%20%2F%20feedback" class="email-btn">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
-                Get in touch
+                Request beta access
             </a>
         </div>
         <p class="contact-reqs">
