@@ -37,7 +37,17 @@ struct BackupSheet: View {
                 } header: {
                     Text("Stored on this device")
                 } footer: {
-                    Text("These are the records SwiftData holds locally. They mirror to your private iCloud backup, so these counts and date ranges should match what you see in the CloudKit Console.")
+                    Text("Saved on this iPhone and mirrored to your private iCloud backup.")
+                }
+
+                Section {
+                    NavigationLink {
+                        HealthSourcesView()
+                    } label: {
+                        Label("Data sources", systemImage: "laptopcomputer.and.iphone")
+                    }
+                } footer: {
+                    Text("Choose which devices are yours. Data from anyone else won't be used.")
                 }
 
                 Section {
@@ -54,10 +64,10 @@ struct BackupSheet: View {
                     }
                     .disabled(isExporting)
                 } footer: {
-                    Text("Exports tremor, food, and HealthKit samples as CSV files you can save or share.")
+                    Text("Save your tremor, food, and Health data as CSV files.")
                 }
             }
-            .navigationTitle("Backup")
+            .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -89,6 +99,98 @@ struct BackupSheet: View {
                 }
             }
         }
+    }
+}
+
+/// App-wide "which devices are yours?" review. Multi-select by exclusion: every source
+/// is "mine" (on) by default; the user switches off any that aren't theirs (a family
+/// member's watch, an old restored device that synced in). Exclusions persist per-user
+/// and apply to EVERY metric Kampa reads — not just gait. New sources are included
+/// automatically. This is the only honest way to validate ownership; HealthKit gives no
+/// "this is the account owner" flag.
+struct HealthSourcesView: View {
+    @EnvironmentObject private var healthKit: HealthKitManager
+    @State private var sources: [HealthSourceInfo] = []
+    @State private var excluded: Set<String> = HealthSourcePrefs.excluded
+    @State private var loaded = false
+
+    var body: some View {
+        Group {
+            if !loaded {
+                // Centered on the grouped background — consistent with the rest of the app's
+                // loading states, not a lone white cell that reads like an empty text field.
+                VStack(spacing: 16) {
+                    ProgressView().controlSize(.large).tint(Insight.brandBlue)
+                    Text("Finding your devices…").font(.subheadline).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.systemGroupedBackground))
+            } else if sources.isEmpty {
+                VStack(spacing: 8) {
+                    Text("No devices found").font(.headline)
+                    Text("Nothing has written to Apple Health yet.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(.systemGroupedBackground))
+            } else {
+                List {
+                    Section {
+                        ForEach(sources) { s in
+                            Toggle(isOn: binding(for: s)) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(s.name)
+                                    if let st = s.stats {
+                                        Text("\(st.count.formatted()) entries · \(span(st))")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            .tint(Insight.brandBlue)
+                        }
+                    } header: {
+                        Text("Your devices")
+                    } footer: {
+                        Text("Turn off anything that isn't yours — its data won't be used anywhere in Kampa. New devices are added automatically.")
+                    }
+                }
+            }
+        }
+        .navigationTitle("Data sources")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            guard !loaded else { return }
+            // Phase 1: names appear instantly (HKSourceQuery, no sample scan).
+            sources = await healthKit.fetchAllHealthSources()
+            loaded = true
+            // Phase 2: entry counts + date spans fill in from the heavier tally.
+            let stats = await healthKit.sourceStats()
+            sources = sources.map {
+                var s = $0
+                s.stats = stats[HealthSourcePrefs.canonical(s.name)]
+                return s
+            }
+        }
+    }
+
+    /// On = "mine" (included). Writes straight through to the shared store so the change
+    /// takes effect app-wide the next time any metric is read — no explicit save step.
+    private func binding(for s: HealthSourceInfo) -> Binding<Bool> {
+        let key = HealthSourcePrefs.canonical(s.name)
+        return Binding(
+            get: { !excluded.contains(key) },
+            set: { isMine in
+                if isMine { excluded.remove(key) }
+                else { excluded.insert(key) }
+                HealthSourcePrefs.excluded = excluded
+            }
+        )
+    }
+
+    private func span(_ st: HealthSourceInfo.Stats) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "MMM yyyy"
+        return "\(f.string(from: st.firstDate))–\(f.string(from: st.lastDate))"
     }
 }
 

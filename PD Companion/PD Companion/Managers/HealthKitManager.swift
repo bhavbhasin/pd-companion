@@ -2,6 +2,58 @@ import HealthKit
 import Foundation
 import Combine
 
+/// Per-user HealthKit source exclusions (device/app names the user marked "not mine"),
+/// stored locally. Default empty → every source counts, correct for the common
+/// single-owner case. New sources are included automatically; only exclusions persist.
+///
+/// Applies APP-WIDE: a foreign device that synced into the Health store (a family
+/// member's watch, an old restored device) is dropped from every metric Kampa reads,
+/// not just gait. Names are matched as lowercased substrings, the rule the gait path
+/// has always used.
+enum HealthSourcePrefs {
+    private static let key = "excludedHealthSources"
+    private static let legacyGaitKey = "excludedGaitSources"
+
+    static var excluded: Set<String> {
+        get {
+            let defaults = UserDefaults.standard
+            if let stored = defaults.stringArray(forKey: key) { return Set(stored) }
+            // One-time migration: carry over the old gait-only exclusions so an existing
+            // user's "not mine" choices keep applying (now everywhere). Canonicalize on the
+            // way in and persist under the new key so we never fall through to the legacy
+            // key again.
+            if let legacy = defaults.stringArray(forKey: legacyGaitKey) {
+                let migrated = legacy.map(canonical)
+                defaults.set(migrated, forKey: key)
+                return Set(migrated)
+            }
+            return []
+        }
+        set { UserDefaults.standard.set(Array(newValue), forKey: key) }
+    }
+
+    /// Canonical form for matching and dedup: lowercased, with every run of whitespace
+    /// (including the non-breaking space U+00A0 that HealthKit sprinkles into device
+    /// names) folded to a single regular space, and trimmed. Without this, one physical
+    /// device — e.g. "BB ⌚️ 11" stored once with a normal space and once with U+00A0 —
+    /// splits into two list rows and dodges exclusion (a substring with a plain space
+    /// never matches the non-breaking-space variant).
+    static func canonical(_ name: String) -> String {
+        name.split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+            .lowercased()
+    }
+
+    /// True if `sourceName` is excluded. Both sides are canonicalized, then matched by
+    /// containment (excluded entries are full canonical names, so this is effectively
+    /// exact match while tolerating any legacy partial entry). Empty set ⇒ false.
+    static func isExcluded(_ sourceName: String, in excluded: Set<String>) -> Bool {
+        guard !excluded.isEmpty else { return false }
+        let name = canonical(sourceName)
+        return excluded.contains { name.contains($0) }
+    }
+}
+
 @MainActor
 class HealthKitManager: ObservableObject {
     private let store = HKHealthStore()
@@ -96,6 +148,16 @@ class HealthKitManager: ObservableObject {
         }
     }
 
+    /// Keep only samples whose source the user hasn't excluded (a foreign device synced
+    /// into their Health store). `nonisolated static` so it runs inside a HealthKit query's
+    /// completion handler, on whatever thread that fires. Empty set ⇒ input unchanged.
+    nonisolated static func includedSources<S: HKSample>(
+        _ samples: [S], excluded: Set<String>
+    ) -> [S] {
+        guard !excluded.isEmpty else { return samples }
+        return samples.filter { !HealthSourcePrefs.isExcluded($0.sourceRevision.source.name, in: excluded) }
+    }
+
     func fetchTodaySnapshot() async {
         let now = Date()
         let startOfDay = Calendar.current.startOfDay(for: now)
@@ -134,8 +196,10 @@ class HealthKitManager: ObservableObject {
                 limit: HKObjectQueryNoLimit,
                 sortDescriptors: [sortDescriptor]
             ) { _, samples, _ in
+                let workouts = Self.includedSources((samples as? [HKWorkout]) ?? [],
+                                                    excluded: HealthSourcePrefs.excluded)
                 Task { @MainActor in
-                    self.todayWorkouts = (samples as? [HKWorkout]) ?? []
+                    self.todayWorkouts = workouts
                     continuation.resume()
                 }
             }
@@ -215,10 +279,11 @@ class HealthKitManager: ObservableObject {
                 sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit,
                 sortDescriptors: nil
             ) { _, samples, _ in
-                guard let samples = samples as? [HKCategorySample] else {
+                guard let raw = samples as? [HKCategorySample] else {
                     continuation.resume(returning: [])
                     return
                 }
+                let samples = Self.includedSources(raw, excluded: HealthSourcePrefs.excluded)
                 let asleepValues: Set<Int> = [
                     HKCategoryValueSleepAnalysis.asleepCore.rawValue,
                     HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
@@ -243,10 +308,11 @@ class HealthKitManager: ObservableObject {
                 sampleType: sleepType, predicate: predicate, limit: HKObjectQueryNoLimit,
                 sortDescriptors: nil
             ) { _, samples, _ in
-                guard let samples = samples as? [HKCategorySample] else {
+                guard let raw = samples as? [HKCategorySample] else {
                     continuation.resume(returning: nil)
                     return
                 }
+                let samples = Self.includedSources(raw, excluded: HealthSourcePrefs.excluded)
                 let asleepSamples = samples.filter {
                     $0.value == HKCategoryValueSleepAnalysis.asleepCore.rawValue
                     || $0.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue
@@ -340,7 +406,7 @@ class HealthKitManager: ObservableObject {
         for session in resolvedMindful {
             events.append(.mindfulness(
                 id: session.uuid, start: session.start, duration: session.duration,
-                isEditable: session.isEditable
+                isEditable: session.isEditable, source: session.source
             ))
         }
         for gi in resolvedGI {
@@ -379,10 +445,11 @@ class HealthKitManager: ObservableObject {
                 sampleType: type, predicate: predicate,
                 limit: HKObjectQueryNoLimit, sortDescriptors: [sort]
             ) { _, samples, _ in
-                guard let samples = samples as? [HKQuantitySample] else {
+                guard let raw = samples as? [HKQuantitySample] else {
                     continuation.resume(returning: [])
                     return
                 }
+                let samples = Self.includedSources(raw, excluded: HealthSourcePrefs.excluded)
                 var seen = Set<Date>()
                 var out: [GlucoseSample] = []
                 for s in samples where seen.insert(s.startDate).inserted {
@@ -427,7 +494,9 @@ class HealthKitManager: ObservableObject {
                 sampleType: type, predicate: predicate,
                 limit: HKObjectQueryNoLimit, sortDescriptors: sort
             ) { _, samples, _ in
-                let result = (samples as? [HKQuantitySample] ?? []).map {
+                let included = Self.includedSources(samples as? [HKQuantitySample] ?? [],
+                                                    excluded: HealthSourcePrefs.excluded)
+                let result = included.map {
                     HRVSample(
                         timestamp: $0.startDate,
                         value: $0.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli))
@@ -470,10 +539,11 @@ class HealthKitManager: ObservableObject {
                 sampleType: sleepType, predicate: predicate,
                 limit: HKObjectQueryNoLimit, sortDescriptors: nil
             ) { _, samples, _ in
-                guard let samples = samples as? [HKCategorySample] else {
+                guard let raw = samples as? [HKCategorySample] else {
                     continuation.resume(returning: .empty)
                     return
                 }
+                let samples = Self.includedSources(raw, excluded: HealthSourcePrefs.excluded)
                 // Keep the whole nocturnal window. The fetch predicate already
                 // bounds the lower end at windowStart (~6 PM the prior evening),
                 // so requiring endDate >= startOfDay (midnight) was wrong: it
@@ -619,7 +689,8 @@ class HealthKitManager: ObservableObject {
                 limit: HKObjectQueryNoLimit,
                 sortDescriptors: [sort]
             ) { _, samples, _ in
-                continuation.resume(returning: (samples as? [HKWorkout]) ?? [])
+                continuation.resume(returning: Self.includedSources(
+                    (samples as? [HKWorkout]) ?? [], excluded: HealthSourcePrefs.excluded))
             }
             store.execute(query)
         }
@@ -715,34 +786,85 @@ class HealthKitManager: ObservableObject {
         }
     }
 
-    /// Distinct sources contributing gait data (name, sample count, date span) across
-    /// all four metrics — for the "which devices are yours?" review. Not filtered.
-    func fetchGaitSources() async -> [GaitSourceInfo] {
-        let start = Calendar.current.date(byAdding: .year, value: -12, to: Date()) ?? .distantPast
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date())
-        var tally: [String: (count: Int, first: Date, last: Date)] = [:]
-        for metric in GaitMetric.allCases {
-            let (type, _) = Self.gaitHKType(metric)
-            for s in await sourceSamples(type: type, predicate: predicate) {
-                let name = s.sourceRevision.source.name
-                if let e = tally[name] {
-                    tally[name] = (e.count + 1, min(e.first, s.startDate), max(e.last, s.startDate))
-                } else {
-                    tally[name] = (1, s.startDate, s.startDate)
+    /// The HealthKit sample types Kampa enumerates for the "which devices are yours?"
+    /// review — every metric it reads, minus the high-volume continuous streams (heart
+    /// rate, steps) that would make the stats tally crawl. A foreign device shows up in
+    /// one of these anyway (a synced watch writes sleep / workouts / gait).
+    private static var sourceReviewTypes: [HKSampleType] {
+        var types: [HKSampleType] = GaitMetric.allCases.map { gaitHKType($0).0 }
+        types.append(HKObjectType.workoutType())
+        types.append(HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!)
+        types.append(HKObjectType.categoryType(forIdentifier: .mindfulSession)!)
+        types.append(HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)!)
+        types.append(HKObjectType.quantityType(forIdentifier: .bloodGlucose)!)
+        return types
+    }
+
+    /// Distinct devices/apps that have written to any metric Kampa reads — powers the
+    /// app-wide review. Phase 1: names only, via `HKSourceQuery`, which reads HealthKit's
+    /// source index WITHOUT pulling a sample — so the list is instant. Counts and date
+    /// spans arrive separately from `sourceStats()`. Deduped by canonical name (folds
+    /// whitespace variants); Kampa's own bundle is dropped (you can't opt out of your own
+    /// in-app logs).
+    func fetchAllHealthSources() async -> [HealthSourceInfo] {
+        let localBundleID = Bundle.main.bundleIdentifier
+        var byKey: [String: String] = [:]   // canonical name → clean display name
+        for type in Self.sourceReviewTypes {
+            for src in await sources(for: type) {
+                if src.bundleIdentifier == localBundleID { continue }
+                let key = HealthSourcePrefs.canonical(src.name)
+                if byKey[key] == nil {
+                    byKey[key] = src.name.replacingOccurrences(of: "\u{00a0}", with: " ")
                 }
             }
         }
-        return tally.map {
-            GaitSourceInfo(name: $0.key, count: $0.value.count,
-                           firstDate: $0.value.first, lastDate: $0.value.last)
-        }.sorted { $0.count > $1.count }
+        return byKey.values
+            .map { HealthSourceInfo(name: $0) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    private func sourceSamples(type: HKQuantityType, predicate: NSPredicate) async -> [HKQuantitySample] {
+    /// Phase 2: entry count + date span per source, keyed by canonical name. This IS the
+    /// expensive pass (it scans samples), so it runs after the names are already on screen
+    /// and the view merges the result in. Kampa's own bundle is skipped, matching the list.
+    func sourceStats() async -> [String: HealthSourceInfo.Stats] {
+        let start = Calendar.current.date(byAdding: .year, value: -12, to: Date()) ?? .distantPast
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date())
+        let localBundleID = Bundle.main.bundleIdentifier
+        var tally: [String: (count: Int, first: Date, last: Date)] = [:]
+        for type in Self.sourceReviewTypes {
+            for s in await anySamples(type: type, predicate: predicate) {
+                if s.sourceRevision.source.bundleIdentifier == localBundleID { continue }
+                let key = HealthSourcePrefs.canonical(s.sourceRevision.source.name)
+                if let e = tally[key] {
+                    tally[key] = (e.count + 1, min(e.first, s.startDate), max(e.last, s.startDate))
+                } else {
+                    tally[key] = (1, s.startDate, s.startDate)
+                }
+            }
+        }
+        return tally.mapValues {
+            HealthSourceInfo.Stats(count: $0.count, firstDate: $0.first, lastDate: $0.last)
+        }
+    }
+
+    /// The sources (apps/devices) that have written samples of `type`. `HKSourceQuery`
+    /// answers from HealthKit's index without fetching samples — cheap and fast.
+    private func sources(for type: HKSampleType) async -> [HKSource] {
+        await withCheckedContinuation { c in
+            let q = HKSourceQuery(sampleType: type, samplePredicate: nil) { _, sources, _ in
+                c.resume(returning: Array(sources ?? []))
+            }
+            store.execute(q)
+        }
+    }
+
+    /// Generic sample fetch for the stats tally — works for quantity, category, and
+    /// workout types (all `HKSample`), so one loop can count across metrics.
+    private func anySamples(type: HKSampleType, predicate: NSPredicate) async -> [HKSample] {
         await withCheckedContinuation { c in
             let q = HKSampleQuery(sampleType: type, predicate: predicate,
                                   limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, s, _ in
-                c.resume(returning: (s as? [HKQuantitySample]) ?? [])
+                c.resume(returning: s ?? [])
             }
             store.execute(q)
         }
@@ -789,7 +911,7 @@ class HealthKitManager: ObservableObject {
 
     private func fetchMindfulnessSessionsInRange(
         from start: Date, to end: Date
-    ) async -> [(uuid: UUID, start: Date, duration: TimeInterval, isEditable: Bool)] {
+    ) async -> [(uuid: UUID, start: Date, duration: TimeInterval, isEditable: Bool, source: String)] {
         let mindfulType = HKObjectType.categoryType(forIdentifier: .mindfulSession)!
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
@@ -799,17 +921,19 @@ class HealthKitManager: ObservableObject {
                 sampleType: mindfulType, predicate: predicate,
                 limit: HKObjectQueryNoLimit, sortDescriptors: [sort]
             ) { _, samples, _ in
-                guard let samples = samples as? [HKCategorySample] else {
+                guard let raw = samples as? [HKCategorySample] else {
                     continuation.resume(returning: [])
                     return
                 }
+                let samples = Self.includedSources(raw, excluded: HealthSourcePrefs.excluded)
                 let mapped = samples.map { sample in
                     // Carry the sample's UUID so deletes can target it exactly; editable
                     // only if Kampa saved it (HealthKit forbids deleting other sources').
                     (sample.uuid,
                      sample.startDate,
                      sample.endDate.timeIntervalSince(sample.startDate),
-                     sample.sourceRevision.source.bundleIdentifier == localBundleID)
+                     sample.sourceRevision.source.bundleIdentifier == localBundleID,
+                     sample.sourceRevision.source.name)
                 }
                 continuation.resume(returning: mapped)
             }
@@ -896,10 +1020,11 @@ class HealthKitManager: ObservableObject {
                 sampleType: mindfulType, predicate: predicate, limit: HKObjectQueryNoLimit,
                 sortDescriptors: nil
             ) { _, samples, _ in
-                guard let samples = samples as? [HKCategorySample] else {
+                guard let raw = samples as? [HKCategorySample] else {
                     continuation.resume(returning: nil)
                     return
                 }
+                let samples = Self.includedSources(raw, excluded: HealthSourcePrefs.excluded)
                 let totalSeconds = samples.reduce(0.0) {
                     $0 + $1.endDate.timeIntervalSince($1.startDate)
                 }

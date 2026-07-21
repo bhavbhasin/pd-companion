@@ -90,14 +90,22 @@ struct GaitSample: Sendable {
     let value: Double
 }
 
-/// A distinct device/source contributing gait data, with how much and over what span —
-/// powers the "which devices are yours?" review. `Identifiable` for the SwiftUI list.
-struct GaitSourceInfo: Sendable, Identifiable {
+/// A distinct device/app that has written to HealthKit — powers the app-wide "which
+/// devices are yours?" review. `Identifiable` for the SwiftUI list.
+///
+/// Two-phase: the name comes first via `HKSourceQuery` (no sample pull, so the list is
+/// instant), then `stats` (entry count + date span) fills in from a background tally.
+/// `nil` stats = "still loading" — the row shows just the name until they arrive.
+struct HealthSourceInfo: Sendable, Identifiable {
     let name: String
-    let count: Int
-    let firstDate: Date
-    let lastDate: Date
+    var stats: Stats?
     var id: String { name }
+
+    struct Stats: Sendable, Equatable {
+        let count: Int
+        let firstDate: Date
+        let lastDate: Date
+    }
 }
 
 /// The four Apple mobility metrics tracked for PD *progression* (years, not days).

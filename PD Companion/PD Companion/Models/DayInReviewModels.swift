@@ -89,7 +89,9 @@ enum DayEvent: Identifiable {
     // only lets an app delete samples it authored, so sessions from Apple's
     // Mindfulness app (or any other source) are read-only here and must be deleted
     // in the Health app.
-    case mindfulness(id: UUID, start: Date, duration: TimeInterval, isEditable: Bool)
+    // `source` is the HealthKit source name (e.g. "Apollo", "Muse") — shown in the detail
+    // sheet so a passive device session reads as what it is, not a mystery marker.
+    case mindfulness(id: UUID, start: Date, duration: TimeInterval, isEditable: Bool, source: String)
     case food(id: UUID, time: Date, userDescription: String, attributes: [FoodAttribute])
     // A logged GI symptom (constipation/nausea/…) at a point in time. isEditable is true
     // only when Kampa authored the HealthKit sample (same delete rule as mindfulness).
@@ -99,7 +101,7 @@ enum DayEvent: Identifiable {
         switch self {
         case .medication(let id, _, _):     return id
         case .workout(let id, _, _, _):     return id
-        case .mindfulness(let id, _, _, _): return id
+        case .mindfulness(let id, _, _, _, _): return id
         case .food(let id, _, _, _):        return id
         case .giSymptom(let id, _, _, _, _): return id
         }
@@ -109,7 +111,7 @@ enum DayEvent: Identifiable {
         switch self {
         case .medication(_, let time, _):      return time
         case .workout(_, let start, _, _):     return start
-        case .mindfulness(_, let start, _, _): return start
+        case .mindfulness(_, let start, _, _, _): return start
         case .food(_, let time, _, _):         return time
         case .giSymptom(_, let time, _, _, _): return time
         }

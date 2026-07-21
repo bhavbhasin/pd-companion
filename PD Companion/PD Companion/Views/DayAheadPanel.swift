@@ -138,7 +138,7 @@ struct DayAheadPanel: View {
 
                 legend
 
-                Text("A pattern from your own data — not medical advice. Share it with your neurologist.")
+                Text("A pattern from your own data — not medical advice.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

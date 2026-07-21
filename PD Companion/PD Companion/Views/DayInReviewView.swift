@@ -38,20 +38,22 @@ struct DayInReviewView: View {
             .navigationTitle("Review")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // Both in one ToolbarItem (not two): separate ToolbarItems get pushed apart
+                // with a wide default gap — an HStack keeps the pair tight.
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showingLogSheet = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .accessibilityLabel("Log entry")
-                    }
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showingBackup = true
-                    } label: {
-                        Image(systemName: "externaldrive.badge.icloud")
-                            .accessibilityLabel("Backup and export")
+                    HStack(spacing: 18) {
+                        Button {
+                            showingLogSheet = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .accessibilityLabel("Log entry")
+                        }
+                        Button {
+                            showingBackup = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .accessibilityLabel("Settings")
+                        }
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {

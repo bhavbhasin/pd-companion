@@ -11,6 +11,11 @@ struct EventDetailSheet: View {
     @State private var isDeleting = false
     @State private var showEditScreen = false
     @State private var deleteError: String?
+    @State private var fittedHeight: CGFloat = 260   // compact sheet grows/shrinks to its content
+
+    /// Food is the one detail with extra content and an edit-screen push, so it keeps a
+    /// roomy sheet; every other event is a few lines and gets a content-fitted sheet.
+    private var isFood: Bool { if case .food = event { true } else { false } }
 
     var body: some View {
         NavigationStack {
@@ -83,13 +88,15 @@ struct EventDetailSheet: View {
                     healthAppNote
                 } else if case .medication = event {
                     healthAppNote
-                } else if case .mindfulness(_, _, _, let isEditable) = event, !isEditable {
+                } else if case .mindfulness(_, _, _, let isEditable, _) = event, !isEditable {
                     healthAppNote
                 } else if case .giSymptom(_, _, _, _, let isEditable) = event, !isEditable {
                     healthAppNote
                 }
 
-                Spacer()
+                // Food pins its actions to the bottom of the roomy sheet; compact events
+                // hug their content (no Spacer) so the content-fitted sheet has no dead gap.
+                if isFood { Spacer() }
 
                 // Action buttons
                 VStack(spacing: 10) {
@@ -113,7 +120,7 @@ struct EventDetailSheet: View {
                             .buttonStyle(.bordered)
                             .controlSize(.large)
                         }
-                    } else if case .mindfulness(_, _, _, let isEditable) = event, isEditable {
+                    } else if case .mindfulness(_, _, _, let isEditable, _) = event, isEditable {
                         Button(role: .destructive) {
                             showDeleteAlert = true
                         } label: {
@@ -150,8 +157,10 @@ struct EventDetailSheet: View {
                     )
                 }
             }
+            // Measure the content so a compact sheet is exactly as tall as it needs to be.
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fittedHeight = $0 }
         }
-        .presentationDetents([.medium])
+        .presentationDetents(isFood ? [.medium] : [.height(fittedHeight)])
         .presentationDragIndicator(.visible)
         .alert("Delete entry?", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) { performDelete() }
@@ -196,7 +205,7 @@ struct EventDetailSheet: View {
             }
             dismiss()
 
-        case .mindfulness(let id, _, _, _):
+        case .mindfulness(let id, _, _, _, _):
             // id IS the HealthKit sample UUID (set in fetchMindfulnessSessionsInRange),
             // so we delete the exact sample rather than reconstructing its timestamps.
             Task {
@@ -256,8 +265,12 @@ struct EventDetailSheet: View {
             return "Taken at \(time.formatted(.dateTime.hour().minute()))"
         case .workout(_, let start, let duration, _):
             return "\(Int(duration / 60)) min · \(start.formatted(.dateTime.hour().minute()))"
-        case .mindfulness(_, let start, let duration, _):
-            return "\(Int(duration / 60)) min · \(start.formatted(.dateTime.hour().minute()))"
+        case .mindfulness(_, let start, let duration, let isEditable, let source):
+            let base = "\(Int(duration / 60)) min · \(start.formatted(.dateTime.hour().minute()))"
+            // Kampa-authored sessions (isEditable) omit the source — "Kampa · …" is noise.
+            // Third-party sessions name the source so a passive device (Apollo, Oura…)
+            // reads as what it is rather than an unexplained marker.
+            return isEditable || source.isEmpty ? base : "\(source) · \(base)"
         case .food(_, let time, _, _):
             return time.formatted(.dateTime.hour().minute())
         case .giSymptom(_, let time, _, _, _):
