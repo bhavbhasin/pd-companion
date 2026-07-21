@@ -343,6 +343,30 @@ nonisolated enum InsightRegistry {
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
         RegistryEntry(
+            id: "running-tremor", category: .exercise,
+            exposure: .workout(.running), outcome: .tremor,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
+            rationale: "High-intensity aerobic exercise has some of the strongest PD motor evidence (e.g. the SPARX treadmill trial); test its post-run tremor effect.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        RegistryEntry(
+            id: "hiit-tremor", category: .exercise,
+            exposure: .workout(.highIntensityIntervalTraining), outcome: .tremor,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
+            rationale: "High-intensity interval training pushes aerobic intensity, the axis PD motor evidence favors; test its post-session tremor effect.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        RegistryEntry(
+            id: "mindbody-tremor", category: .exercise,
+            exposure: .workout(.mindAndBody), outcome: .tremor,
+            primitive: .windowedEffect(preMin: 30, postMin: 120),
+            renderer: .windowedEffect,
+            rationale: "PD-specific programs that pair mental focus with physical coordination log as mind-and-body workouts; test their post-session tremor effect. Blended bucket — split into specific types if a distinct program needs its own read.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5),
+
+        RegistryEntry(
             id: "mindfulness-tremor", category: .stress,
             exposure: .mindfulSession, outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
