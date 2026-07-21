@@ -883,7 +883,7 @@ nonisolated extension CorrelationEngine {
 
         // Single string literals (no `+` chains — those blow up Swift's type-checker).
         let summary = "Takes ~\(aftMin) min to kick in vs. ~\(mornMin) min in the morning — but lasts a normal length."
-        let finding = "It also peaks weaker, while duration stays normal — so the issue is getting the dose *in*, not it wearing off early. From \(scored) scored doses over \(days) days."
+        let finding = "It also peaks weaker, while duration stays normal — so the issue is how quickly the dose gets in, not it wearing off early. From \(scored) scored doses over \(days) days."
         let mechanism = "Levodopa is absorbed in the gut and enters the brain through the same transporter dietary protein uses, so a protein lunch can slow and blunt the dose after it. PD also slows stomach emptying, more after meals and later in the day. Both point to one lever you control: when you eat relative to the dose. Likely, not proven."
 
         // Stage omitted — `run()` derives it from the entry's safety class. This entry

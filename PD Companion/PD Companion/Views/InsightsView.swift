@@ -144,7 +144,7 @@ extension Insight {
                 title: "Your afternoon dose works slower",
                 summary: "Takes ~67 min to kick in vs. ~38 min in the morning — but lasts a normal length.",
                 stage: .clinicalDiscussion,
-                finding: "It also peaks weaker, while duration stays normal (~3.2 h) — so the issue is getting the dose *in*, not it wearing off early. From 137 scored doses over 40 days.",
+                finding: "It also peaks weaker, while duration stays normal (~3.2 h) — so the issue is how quickly the dose gets in, not it wearing off early. From 137 scored doses over 40 days.",
                 mechanism: "Levodopa is absorbed in the gut and enters the brain through the same transporter dietary protein uses, so a protein lunch can slow and blunt the dose after it. PD also slows stomach emptying, more after meals and later in the day. Likely, not proven.",
                 confidence: .strong,
                 evidenceDays: 40,
