@@ -201,15 +201,16 @@ struct DayAheadPanel: View {
             }
         }
         .chartXAxis {
-            // Same hourly ticks + 3-hour labels/gridlines as the tremor & glucose panels,
-            // so the three stacked timelines read as one.
+            // Hourly ticks + 3-hour gridlines, but NO hour LABELS: the value labels reserve
+            // ~18pt below the band for a compact glance strip that doesn't need them (the
+            // headline states the timing, the tremor chart above carries the hour scale).
+            // Dropping them reclaims that strip so the headline sits snug under the band.
             AxisMarks(values: .stride(by: .hour, count: 1)) { _ in
                 AxisTick(length: 4, stroke: StrokeStyle(lineWidth: 1))
                     .foregroundStyle(.gray.opacity(0.4))
             }
             AxisMarks(values: .stride(by: .hour, count: 3)) { _ in
                 AxisGridLine()
-                AxisValueLabel(format: .dateTime.hour())
             }
         }
         // Round just the colored plot region (not the axis labels below): the band's four
@@ -217,7 +218,7 @@ struct DayAheadPanel: View {
         .chartPlotStyle { plot in
             plot.clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .frame(height: 60)
+        .frame(height: 44)
     }
 
     private var legend: some View {
