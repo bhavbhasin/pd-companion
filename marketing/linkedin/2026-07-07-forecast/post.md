@@ -17,12 +17,12 @@ Kampa now shows you what to expect today. From your own medication times, it pro
 → The wearing-off windows are shaded by how rough they've tended to be for you, so the picture matches your lived experience.
 → Times are kept deliberately approximate - this is a heads-up, not a stopwatch.
 
-I want to be very clear about what this is. It's an early, personal projection - a pattern drawn from your own data and shown back to you. It is not medical advice, and it is never a dosing instruction. It won't tell you when to take your medication; that conversation belongs to you and your neurologist. What it offers is foresight - a chance to plan your day around your own rhythm instead of being caught off guard by it.
+ This is an early, personal projection - a pattern drawn from your own data and shown back to you. It is not medical advice, and it is never a dosing instruction. It won't tell you when to take your medication; that conversation belongs to you and your neurologist. What it offers is foresight - a chance to plan your day around your own rhythm instead of being caught off guard by it.
 
 It's the next step in what Kampa is for: turning the data you already generate into something you can actually see and use, without adding to your load.
 
-Kampa is for people living with Parkinson's, the people who care for them, and the researchers working on it. This feature is early, and I'd especially value your read on it.
+Kampa is for people living with Parkinson's, the people who care for them, and the researchers working on it. This feature is early, and we'd especially value your read on it.
 
 Follow along here, or see more at kampa.health.
 
-#Parkinsons #DigitalHealth #DigitalBiomarkers #AppleWatch #PatientEmpowerment
+#Parkinsons #DigitalHealth #DigitalBiomarkers #AppleWatch #HealthTech
