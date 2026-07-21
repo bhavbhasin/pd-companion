@@ -1,6 +1,8 @@
 # Kampa — Insight Intelligence Architecture
 
 > **Status:** Decided June 2026. This is the most fundamental design decision in Kampa so far — bigger than CloudKit sync. It defines *how the app turns raw sensor data into trustworthy insights*.
+>
+> ⚠️ **Superseded on gating specifics (Jul 17 2026).** The architecture below — 3 layers, walled-off Judge, registry/primitive/renderer, dose-confound guard, privacy, human-approves-questions, scaling — is all current. But wherever this doc frames the gate as *"significance + sufficiency"* or lists *"minimum effect size / n≥5"* as blanket disciplines, the **current rule is in `docs/design/insights-card-confidence-redesign.md`**: a card shows once every quantity its statement depends on is *stably computable* (not a picked n); an effect/MCID gate applies **only where a sourced MCID exists** (wearing-off, gait — not tremor or dose-window); observational cards show **facts + the user's own variability**, not a meaningful/not verdict. See also `confidence-presence-vs-absence.md` (the gait absence fix this generalizes).
 
 ---
 
@@ -197,7 +199,7 @@ Each step is independently shippable; the parity tests are the safety net.
 
 ## Build status (Jun 2026) & the renderer dimension
 
-The architecture is **fully migrated and on-device**, all parity-green: the confidence-gate primitive, the typed registry (21 entries, now the execution driver), the workout adapter, the generic `windowedEffect` primitive + its trajectory chart, the gait `longTermTrend` primitive, **and now the two dose primitives (`doseResponseByTimeOfDay` + `survivalDuration`) plus the renderer dimension** (see below). A real 32-session walking card surfaced on-device and correctly read **"no clear effect yet"** — the engine declining to manufacture a 6% null into a claim. Adding an activity is now a registry line with zero code.
+The architecture is **fully migrated and on-device**, all parity-green: the confidence-gate primitive, the typed registry (26 entries, now the execution driver), the workout adapter, the generic `windowedEffect` primitive + its trajectory chart, the gait `longTermTrend` primitive, **and now the two dose primitives (`doseResponseByTimeOfDay` + `survivalDuration`) plus the renderer dimension** (see below). A real 32-session walking card surfaced on-device and correctly read **"no clear effect yet"** — the engine declining to manufacture a 6% null into a claim. Adding an activity is now a registry line with zero code.
 
 **Primitive vs. renderer — the split made explicit.** Decomposing a bespoke card yields two separable things: the **primitive** (the math — always generic) and the **renderer** (the card's display — generic *or* bespoke). The windowed-effect cards use a *generic* renderer. **Gait uses a bespoke composite renderer** — it fuses four mobility markers into one reassurance card — and that is *correct*, not leftover hard-coding. Primitives must be generic; renderers may be bespoke when the card genuinely is.
 

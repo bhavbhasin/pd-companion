@@ -123,6 +123,8 @@ alias map. With ~10 entries, coverage goes 50% → ~90%.
 
 ## Operations — cadence, trigger, mechanism
 
+> **⚠ Superseded for global launch (Jul 9 2026).** The tester-CSV-driven update loop below was built for a captive cohort. For a worldwide App Store launch, map growth is **corpus-first** — measure + close coverage against a wide synthetic multi-cuisine corpus, not tester CSVs (collection clunky, thin signal). The spike / `--map` / `--suggest` mechanics still apply; only the *input* changes (synthetic corpus, not CSVs). Full scope + the "does USDA-only survive GA" go/no-go: BACKLOG → "Global food-coverage audit."
+
 **Mental model: the DB is the stable file; the map is the living file.**
 
 ### `FoodDB.sqlite`

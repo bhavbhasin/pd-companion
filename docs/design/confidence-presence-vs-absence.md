@@ -1,6 +1,6 @@
 # Confidence: presence vs. absence claims
 
-**Status:** gait ✅ BUILT (Jul 14 2026) — card now reads *Strong*. windowed-effect family still open (needs a tremor MID). Origin: Jul 13 2026 — the gait "Your mobility hasn't declined" card reads *Emerging* despite 5.8 years / 71 monthly medians, because a flat slope can't be statistically significant.
+**Status:** gait ✅ BUILT (Jul 14 2026) — card now reads *Strong*. **windowed-effect family RESOLVED differently (Jul 17 2026): there is NO tremor MID to source** (searched — no validated MCID for tremor scales or wearable amplitude), so windowed-effect does NOT get an absence-MCID gate. It moves to the **facts-over-verdict** approach instead — show before→after + the user's own variability, let the user judge — per `docs/design/insights-card-confidence-redesign.md`. Same resolution for dose-window (no onset MID exists either). This absence/non-inferiority machinery stays used by the cards that DO have a sourced MCID (gait, wearing-off). Origin: Jul 13 2026 — the gait "Your mobility hasn't declined" card reads *Emerging* despite 5.8 years / 71 monthly medians, because a flat slope can't be statistically significant.
 
 **Two corrections the build forced** (details in the sections below):
 1. The test is **one-sided non-inferiority**, not two-sided equivalence. The card claims "hasn't *declined*"; two-sided would fail a genuine improvement.
@@ -95,7 +95,7 @@ Sources:
 
 1. ✅ **Option A**, as **one-sided non-inferiority** (not the two-sided equivalence first written), margin = **the clinical MCID** (not `max(own, MCID)` — circular). Both corrected Jul 14; rationale in the sections above. Option B (precision-only, direction-agnostic) was dropped: it rates "confidently flat" and "confidently mild-effect" the same.
 2. ✅ **Reassurance verdicts:** **wearing-off YES** ("your doses last long enough" — a PD patient wants to know their meds still last); **afternoon-dose NO** (uniform dose speed is too abstract to be worth a card). Neither built.
-3. ⬜ Per-family MCIDs still to source as each renderer is built (gait done; tremor-change MID for food/exercise TODO — start with one shared line). **This is what blocks `windowedEffectGate`** — it's a research question, not a coding one.
+3. ✅ **RESOLVED Jul 17 2026 — no tremor MID exists, and none for dose-window onset either** (both searched: tremor scales + wearable amplitude have no validated MCID; onset latency is a trial endpoint with no MCID). So `windowedEffectGate` and dose-window get **no absence-MCID gate** — they move to facts-over-verdict (`insights-card-confidence-redesign.md`). The absence/non-inferiority path here remains for the MCID-having cards only (gait ✅; wearing-off ⬜ not built). Gait MCID 0.06 m/s stands.
 4. ⬜ Sequencing: `gaitTrendGate` ✅ done Jul 14; `windowedEffectGate` still open (blocked on 3); dormant renderers adopt the branch when built.
 5. ✅ Bhav's own-data gait margin computed — **0.037 m/s, so the MCID binds**. See the worked example above.
 
