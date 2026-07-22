@@ -94,7 +94,8 @@ struct WindowedEffectTests {
             samples: samples, doses: [], gait: [:], workouts: workouts)
 
         let boxing = try #require(insights.first { $0.title.localizedCaseInsensitiveContains("Boxing") })
-        #expect(boxing.title.localizedCaseInsensitiveContains("ease"))   // tremor dropped
+        #expect(boxing.title.localizedCaseInsensitiveContains("tremor"))  // outcome-framed title
+        #expect(boxing.summary.localizedCaseInsensitiveContains("lower")) // tremor dropped (in the body now)
         #expect(boxing.confidence == .moderate)                          // n=8 ≥ 5, p ≤ 0.05
         // An activity with no sessions never produces a card.
         #expect(!insights.contains { $0.title.localizedCaseInsensitiveContains("Tango") })
@@ -132,12 +133,32 @@ struct WindowedEffectTests {
             entry: entry, samples: samples, workouts: [], food: food,
             preMin: 15, postMin: 120))
         #expect(card.title.localizedCaseInsensitiveContains("Caffeine"))
-        #expect(card.title.localizedCaseInsensitiveContains("stir"))   // tremor rose
+        #expect(card.summary.localizedCaseInsensitiveContains("higher"))  // tremor rose (in the body now)
         #expect(card.confidence == .moderate)                          // n=8 ≥ 5, p ≤ 0.05
         // No food events for the attribute → the renderer yields nil (no card).
         #expect(CorrelationEngine.windowedEffectInsight(
             entry: entry, samples: samples, workouts: [], food: [],
             preMin: 15, postMin: 120) == nil)
+    }
+
+    /// The daily-variation yardstick: the median of each day's WITHIN-day spread (SD), not
+    /// the spread of daily averages. Two days that each hold {1.0, 3.0} have a within-day SD
+    /// of √2; the median is √2. A single qualifying day has no median to speak of → nil.
+    /// (This pins the fix for the "0.2 swing" bug — averaging within a day first would
+    /// have collapsed this to ~0.)
+    @Test func dailyTremorVariationIsMedianWithinDaySpread() throws {
+        var samples: [TremorPoint] = []
+        for d in 0..<2 {
+            let day = Self.t0.addingTimeInterval(Double(d) * 24 * Self.hour)
+            samples.append(TremorPoint(timestamp: day, tremorScore: 1.0))
+            samples.append(TremorPoint(timestamp: day.addingTimeInterval(600), tremorScore: 3.0))
+        }
+        let variation = try #require(CorrelationEngine.dailyTremorVariation(samples))
+        #expect(abs(variation - 2.0.squareRoot()) < 1e-9)
+        // Only one qualifying day → nil.
+        #expect(CorrelationEngine.dailyTremorVariation([
+            TremorPoint(timestamp: Self.t0, tremorScore: 1.0),
+            TremorPoint(timestamp: Self.t0.addingTimeInterval(600), tremorScore: 3.0)]) == nil)
     }
 
     /// The per-user ON-window wrapper: with no doses there's nothing to estimate from,

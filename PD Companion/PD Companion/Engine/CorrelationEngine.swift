@@ -438,29 +438,50 @@ nonisolated enum CorrelationEngine {
         let lower = name.lowercased()
         let unit = exposure.unitWord
         let hours = max(1, Int((postMin / 60).rounded()))
-        let pct = abs(eff.pctChange).isFinite ? String(format: "%.0f%%", abs(eff.pctChange)) : "—"
         let days = Set(events.map { calendar.startOfDay(for: $0.start) }).count
         let doseNote = doses.isEmpty ? "" : " clear of your dose windows"
-        let significant = confidence != .emerging
         let eased = eff.delta < 0
 
-        // Summary = the takeaway; finding = sample size + hedge. No field restates
-        // another's numbers (summary carries the effect, finding carries the n/days).
-        let title: String, summary: String, finding: String
-        switch (significant, eased) {
-        case (true, true):
-            title = "\(name) may ease your tremor"
-            summary = "In the \(hours)h after \(lower), your tremor ran about \(pct) lower than just before."
-            finding = "Seen across \(eff.n) \(unit)\(doseNote) over \(days) days — an association in your own data, a hypothesis to test, not proof."
-        case (true, false):
-            title = "\(name) may stir your tremor"
-            summary = "In the \(hours)h after \(lower), your tremor ran about \(pct) higher than just before."
-            finding = "Seen across \(eff.n) \(unit)\(doseNote) over \(days) days — an association in your own data, a hypothesis to test, not proof."
-        default:
-            title = "\(name): no clear tremor effect yet"
-            summary = "Across \(eff.n) \(unit)\(doseNote), any before-and-after difference stays within normal day-to-day swing."
-            finding = "The point estimate is about \(pct) \(eased ? "lower" : "higher") afterward, but over \(days) days that's within the noise — not a real effect yet. Still watching."
-        }
+        // Facts over verdict: state the change in native tremor units, before → after,
+        // against the user's OWN typical daily (within-day) swing — never "walking reduced it".
+        // The badge carries "how sure"; the body carries the numbers; the user judges.
+        // There is no sourced tremor MCID to declare meaning against, so the swing is the
+        // honest yardstick, not a threshold. Same copy in every case — a null simply reads
+        // as a small change sitting inside the swing (no special "no effect" branch).
+        // See docs/design/insights-card-confidence-redesign.md.
+        let variation = dailyTremorVariation(samples)
+        let beforeStr = String(format: "%.1f", eff.meanBefore)
+        let afterStr = String(format: "%.1f", eff.meanAfter)
+        let deltaStr = String(format: "%.1f", abs(eff.delta))
+        let dirWord = eased ? "lower" : "higher"
+        let nearZero = abs(eff.delta) < 0.05
+        // Compare on the DISPLAYED (rounded) values, not full precision — otherwise the
+        // words can contradict the numbers on the card (a real 0.24 vs 0.19 both print as
+        // "0.2", making "0.2 is larger than 0.2" read as nonsense). When they round equal,
+        // the change is within noise, so say so rather than force an inside/outside verdict.
+        let variationClause: String = {
+            guard let v = variation, v > 0 else { return "" }
+            let vStr = String(format: "%.1f", v)
+            let deltaRounded = (abs(eff.delta) * 10).rounded()
+            let variationRounded = (v * 10).rounded()
+            if deltaRounded < variationRounded {
+                return " That sits inside your usual daily variation of \(vStr)."
+            } else if deltaRounded > variationRounded {
+                return " That's larger than your usual daily variation of \(vStr)."
+            } else {
+                return " That's about the size of your usual daily variation of \(vStr)."
+            }
+        }()
+
+        // One non-causal, outcome-framed title for all cases ("… and your tremor"), which
+        // also separates the walking-WORKOUT card from the gait "mobility" card that
+        // otherwise both read as "walking".
+        let title = "\(name) and your tremor"
+        let change = nearZero
+            ? "was about the same (\(beforeStr) → \(afterStr))"
+            : "averaged \(deltaStr) \(dirWord) (\(beforeStr) → \(afterStr))"
+        let summary = "In the \(hours)h after \(lower), your tremor \(change).\(variationClause)"
+        let finding = "Seen across \(eff.n) \(unit)\(doseNote) over \(days) days."
 
         // Stage is not set here — `run()` derives it from the entry's safety class
         // via `stage(for:)`. This renderer serves both lifestyle exposures (→ hypothesis)
@@ -600,12 +621,15 @@ nonisolated extension CorrelationEngine {
         floor:    GateBar(minN: 6))
 
     /// Windowed-effect (exercise / diet): significance (paired t-test p) + n sessions.
-    /// Floor n=5 ⇒ nothing shows until five sessions; at five-plus but not significant
-    /// the card surfaces as "no clear effect yet" (an honest null, not a hidden one).
+    /// Floor n=3 = the mathematical minimum to have a before, an after, and a spread —
+    /// a STRUCTURAL floor, not a picked meaningfulness threshold. Below Moderate the card
+    /// still shows (facts-over-verdict body: before→after vs the user's own swing), so the
+    /// null is stated, not hidden. Moderate/Strong tiers keep the significance bars, which
+    /// is what the badge reports. See docs/design/insights-card-confidence-redesign.md.
     static let windowedEffectGate = GateSpec(
         strong:   GateBar(minN: 10, maxP: 0.01),
         moderate: GateBar(minN: 5,  maxP: 0.05),
-        floor:    GateBar(minN: 5))
+        floor:    GateBar(minN: 3))
 }
 
 // MARK: - Windowed-effect primitive (event → signal change in the window after)
@@ -684,6 +708,44 @@ nonisolated extension CorrelationEngine {
         let t = mean / se
         let df = nD - 1
         return regularizedIncompleteBeta(a: df / 2, b: 0.5, x: df / (df + t * t))
+    }
+
+    /// The user's own typical WITHIN-DAY tremor variation: the median of each day's spread
+    /// (standard deviation) of tremor readings. This is the yardstick a windowed-effect
+    /// card compares its before→after change against — "0.2 sits inside your usual daily
+    /// variation of 1.0" — NOT a meaningfulness threshold (there is no sourced tremor MCID;
+    /// see docs/design/insights-card-confidence-redesign.md).
+    ///
+    /// SD, not max−min range: range is set by a single spike and creeps toward the full
+    /// scale the more you measure, and it would make even a real, significant effect read
+    /// "sits inside your variation" — clashing with the badge. SD stays stable and keeps
+    /// the sentence and the badge agreeing (chosen Option A, Jul 21).
+    ///
+    /// Deliberately the within-day spread the user actually feels and sees on the Review
+    /// chart (tremor runs None→Strong across a single day), NOT the day-to-day variation of
+    /// daily *averages*: a day's mean is ~stable even when the day itself swings wildly, so
+    /// averaging first collapses it to near zero (the "0.2 swing" bug). The badge carries
+    /// statistical significance; this is only the plain-language "how big is this vs how
+    /// much my tremor normally moves in a day" anchor. Median across days so a single
+    /// unusual day doesn't set the reference. nil with fewer than two days that each have
+    /// ≥2 readings.
+    static func dailyTremorVariation(_ samples: [TremorPoint]) -> Double? {
+        guard !samples.isEmpty else { return nil }
+        var byDay: [Date: [Double]] = [:]
+        for s in samples {
+            byDay[calendar.startOfDay(for: s.timestamp), default: []].append(s.tremorScore)
+        }
+        var perDaySD: [Double] = []
+        for (_, vals) in byDay where vals.count >= 2 {
+            let nD = Double(vals.count)
+            let mean = vals.reduce(0, +) / nD
+            let ss = vals.reduce(0.0) { $0 + ($1 - mean) * ($1 - mean) }
+            perDaySD.append((ss / (nD - 1)).squareRoot())
+        }
+        guard perDaySD.count >= 2 else { return nil }
+        let sorted = perDaySD.sorted()
+        let mid = sorted.count / 2
+        return sorted.count % 2 == 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
     }
 }
 
