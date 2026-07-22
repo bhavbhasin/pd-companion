@@ -58,12 +58,12 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
     func launchWatchAppForSync() {
         guard WCSession.default.activationState == .activated,
               WCSession.default.isWatchAppInstalled else {
-            print("[sync] launchWatchAppForSync skipped — not activated / watch app not installed")
+            syncLog("[sync] launchWatchAppForSync skipped — not activated / watch app not installed")
             return
         }
         guard HKHealthStore.isHealthDataAvailable() else { return }
         if let last = lastWatchLaunch, Date().timeIntervalSince(last) < 60 {
-            print("[sync] launchWatchAppForSync debounced (<60s since last)")
+            syncLog("[sync] launchWatchAppForSync debounced (<60s since last)")
             return
         }
         lastWatchLaunch = Date()
@@ -73,9 +73,9 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         config.locationType = .unknown
         healthStore.startWatchApp(with: config) { success, error in
             if let error {
-                print("[sync] startWatchApp failed: \(error.localizedDescription)")
+                syncLog("[sync] startWatchApp failed: \(error.localizedDescription)")
             } else {
-                print("[sync] startWatchApp launched Watch app for sync (success=\(success))")
+                syncLog("[sync] startWatchApp launched Watch app for sync (success=\(success))")
             }
         }
     }
@@ -88,11 +88,11 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
             payload["since"] = latest.timeIntervalSince1970
         }
 
-        print("[sync] requestFreshTremorData since=\(payload["since"] as? TimeInterval ?? -1) reachable=\(WCSession.default.isReachable)")
+        syncLog("[sync] requestFreshTremorData since=\(payload["since"] as? TimeInterval ?? -1) reachable=\(WCSession.default.isReachable)")
 
         if WCSession.default.isReachable {
             WCSession.default.sendMessage(payload, replyHandler: nil) { error in
-                print("[sync] requestFreshTremorData sendMessage failed: \(error.localizedDescription) — falling back to transferUserInfo")
+                syncLog("[sync] requestFreshTremorData sendMessage failed: \(error.localizedDescription) — falling back to transferUserInfo")
                 WCSession.default.transferUserInfo(payload)
             }
         } else {
@@ -118,7 +118,7 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         let hours = Date().timeIntervalSince(latest) / 3600
         syncIsStale = hours > staleThresholdHours
         if syncIsStale {
-            print("[sync] stale: \(String(format: "%.1f", hours))h since last watch data")
+            syncLog("[sync] stale: \(String(format: "%.1f", hours))h since last watch data")
         }
     }
 
@@ -168,9 +168,9 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
             let samples = try JSONDecoder().decode([TremorSample].self, from: data)
             self.latestTremorSamples = samples
             let inserted = persistSamples(samples)
-            print("[sync] processTremorData received=\(samples.count) inserted=\(inserted)")
+            syncLog("[sync] processTremorData received=\(samples.count) inserted=\(inserted)")
         } catch {
-            print("[sync] Failed to decode tremor data: \(error)")
+            syncLog("[sync] Failed to decode tremor data: \(error)")
         }
     }
 
@@ -178,9 +178,9 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         do {
             let samples = try JSONDecoder().decode([DyskinesiaSample].self, from: data)
             let inserted = persistDyskinesiaSamples(samples)
-            print("[sync] processDyskinesiaData received=\(samples.count) inserted=\(inserted)")
+            syncLog("[sync] processDyskinesiaData received=\(samples.count) inserted=\(inserted)")
         } catch {
-            print("[sync] Failed to decode dyskinesia data: \(error)")
+            syncLog("[sync] Failed to decode dyskinesia data: \(error)")
         }
     }
 
@@ -203,14 +203,19 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
             context.insert(TremorReading(from: sample))
             inserted += 1
         }
+        // DIAGNOSTIC (temporary): the batch's own time span + how much of it the phone already
+        // had. If inserted=0 with [lo,hi] sitting well before `latestStoredSampleTimestamp`,
+        // the watch is re-shipping known data (a per-launch waste); if hi ≈ our newest, it's a
+        // benign boundary catch-up. See the sync-redundancy investigation.
+        syncLog("[sync] persistSamples batch span [\(lo.timeIntervalSince1970) .. \(hi.timeIntervalSince1970)] overlapExisting=\(existing.count)/\(samples.count) newestStored=\(latestStoredSampleTimestamp()?.timeIntervalSince1970 ?? -1)")
         // Loud save — never swallow a save error. A silent `try?` made a failed persist
         // indistinguishable from "never arrived", hiding the last step of the
         // receive→dedup→insert→save pipeline. See docs/design/watch-sync-payload-options.md (Step 1).
         do {
             try context.save()
-            print("[sync] persistSamples saved inserted=\(inserted)")
+            syncLog("[sync] persistSamples saved inserted=\(inserted)")
         } catch {
-            print("[sync] persistSamples SAVE FAILED inserted=\(inserted): \(error)")
+            syncLog("[sync] persistSamples SAVE FAILED inserted=\(inserted): \(error)")
         }
         return inserted
     }
@@ -235,9 +240,9 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         // Loud save — see persistSamples above / docs/design/watch-sync-payload-options.md (Step 1).
         do {
             try context.save()
-            print("[sync] persistDyskinesiaSamples saved inserted=\(inserted)")
+            syncLog("[sync] persistDyskinesiaSamples saved inserted=\(inserted)")
         } catch {
-            print("[sync] persistDyskinesiaSamples SAVE FAILED inserted=\(inserted): \(error)")
+            syncLog("[sync] persistDyskinesiaSamples SAVE FAILED inserted=\(inserted): \(error)")
         }
         return inserted
     }
@@ -271,7 +276,7 @@ extension PhoneConnectivityManager: WCSessionDelegate {
             self.isWatchPaired = paired
             self.isWatchAppInstalled = installed
             self.isWatchReachable = reachable
-            print("[sync] WCSession activated didActivate=\(didActivate) paired=\(paired) installed=\(installed)")
+            syncLog("[sync] WCSession activated didActivate=\(didActivate) paired=\(paired) installed=\(installed)")
             if didActivate {
                 self.requestFreshTremorData()
             }
