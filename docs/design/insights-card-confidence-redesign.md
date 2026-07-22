@@ -155,9 +155,23 @@ One coherent work package; items 2-5 are small and ride along with 1:
 - **Dyskinesia noise floor (0.5):** a **data** block, not design — needs a dyskinetic user's
   stream (Bhav ~0 can't calibrate). Method when data lands: off-dose-window baseline or
   felt-state anchor. See `confidence-presence-vs-absence.md` + BACKLOG.
-- **Time-of-day dose buckets too coarse:** logged in BACKLOG (Jul 17) — 1pm & 4pm both land in
-  "afternoon" → blended. Direction: move off fixed clock buckets to time-since-dose / meal
-  proximity.
+- **Onset card is too naive about a real regimen (3 coupled gaps, one axis rebuild).** The
+  afternoon-dose card feeds on dose *timestamps only* — no meal context, no spacing awareness, no
+  drug type. Fix all three together when the axis moves off fixed clock buckets to
+  time-since-meal / meal-proximity. Logged BACKLOG (Jul 17).
+  1. **Bucket blending (meal proximity):** 1pm & 4pm both land in "afternoon" → averaged, though a
+     near-lunch dose (protein competition) and a late-afternoon one likely behave differently.
+  2. **Truncation on dense schedules:** the onset window stops at the *next* dose. Pills spaced
+     ~2h apart chop the window short; a *slow* dose that hasn't onset by then is marked NaN and
+     dropped — so tightly-spaced regimens silently lose their slow doses and the average drifts
+     *faster* than reality, hiding the delay the card exists to show. (Code half-knows: "afternoon
+     doses truncated by the evening dose have falling n".)
+  3. **Drug-type blending:** onset uses `doses.map(\.timestamp)`, ignoring `.name` — a supplemental
+     Mucuna (faster onset) averages into the Sinemet afternoon bucket, masking a real slowdown. And
+     a *booster* taken while still partly ON starts from a controlled baseline → little room to
+     drop → reads weak/NaN → drops out. The wearing-off card already stratifies by `formulationKey`;
+     onset is the laggard. Machinery to fix exists (`formulationKey`), but it's still a build, not
+     copy, and interacts with the bucket rethink — so parked with the family.
 - **"Stably computable" operational definition** — the one residual knob; define per card.
   Jul 19 rec: define as a **convergence criterion** (the estimate stops moving more than X% as
   days accrue), not a min-days count — a min-days count quietly becomes n≥5 wearing a new name.
