@@ -229,9 +229,15 @@ nonisolated enum CorrelationEngine {
         // an observation rather than adjusting a sum, and censoring must never rest on a
         // guessed bedtime — see `wearingOffInsight`, which synthesises the conservative
         // fallback itself, for the gap side only.
+        // One survival cache for the whole run: the pooled levodopa curve and each
+        // formulation's curve are otherwise recomputed (a full O(doses × samples) scan each)
+        // across estimableFormulations, doseOnWindow, and the wearing-off card. Same
+        // (events, threshold) → computed once. Signal + sleep are fixed for this run.
+        let survivalCache = SurvivalCache()
+
         let sig = samples.map { (time: $0.timestamp, value: $0.tremorScore) }
         let effSleep = mergeSleep(sleep)
-        let estimableKeys = Set(estimableFormulations(signal: sig, doses: doses, sleep: effSleep).keys)
+        let estimableKeys = Set(estimableFormulations(signal: sig, doses: doses, sleep: effSleep, cache: survivalCache).keys)
         let groupSizes = Dictionary(grouping: doses, by: { formulationKey($0.name) }).mapValues(\.count)
         let levodopaDoses = doses.filter { d in
             let k = formulationKey(d.name)
@@ -243,7 +249,7 @@ nonisolated enum CorrelationEngine {
         // there are no non-medication exposures to guard.
         let onWindow = (workouts.isEmpty && food.isEmpty)
             ? doseOnWindowFallback
-            : doseOnWindowMinutes(samples: samples, doses: levodopaDoses, sleep: effSleep)
+            : doseOnWindowMinutes(samples: samples, doses: levodopaDoses, sleep: effSleep, cache: survivalCache)
         // Expand template entries (the exercise cluster) into one concrete question per
         // workout type actually seen, THEN run. Singular entries pass through untouched.
         // HealthKit knowledge (which raw value is which activity) stays in InsightRegistry;
@@ -259,7 +265,7 @@ nonisolated enum CorrelationEngine {
             }
             .compactMap { run($0, samples: samples, doses: levodopaDoses,
                               gait: gait, workouts: workouts, food: food,
-                              onWindow: onWindow, sleep: effSleep) }
+                              onWindow: onWindow, sleep: effSleep, cache: survivalCache) }
     }
 
     /// Dispatch one registry entry to the renderer that draws it.
@@ -274,7 +280,7 @@ nonisolated enum CorrelationEngine {
     static func run(_ entry: RegistryEntry, samples: [TremorPoint], doses: [Dose],
                     gait: [GaitMetric: [GaitSample]], workouts: [WorkoutEvent],
                     food: [FoodIntakeEvent], onWindow: Double = doseOnWindowFallback,
-                    sleep: [SleepInterval] = []) -> Insight? {
+                    sleep: [SleepInterval] = [], cache: SurvivalCache? = nil) -> Insight? {
         // `doses` here is the LEVODOPA-CANDIDATE set (see generateInsights): confirmed
         // non-pulsatile substances are already filtered out, so every renderer below is safe.
         switch entry.renderer {
@@ -287,7 +293,7 @@ nonisolated enum CorrelationEngine {
             guard case .survivalDuration(let onThreshold) = entry.primitive else { return nil }
             // wearingOffInsight stratifies by formulation internally over the levodopa-candidate set.
             guard var insight = wearingOffInsight(samples: samples, doses: doses,
-                                                  onThreshold: onThreshold, sleep: sleep) else { return nil }
+                                                  onThreshold: onThreshold, sleep: sleep, cache: cache) else { return nil }
             insight.stage = stage(for: entry)
             return insight
         case .gaitComposite:
@@ -398,11 +404,12 @@ nonisolated enum CorrelationEngine {
     /// physiologically implausible; the [90, 360]-min rails only catch degenerate
     /// estimates from sparse early data (sanity bounds, not tuning).
     static func doseOnWindowMinutes(samples: [TremorPoint], doses: [Dose],
-                                    sleep: [SleepInterval] = []) -> Double {
+                                    sleep: [SleepInterval] = [],
+                                    cache: SurvivalCache? = nil) -> Double {
         guard !doses.isEmpty else { return doseOnWindowFallback }
         let surv = survivalDuration(
             signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
-            events: doses.map(\.timestamp), onThreshold: offThreshold, sleep: sleep)
+            events: doses.map(\.timestamp), onThreshold: offThreshold, sleep: sleep, cache: cache)
         let km = surv.kmMedian
         guard km.isFinite, km >= 90, km <= 360 else { return doseOnWindowFallback }
         return km
@@ -709,17 +716,20 @@ nonisolated extension CorrelationEngine {
         preMin: Double, postMin: Double,
         minPrePoints: Int = 1, minPostPoints: Int = 1
     ) -> WindowedEffect? {
+        // Sort once, then binary-search each event's pre/post windows — was a full O(n) scan
+        // of `signal` per event. Same points collected (summing is order-independent), so the
+        // means are identical; only the cost changes (O(events × n) → O(events × log n)).
+        let sortedSig = signal.sorted { $0.time < $1.time }
         var befores: [Double] = [], afters: [Double] = [], deltas: [Double] = []
         for ev in events {
             let preLo = ev.start.addingTimeInterval(-preMin * 60)
             let postHi = ev.end.addingTimeInterval(postMin * 60)
-            var preSum = 0.0, preN = 0, postSum = 0.0, postN = 0
-            for p in signal {
-                if p.time >= preLo && p.time < ev.start { preSum += p.value; preN += 1 }
-                else if p.time > ev.end && p.time <= postHi { postSum += p.value; postN += 1 }
-            }
-            guard preN >= minPrePoints, postN >= minPostPoints else { continue }
-            let before = preSum / Double(preN), after = postSum / Double(postN)
+            // pre: [preLo, ev.start)   post: (ev.end, postHi]
+            let pre = sortedSig[firstIndexAtOrAfter(sortedSig, preLo)..<firstIndexAtOrAfter(sortedSig, ev.start)]
+            let post = sortedSig[firstIndexAfter(sortedSig, ev.end)..<firstIndexAfter(sortedSig, postHi)]
+            guard pre.count >= minPrePoints, post.count >= minPostPoints else { continue }
+            let before = pre.reduce(0.0) { $0 + $1.value } / Double(pre.count)
+            let after = post.reduce(0.0) { $0 + $1.value } / Double(post.count)
             befores.append(before); afters.append(after); deltas.append(after - before)
         }
         guard !deltas.isEmpty else { return nil }
@@ -921,7 +931,9 @@ nonisolated extension CorrelationEngine {
 
             let lo = t0.addingTimeInterval(-preMin * 60)
             let hi = t0.addingTimeInterval(postEff * 60)
-            let win = series.filter { $0.time >= lo && $0.time <= hi }
+            // Was `series.filter { $0.time >= lo && $0.time <= hi }` (O(n) per dose); same
+            // elements via binary search since `series` is time-sorted.
+            let win = series[firstIndexAtOrAfter(series, lo)..<firstIndexAfter(series, hi)]
             if win.count < 3 { continue }
 
             let rel = win.map { $0.time.timeIntervalSince(t0) / 60.0 }
@@ -1198,10 +1210,51 @@ nonisolated extension CorrelationEngine {
     /// The APP always passes real sleep, so the censoring below applies everywhere the
     /// duration is used (card, forecast, formulation estimability), not just one card:
     /// a duration inflated by sleep is wrong on every surface that reads it.
+    /// Binary-search bounds on a TIME-ASCENDING signal, so a primitive can take the slice of
+    /// points in an event's window in O(log n) instead of scanning all n samples per event —
+    /// the O(events × samples) cost that dominates the Insights load as history grows. The
+    /// caller must pass a signal already sorted by time. `firstIndexAtOrAfter` = lower bound
+    /// (first time ≥ t); `firstIndexAfter` = upper bound (first time > t). A half-open slice
+    /// `[atOrAfter(lo), after(hi))` reproduces `filter { $0.time >= lo && $0.time <= hi }`
+    /// exactly (same elements, same order — the source is sorted), so results are unchanged.
+    static func firstIndexAtOrAfter(_ s: [(time: Date, value: Double)], _ t: Date) -> Int {
+        var lo = 0, hi = s.count
+        while lo < hi { let m = (lo + hi) >> 1; if s[m].time < t { lo = m + 1 } else { hi = m } }
+        return lo
+    }
+    static func firstIndexAfter(_ s: [(time: Date, value: Double)], _ t: Date) -> Int {
+        var lo = 0, hi = s.count
+        while lo < hi { let m = (lo + hi) >> 1; if s[m].time <= t { lo = m + 1 } else { hi = m } }
+        return lo
+    }
+
+    /// Memoizes `survivalDuration` results within ONE `generateInsights` run, where a
+    /// survival curve for the same dose-set is otherwise computed several times (the pooled
+    /// levodopa curve by both `doseOnWindow` and the wearing-off card; each formulation's
+    /// curve by both `estimableFormulations` and the wearing-off row loop). Each miss is an
+    /// O(doses × samples) scan of the whole signal, so deduping is the biggest single perf win.
+    /// Keyed on (events, onThreshold) ONLY — safe because the cache lives for one run with a
+    /// fixed signal + sleep; never reuse an instance across runs or signals. Not Sendable and
+    /// not needed to be: `generateInsights` is synchronous, so the cache never crosses a task.
+    final class SurvivalCache {
+        private var store: [String: SurvivalDuration] = [:]
+        private func key(_ events: [Date], _ onThreshold: Double) -> String {
+            "\(onThreshold)|" + events.sorted().map { $0.timeIntervalSince1970.description }
+                .joined(separator: ",")
+        }
+        func get(_ events: [Date], _ onThreshold: Double) -> SurvivalDuration? {
+            store[key(events, onThreshold)]
+        }
+        func set(_ events: [Date], _ onThreshold: Double, _ value: SurvivalDuration) {
+            store[key(events, onThreshold)] = value
+        }
+    }
+
     static func survivalDuration(
         signal: [(time: Date, value: Double)], events: [Date], onThreshold: Double,
-        sleep: [SleepInterval] = []
+        sleep: [SleepInterval] = [], cache: SurvivalCache? = nil
     ) -> SurvivalDuration {
+        if let hit = cache?.get(events, onThreshold) { return hit }
         let series = signal.sorted { $0.time < $1.time }
         let ds = events.sorted()
         var results: [DoseDuration] = []
@@ -1213,7 +1266,9 @@ nonisolated extension CorrelationEngine {
 
             let lo = t0.addingTimeInterval(-preMin * 60)
             let hi = t0.addingTimeInterval(maxWindow * 60)
-            let win = series.filter { $0.time >= lo && $0.time <= hi }
+            // Was `series.filter { $0.time >= lo && $0.time <= hi }` (O(n) per dose); same
+            // elements via binary search since `series` is time-sorted.
+            let win = series[firstIndexAtOrAfter(series, lo)..<firstIndexAfter(series, hi)]
             if win.count < 4 { continue }
 
             let rel = win.map { $0.time.timeIntervalSince(t0) / 60.0 }
@@ -1262,9 +1317,11 @@ nonisolated extension CorrelationEngine {
             ))
         }
         let km = kmMedian(durations: results.map(\.durationMin), observed: results.map(\.observed))
-        return SurvivalDuration(
+        let out = SurvivalDuration(
             durations: results, kmMedian: km,
             observedCount: results.filter { $0.observed }.count)
+        cache?.set(events, onThreshold, out)
+        return out
     }
 
     /// Tremor/dose adapter over the survival primitive. The parity surface the test
@@ -1330,7 +1387,8 @@ nonisolated extension CorrelationEngine {
     /// composes the clinical-discussion card.
     static func wearingOffInsight(samples: [TremorPoint], doses: [Dose],
                                   onThreshold: Double = CorrelationEngine.offThreshold,
-                                  sleep rawSleep: [SleepInterval] = []) -> Insight? {
+                                  sleep rawSleep: [SleepInterval] = [],
+                                  cache: SurvivalCache? = nil) -> Insight? {
         let sig = samples.map { (time: $0.timestamp, value: $0.tremorScore) }
 
         // The two uses of sleep take DIFFERENT inputs, and the difference is load-bearing.
@@ -1365,7 +1423,7 @@ nonisolated extension CorrelationEngine {
         // formulations, while "how long it lasts" is per-formulation — so the aggregate curve
         // stays the visual, and the by-formulation medians go in the text.
         let pooled = survivalDuration(signal: sig, events: doses.map(\.timestamp),
-                                      onThreshold: onThreshold, sleep: measuredSleep)
+                                      onThreshold: onThreshold, sleep: measuredSleep, cache: cache)
         let pooledResults = pooled.durations
         guard pooledResults.count >= 20, pooled.kmMedian.isFinite else { return nil }
         // Daily OFF attributable to dose SPACING: sum every gap's shortfall against how long a
@@ -1421,7 +1479,7 @@ nonisolated extension CorrelationEngine {
         var rows: [Row] = []
         for (key, ds) in Dictionary(grouping: doses, by: { formulationKey($0.name) }) {
             let surv = survivalDuration(signal: sig, events: ds.map(\.timestamp),
-                                        onThreshold: onThreshold, sleep: measuredSleep)
+                                        onThreshold: onThreshold, sleep: measuredSleep, cache: cache)
             let results = surv.durations
             guard results.count >= 20, surv.kmMedian.isFinite else { continue }
             var dayIntervals: [Double] = []
@@ -1627,18 +1685,21 @@ nonisolated extension CorrelationEngine {
         events: [(start: Date, end: Date)], signal: [(time: Date, value: Double)],
         preMin: Double, postMin: Double, activityLabel: String
     ) -> InsightChart? {
+        // Sort once, binary-search each window — was O(events × n). Binning + means are
+        // order-independent, so the curve is identical.
+        let sortedSig = signal.sorted { $0.time < $1.time }
         var series: [[Double]] = []
         var preMeans: [Double] = []
         for ev in events {
             let postHi = ev.end.addingTimeInterval(postMin * 60)
-            let post = signal.filter { $0.time > ev.end && $0.time <= postHi }
+            let post = sortedSig[firstIndexAfter(sortedSig, ev.end)..<firstIndexAfter(sortedSig, postHi)]
             guard !post.isEmpty else { continue }
             let rel = post.map { $0.time.timeIntervalSince(ev.end) / 60.0 }
             let (_, raw) = binned(rel: rel, vals: post.map(\.value), lo: 0, hi: postMin)
             series.append(smooth(raw))
 
             let preLo = ev.start.addingTimeInterval(-preMin * 60)
-            let pre = signal.filter { $0.time >= preLo && $0.time < ev.start }.map(\.value)
+            let pre = sortedSig[firstIndexAtOrAfter(sortedSig, preLo)..<firstIndexAtOrAfter(sortedSig, ev.start)].map(\.value)
             if !pre.isEmpty { preMeans.append(pre.reduce(0, +) / Double(pre.count)) }
         }
         guard !series.isEmpty else { return nil }
@@ -2143,10 +2204,10 @@ nonisolated extension CorrelationEngine {
     /// fallback as `doseOnWindowMinutes`).
     static func fitPulseModel(
         key: String, signal: [(time: Date, value: Double)], events: [Date],
-        sleep: [SleepInterval] = []
+        sleep: [SleepInterval] = [], cache: SurvivalCache? = nil
     ) -> PulseModel {
         let surv = survivalDuration(signal: signal, events: events,
-                                    onThreshold: offThreshold, sleep: sleep)
+                                    onThreshold: offThreshold, sleep: sleep, cache: cache)
         let dr = doseResponseByTimeOfDay(signal: signal, events: events, preMin: preMin, postMin: postMin)
         var onsetByBucket: [Bucket: Double] = [:]
         for b in Bucket.allCases {
@@ -2165,11 +2226,12 @@ nonisolated extension CorrelationEngine {
     /// clear the wearing-off floor. This set — data-derived, per user — replaces the old
     /// hard-coded `sinemet/mucuna` name filter everywhere: the gate IS the classifier.
     static func estimableFormulations(
-        signal: [(time: Date, value: Double)], doses: [Dose], sleep: [SleepInterval] = []
+        signal: [(time: Date, value: Double)], doses: [Dose], sleep: [SleepInterval] = [],
+        cache: SurvivalCache? = nil
     ) -> [String: PulseModel] {
         var out: [String: PulseModel] = [:]
         for (key, ds) in Dictionary(grouping: doses, by: { formulationKey($0.name) }) {
-            let m = fitPulseModel(key: key, signal: signal, events: ds.map(\.timestamp), sleep: sleep)
+            let m = fitPulseModel(key: key, signal: signal, events: ds.map(\.timestamp), sleep: sleep, cache: cache)
             if m.isEstimable, gate(wearingOffGate, n: m.durationsCount) != nil { out[key] = m }
         }
         return out
