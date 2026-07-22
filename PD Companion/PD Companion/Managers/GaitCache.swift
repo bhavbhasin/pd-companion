@@ -27,8 +27,15 @@ nonisolated enum GaitCache {
 
     struct Payload: Codable, Sendable {
         var excludedSignature: String
+        var fullBuiltAt: Date                // when the last COLD full sweep ran (carried through warm merges)
         var metrics: [String: MetricCache]   // keyed by GaitMetric.rawValue
     }
+
+    /// Force a full cold rebuild when the cache is older than this. Append-only merges can't
+    /// drop a sample deleted from HealthKit, and never prune past the 12-year window; a
+    /// periodic cold sweep resolves both. 14 days: deletions/pruning are not time-critical for
+    /// a multi-year monthly-median trend, and a fortnightly ~2s refetch is a fine price.
+    static let maxAge: TimeInterval = 14 * 24 * 3600
 
     private static var fileURL: URL {
         let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]

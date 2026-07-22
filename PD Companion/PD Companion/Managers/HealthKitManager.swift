@@ -736,27 +736,38 @@ class HealthKitManager: ObservableObject {
     func fetchGaitSeries(
         excludedSources: Set<String> = []
     ) async -> [GaitMetric: [GaitSample]] {
+        let now = Date()
         let signature = GaitCache.signature(excludedSources)
         // Cache read/write off the main actor (small JSON, but no reason to block UI).
         let cached = await Task.detached { GaitCache.load() }.value
-        // Only reuse the cache if it was built under the SAME source-exclusion set.
-        let usable = (cached?.excludedSignature == signature) ? cached : nil
+        // Reuse the cache only if it was built under the SAME source-exclusion set AND was
+        // fully rebuilt recently. The age check forces a periodic cold sweep, which is what
+        // lets DELETIONS in HealthKit eventually drop out (the merge is append-only and can't
+        // un-know a sample) and bounds unbounded growth past the 12-year window.
+        let usable: GaitCache.Payload?
+        if let cached, cached.excludedSignature == signature,
+           now.timeIntervalSince(cached.fullBuiltAt) <= GaitCache.maxAge {
+            usable = cached
+        } else {
+            usable = nil
+        }
+        let fullBuiltAt = usable?.fullBuiltAt ?? now   // reset when we do a full rebuild
 
-        let now = Date()
         let fullStart = Calendar.current.date(byAdding: .year, value: -12, to: now) ?? .distantPast
 
         var out: [GaitMetric: [GaitSample]] = [:]
         var metricsPayload: [String: GaitCache.MetricCache] = [:]
         for metric in GaitMetric.allCases {
             let prior = usable?.metrics[metric.rawValue]
-            // Incremental: query only [last fetch, now]; full 12-year sweep on a cold cache.
+            // Incremental: query only (last fetch, now]; full 12-year sweep on a cold/expired cache.
             let start = prior?.watermark ?? fullStart
             let fresh = await fetchGaitMetric(metric, start: start, end: now, excluded: excludedSources)
-            let merged = (prior?.samples ?? []) + fresh   // disjoint time ranges → no dedup
+            let merged = (prior?.samples ?? []) + fresh   // strictStartDate → windows disjoint, no dedup
             out[metric] = merged
             metricsPayload[metric.rawValue] = GaitCache.MetricCache(watermark: now, samples: merged)
         }
-        let payload = GaitCache.Payload(excludedSignature: signature, metrics: metricsPayload)
+        let payload = GaitCache.Payload(
+            excludedSignature: signature, fullBuiltAt: fullBuiltAt, metrics: metricsPayload)
         await Task.detached { GaitCache.save(payload) }.value
         return out
     }
@@ -764,7 +775,11 @@ class HealthKitManager: ObservableObject {
     private func fetchGaitMetric(
         _ metric: GaitMetric, start: Date, end: Date, excluded: Set<String>
     ) async -> [GaitSample] {
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        // `.strictStartDate`: match by START date only, so a sample lands in exactly one
+        // delta window. Without it HealthKit matches by OVERLAP, and an interval sample
+        // straddling a fetch instant would be returned in two consecutive windows and cached
+        // twice (a silent duplicate that skews the monthly median).
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
         let (type, unit) = Self.gaitHKType(metric)
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
         return await withCheckedContinuation { continuation in
