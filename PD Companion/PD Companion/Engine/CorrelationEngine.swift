@@ -581,11 +581,18 @@ nonisolated extension CorrelationEngine {
     // exactly; the gait spec finally uses the t-test p-value the trend already
     // computes (it was hard-coded .moderate, discarding that p).
 
-    /// Afternoon-dose: n (afternoon doses) + effect (afternoon−morning onset min, signed).
+    /// Afternoon-dose: per-bucket dose count (the binding n = the smaller of morning /
+    /// afternoon) + a two-sample p (does the onset gap beat each bucket's wobble?). The old
+    /// flat onset-minute floors (15 / 20 / 25 min) are gone — an unsourced meaningfulness
+    /// threshold with no onset MCID to pin it to; the wobble is the honest yardstick now.
+    /// Mirrors `gaitTrendGate` deliberately: same 1% / 5% significance bars, so the two
+    /// neurologist-facing cards read "how sure" consistently. Emerging = a gap is present
+    /// (caller guards afternoon-slower) but not yet significant. See docs/design/
+    /// insights-card-confidence-redesign.md.
     static let doseResponseGate = GateSpec(
-        strong:   GateBar(minN: 20, minEffect: 25),
-        moderate: GateBar(minN: 10, minEffect: 20),
-        floor:    GateBar(minN: 5,  minEffect: 15))
+        strong:   GateBar(minN: 20, maxP: 0.01),
+        moderate: GateBar(minN: 10, maxP: 0.05),
+        floor:    GateBar(minN: 3))
 
     /// Minimum clinically important difference in daily OFF time: 60 min/day, the
     /// stricter end of the −1.0…−1.3 h seen in the pramipexole pivotal trials.
@@ -747,6 +754,38 @@ nonisolated extension CorrelationEngine {
         let mid = sorted.count / 2
         return sorted.count % 2 == 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
     }
+
+    /// Sample standard deviation (n−1). NaN with fewer than two values.
+    static func sampleSD(_ xs: [Double]) -> Double {
+        let n = xs.count
+        guard n >= 2 else { return .nan }
+        let nD = Double(n)
+        let mean = xs.reduce(0, +) / nD
+        let ss = xs.reduce(0.0) { $0 + ($1 - mean) * ($1 - mean) }
+        return (ss / (nD - 1)).squareRoot()
+    }
+
+    /// Two-sided p for Welch's two-sample t-test (unequal variances) — "do these two
+    /// group means differ by more than their own scatter and counts would predict?" This
+    /// is the dose-window card's "does the morning→afternoon onset gap beat the wobble?"
+    /// test, replacing the flat 15-min rule. Reuses the same t-distribution tail
+    /// (regularized incomplete beta) as the one-sample test, so significance is computed
+    /// consistently engine-wide. nil when either group is too small or has no scatter to
+    /// form a standard error (→ significance can't be established → the card stays Emerging).
+    static func twoSampleTTestP(meanA: Double, sdA: Double, nA: Int,
+                                meanB: Double, sdB: Double, nB: Int) -> Double? {
+        guard nA >= 2, nB >= 2, sdA.isFinite, sdB.isFinite else { return nil }
+        let nAd = Double(nA), nBd = Double(nB)
+        let vA = sdA * sdA / nAd, vB = sdB * sdB / nBd
+        let se = (vA + vB).squareRoot()
+        guard se > 0 else { return nil }
+        let t = (meanA - meanB) / se
+        // Welch–Satterthwaite degrees of freedom.
+        let denom = (vA * vA) / (nAd - 1) + (vB * vB) / (nBd - 1)
+        guard denom > 0 else { return nil }
+        let df = (vA + vB) * (vA + vB) / denom
+        return regularizedIncompleteBeta(a: df / 2, b: 0.5, x: df / (df + t * t))
+    }
 }
 
 // MARK: - Dose-response (port of analysis/src/dose_response.py)
@@ -808,12 +847,13 @@ nonisolated extension CorrelationEngine {
     /// tremor/dose adapter over this; the test pins it for parity.
     struct DoseResponseByToD {
         let traces: [DoseTrace]
-        /// Mean onset latency (t½, the 50%-of-drop time) + contributing dose count
-        /// for one time-of-day bucket. Doses whose drop never reached 50% (`tHalf`
-        /// NaN) are excluded, as in the lab.
-        func onset(_ bucket: Bucket) -> (mean: Double, n: Int) {
+        /// Mean onset latency (t½, the 50%-of-drop time), contributing dose count, and
+        /// the within-bucket scatter (SD, the "wobble") for one time-of-day bucket. Doses
+        /// whose drop never reached 50% (`tHalf` NaN) are excluded, as in the lab. The SD
+        /// is what the card's gate compares the morning→afternoon gap against.
+        func onset(_ bucket: Bucket) -> (mean: Double, n: Int, sd: Double) {
             let xs = traces.filter { $0.bucket == bucket && !$0.tHalf.isNaN }.map(\.tHalf)
-            return (CorrelationEngine.nanmean(xs), xs.count)
+            return (CorrelationEngine.nanmean(xs), xs.count, CorrelationEngine.sampleSD(xs))
         }
     }
 
@@ -930,22 +970,27 @@ nonisolated extension CorrelationEngine {
         let aft = dr.onset(.afternoon)
         let morn = dr.onset(.morning)
 
-        // Surfacing gate (logic-based; see Insights design): need enough afternoon
-        // doses, a morning comparator, and a meaningfully slower afternoon onset.
-        guard morn.n >= 3, !aft.mean.isNaN, !morn.mean.isNaN else { return nil }
+        // Both buckets need enough doses to have a stable mean + a wobble; the card only
+        // claims the afternoon is SLOWER, so require a positive gap (a two-sided test would
+        // otherwise fire on a faster afternoon too). Then gate on the smaller bucket's count
+        // + the two-sample p — "does the gap beat the wobble?" — replacing the flat 15-min
+        // rule. Emerging = the gap is there but not yet significant (p not required at floor).
+        guard aft.n >= 3, morn.n >= 3, aft.mean.isFinite, morn.mean.isFinite else { return nil }
         let delta = aft.mean - morn.mean
-        // Gate on afternoon-dose count + the signed onset gap. The floor
-        // (n≥5, delta≥15) subsumes the old explicit guards: nil = don't surface.
-        guard let confidence = gate(Self.doseResponseGate, n: aft.n, effect: delta) else { return nil }
+        guard delta > 0 else { return nil }
+        let gapP = twoSampleTTestP(meanA: aft.mean, sdA: aft.sd, nA: aft.n,
+                                   meanB: morn.mean, sdB: morn.sd, nB: morn.n)
+        guard let confidence = gate(Self.doseResponseGate, n: min(aft.n, morn.n), p: gapP) else { return nil }
 
-        let scored = traces.filter { !$0.tHalf.isNaN }.count
         let days = Set(traces.map { calendar.startOfDay(for: $0.t0) }).count
         let aftMin = Int(aft.mean.rounded())
         let mornMin = Int(morn.mean.rounded())
 
-        // Single string literals (no `+` chains — those blow up Swift's type-checker).
-        let summary = "Takes ~\(aftMin) min to kick in vs. ~\(mornMin) min in the morning — but lasts a normal length."
-        let finding = "It also peaks weaker, while duration stays normal — so the issue is how quickly the dose gets in, not it wearing off early. From \(scored) scored doses over \(days) days."
+        // Facts over verdict: state the two averages plainly and the per-bucket counts;
+        // the wobble stays invisible (it lives in the gate, not the words). Single string
+        // literals (no `+` chains — those blow up Swift's type-checker).
+        let summary = "On average, your afternoon dose takes \(aftMin) minutes to kick in, versus \(mornMin) minutes for your morning dose."
+        let finding = "It also peaks weaker, while duration stays normal — so the issue is how quickly the dose gets in, not it wearing off early. Morning: \(morn.n) doses · Afternoon: \(aft.n) doses over \(days) days."
         let mechanism = "Levodopa is absorbed in the gut and enters the brain through the same transporter dietary protein uses, so a protein lunch can slow and blunt the dose after it. PD also slows stomach emptying, more after meals and later in the day. Both point to one lever you control: when you eat relative to the dose. Likely, not proven."
 
         // Stage omitted — `run()` derives it from the entry's safety class. This entry
@@ -955,7 +1000,7 @@ nonisolated extension CorrelationEngine {
         // consider" detail and the matching section of the shareable report — without
         // it the card (and the PDF section) would render bare.
         return Insight(
-            title: "Your afternoon dose works slower",
+            title: "Your afternoon dose takes longer to kick in",
             summary: summary,
             finding: finding,
             mechanism: mechanism,
@@ -968,7 +1013,7 @@ nonisolated extension CorrelationEngine {
                     "Afternoon onset ~\(aftMin) min vs ~\(mornMin) min in the morning",
                     "Afternoon dose also peaks weaker (shallower ON)",
                     "Duration stays normal — the issue is onset, not early wearing-off",
-                    "From \(scored) scored doses over \(days) days"
+                    "Morning: \(morn.n) doses, Afternoon: \(aft.n) doses over \(days) days"
                 ]
             )
         )
