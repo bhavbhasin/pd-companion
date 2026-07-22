@@ -12,6 +12,8 @@ struct WatchDashboardView: View {
                 VStack(spacing: 6) {
                     if !movementManager.isAvailable {
                         unavailableView
+                    } else if movementManager.isMotionDenied {
+                        motionDeniedView
                     } else if movementManager.recentTremorSamples.isEmpty {
                         monitoringActiveView
                     } else {
@@ -43,6 +45,24 @@ struct WatchDashboardView: View {
             .padding(.top, 20)
     }
 
+    // Motion & Fitness is off — the real reason tremor stays empty. Tell the user how to
+    // fix it instead of showing a false "Monitoring active".
+    private var motionDeniedView: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 20))
+                .foregroundStyle(.orange)
+            Text("Motion access needed")
+                .font(.headline)
+            Text("Enable Settings → Privacy & Security → Motion & Fitness, and allow Kampa. Tremor tracking can't run without it.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 16)
+    }
+
     private var monitoringActiveView: some View {
         VStack(spacing: 6) {
             Text("Monitoring active")
@@ -51,9 +71,34 @@ struct WatchDashboardView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            statusFooter
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 24)
+    }
+
+    // Discreet real-state line so an empty screen is diagnosable from a screenshot: when we
+    // last checked, how many samples came back, and any surfaced error — instead of a bare
+    // reassurance that hides every failure mode behind one message.
+    private var statusFooter: some View {
+        VStack(spacing: 2) {
+            Text(lastCheckedText)
+            if let error = movementManager.error {
+                Text(error)
+                    .foregroundStyle(.orange)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .font(.system(size: 10))
+        .foregroundStyle(.secondary)
+        .padding(.top, 10)
+    }
+
+    private var lastCheckedText: String {
+        guard let date = movementManager.lastQueryDate else { return "Waiting for first check…" }
+        let f = DateFormatter()
+        f.timeStyle = .short
+        return "Last checked \(f.string(from: date)) · 0 readings"
     }
 
     private var latestReadingView: some View {

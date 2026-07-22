@@ -577,6 +577,15 @@ private struct TremorTimelinePanel: View {
     @Binding var selectedTime: Date?
     var onEventTap: (DayEvent) -> Void = { _ in }
 
+    // First time we render an empty tremor state, so the copy can escalate from "warming up"
+    // to a real "check your Watch setup" prompt once it's clearly overdue (Jon sat ~a month
+    // on the reassuring version).
+    @AppStorage("tremor.firstEmptyEpoch") private var firstEmptyEpoch: Double = 0
+    private var daysSinceFirstEmpty: Double {
+        guard firstEmptyEpoch > 0 else { return 0 }
+        return Date().timeIntervalSince(Date(timeIntervalSince1970: firstEmptyEpoch)) / 86_400
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -1020,6 +1029,11 @@ private struct TremorTimelinePanel: View {
     // Empty-state copy depends on *why* there's no data.
     private var emptyMessage: String {
         if !hasEverHadData {
+            // Overdue: stop reassuring and point at the usual culprits (Watch app not
+            // installed, or Motion & Fitness off).
+            if daysSinceFirstEmpty >= 2 {
+                return "Still no tremor data. Check that Kampa is installed on your Apple Watch, and that Motion & Fitness is enabled in Settings → Privacy & Security → Motion & Fitness."
+            }
             return "Kampa is warming up. Tremor tracking begins after about a day of Watch wear."
         }
         if isSyncHint {
@@ -1040,6 +1054,15 @@ private struct TremorTimelinePanel: View {
                 .multilineTextAlignment(.center)
         }
         .frame(height: 120).frame(maxWidth: .infinity)
+        .onAppear {
+            // Stamp the first time we ever show an empty state, so the copy can escalate
+            // after a couple of days. Only while truly dataless — clears once data arrives.
+            if !hasEverHadData, firstEmptyEpoch == 0 {
+                firstEmptyEpoch = Date().timeIntervalSince1970
+            } else if hasEverHadData, firstEmptyEpoch != 0 {
+                firstEmptyEpoch = 0
+            }
+        }
     }
 }
 

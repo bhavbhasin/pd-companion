@@ -14,8 +14,19 @@ final class MovementDisorderManager: ObservableObject {
     @Published var recentTremorSamples: [TremorSample] = []
     @Published var recentDyskinesiaSamples: [DyskinesiaSample] = []
     @Published var error: String?
+    // Motion & Fitness authorization for the Movement Disorder API. Without it, every
+    // query silently returns zero samples — the failure mode Jon hit. We surface this so
+    // the UI can say "Motion access needed" instead of a false "Monitoring active".
+    @Published var authorizationStatus: CMAuthorizationStatus = .notDetermined
 
     init() {}
+
+    /// True once we know Motion access is granted. `.notDetermined` is treated as "not yet
+    /// blocking" — the first query triggers the system prompt.
+    var isAuthorized: Bool { authorizationStatus == .authorized }
+    var isMotionDenied: Bool {
+        authorizationStatus == .denied || authorizationStatus == .restricted
+    }
 
     func checkAvailability() {
 #if targetEnvironment(simulator)
@@ -30,7 +41,15 @@ final class MovementDisorderManager: ObservableObject {
         }
         manager = CMMovementDisorderManager()
         isAvailable = true
+        refreshAuthorizationStatus()
 #endif
+    }
+
+    /// Read the current Motion & Fitness authorization. There is no explicit "request" call
+    /// for this API — the prompt is triggered the first time we start monitoring / query, so
+    /// we just read status here and re-read after each query to catch the user's response.
+    func refreshAuthorizationStatus() {
+        authorizationStatus = CMMovementDisorderManager.authorizationStatus()
     }
 
     func startMonitoring() {
@@ -56,6 +75,10 @@ final class MovementDisorderManager: ObservableObject {
 
             manager.queryDyskineticSymptom(from: queryStart, to: now) { dyskinesiaResults, dyskinesiaError in
                 Task { @MainActor in
+                    // Re-read auth: the first query is what triggers the system prompt, so
+                    // the user's grant/deny lands right after this returns.
+                    self.refreshAuthorizationStatus()
+
                     if let tremorError {
                         self.error = tremorError.localizedDescription
                         completion?()
@@ -110,6 +133,7 @@ final class MovementDisorderManager: ObservableObject {
                         )
                     }
 
+                    self.error = nil
                     self.recentTremorSamples = samples
                     self.recentDyskinesiaSamples = dyskinesiaSamples
                     self.lastQueryDate = now
