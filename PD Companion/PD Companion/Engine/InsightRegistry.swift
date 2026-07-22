@@ -5,7 +5,8 @@ import HealthKit
 //
 // The list of QUESTIONS the engine is allowed to ask. Pure configuration: each
 // entry wires one `exposure` → one `outcome` through one `primitive`, plus the
-// rationale that admitted it and the gate's sufficiency floor (`minN`).
+// rationale that admitted it. (The gate's sufficiency floors live in the per-renderer
+// `GateSpec`s, not here — a dead `minN` field was removed.)
 //
 // This is the substrate the LLM proposes over and the human approves INTO.
 // Adding a question is a one-line diff in `starter` below — not new statistical
@@ -197,7 +198,6 @@ nonisolated struct RegistryEntry: Identifiable, Hashable {
     let rationale: String          // why this hypothesis exists — preserved as provenance
     let source: HypothesisSource
     let safety: SafetyClass
-    let minN: Int                  // sufficiency floor the gate enforces before showing anything
     var status: RegistryStatus = .active
     /// Singular question (default) or a template stamped per observed value. See `Instantiation`.
     var instantiation: Instantiation = .singular
@@ -221,7 +221,7 @@ nonisolated enum InsightRegistry {
             primitive: .doseResponseByTimeOfDay(preMin: 30, postMin: 180),
             renderer: .doseResponse,
             rationale: "Levodopa onset latency and completeness vary by time of day; afternoon doses observed slower and less complete.",
-            source: .curated, safety: .clinicalReferral, minN: 5),
+            source: .curated, safety: .clinicalReferral),
 
         RegistryEntry(
             id: "dose-tremor-wearing-off", category: .medication,
@@ -230,15 +230,19 @@ nonisolated enum InsightRegistry {
             primitive: .survivalDuration(onThreshold: 1.0),
             renderer: .wearingOff,
             rationale: "ON-duration per dose (Kaplan–Meier) reveals wearing-off; daytime dose gaps can exceed the effect window.",
-            source: .curated, safety: .clinicalReferral, minN: 5),
+            source: .curated, safety: .clinicalReferral),
 
         RegistryEntry(
             id: "dose-dyskinesia-peak", category: .medication,
             exposure: .levodopaDose, outcome: .dyskinesia,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
-            renderer: .windowedEffect,
+            // renderer nil = registered but DORMANT. It cannot render today: the windowed
+            // path guards `outcome.isTremor` and `windowedExposure` has no dose branch, so
+            // `.windowedEffect` here only shipped a question with no card. Restore a renderer
+            // once a dyskinesia signal resolver + a dose-exposure branch exist.
+            renderer: nil,
             rationale: "Peak-dose dyskinesia: involuntary movement can RISE 30–120 min post-dose (inverse of the tremor benefit).",
-            source: .curated, safety: .clinicalReferral, minN: 5),
+            source: .curated, safety: .clinicalReferral),
 
         // ───────────── Diet ↔ medication (your 3 PM question) ─────────────
         RegistryEntry(
@@ -246,14 +250,14 @@ nonisolated enum InsightRegistry {
             exposure: .meal(.proteinRich), outcome: .tremor,
             primitive: .mealTimingCompetition(windowMin: 90),
             rationale: "Dietary protein competes with levodopa absorption; a protein meal near a dose may slow or blunt its onset.",
-            source: .curated, safety: .lifestyleExperiment, minN: 8),
+            source: .curated, safety: .lifestyleExperiment),
 
         RegistryEntry(
             id: "meal-fullness-dose-onset", category: .food,
             exposure: .meal(.large), outcome: .tremor,
             primitive: .mealTimingCompetition(windowMin: 90),
             rationale: "A full stomach slows gastric emptying; a large meal near a dose may delay onset versus an empty-stomach dose.",
-            source: .curated, safety: .lifestyleExperiment, minN: 8),
+            source: .curated, safety: .lifestyleExperiment),
 
         // Food cluster. Both .active, but PROTECTED by the dose-confound guard
         // (CorrelationEngine.doseCleanEvents): caffeine/sugar are habitually consumed
@@ -271,7 +275,7 @@ nonisolated enum InsightRegistry {
             primitive: .windowedEffect(preMin: 15, postMin: 120),
             renderer: .windowedEffect,
             rationale: "Caffeine has mixed/possibly-beneficial PD effects (A2A-antagonist mechanism; istradefylline precedent); test its short-window association with tremor — dose-confound guarded, since intake co-times with doses.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
+            source: .curated, safety: .lifestyleExperiment),
 
         RegistryEntry(
             id: "sugar-tremor", category: .food,
@@ -279,7 +283,7 @@ nonisolated enum InsightRegistry {
             primitive: .windowedEffect(preMin: 15, postMin: 120),
             renderer: .windowedEffect,
             rationale: "A sugar load drives a glucose spike-and-crash; glucose swings may track with symptom steadiness. Second food-cluster entry — same primitive + renderer as caffeine, one registry line. Same dose-confound guard applies.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
+            source: .curated, safety: .lifestyleExperiment),
 
         // ───────────── Exercise cluster (ONE primitive, many activity types) ─────────────
         // ONE template, instantiated per workout type seen in the user's own data (was 13
@@ -294,7 +298,7 @@ nonisolated enum InsightRegistry {
             primitive: .windowedEffect(preMin: 30, postMin: 120),
             renderer: .windowedEffect,
             rationale: "Exercise cluster template: for each workout type the user actually logs, test its post-session tremor effect. Curated per-type rationales in `workoutRationales`.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5,
+            source: .curated, safety: .lifestyleExperiment,
             instantiation: .perObservedType),
 
         RegistryEntry(
@@ -303,7 +307,7 @@ nonisolated enum InsightRegistry {
             primitive: .windowedEffect(preMin: 30, postMin: 120),
             renderer: .windowedEffect,
             rationale: "Mental stillness lowers sympathetic arousal, which can amplify tremor; test the post-session effect.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
+            source: .curated, safety: .lifestyleExperiment),
 
         // ───────────── Sleep (overnight → next day) ─────────────
         RegistryEntry(
@@ -311,14 +315,14 @@ nonisolated enum InsightRegistry {
             exposure: .sleep(.duration), outcome: .tremor,
             primitive: .overnightLag,
             rationale: "Sleep deprivation worsens PD motor control; test prior-night duration against next-day tremor.",
-            source: .curated, safety: .lifestyleExperiment, minN: 14),
+            source: .curated, safety: .lifestyleExperiment),
 
         RegistryEntry(
             id: "sleep-deep-next-day-tremor", category: .sleep,
             exposure: .sleep(.deep), outcome: .tremor,
             primitive: .overnightLag,
             rationale: "Restorative deep sleep may matter more than raw duration; test prior-night deep sleep against next-day tremor.",
-            source: .curated, safety: .lifestyleExperiment, minN: 14),
+            source: .curated, safety: .lifestyleExperiment),
 
         // ───────────── Autonomic state ─────────────
         RegistryEntry(
@@ -326,7 +330,7 @@ nonisolated enum InsightRegistry {
             exposure: .hrv, outcome: .tremor,
             primitive: .withinDayAssociation,
             rationale: "HRV indexes autonomic/stress state; low-HRV stretches may co-occur with higher tremor within a day.",
-            source: .curated, safety: .lifestyleExperiment, minN: 8),
+            source: .curated, safety: .lifestyleExperiment),
 
         // ───────────── Circadian baseline ─────────────
         RegistryEntry(
@@ -334,7 +338,7 @@ nonisolated enum InsightRegistry {
             exposure: .timeOfDay, outcome: .tremor,
             primitive: .circadianBaseline,
             rationale: "Medication control drifts across the day; an hour-of-day tremor baseline shows when control is weakest.",
-            source: .curated, safety: .clinicalReferral, minN: 10),
+            source: .curated, safety: .clinicalReferral),
 
         // ───────────── Long-term progression ─────────────
         RegistryEntry(
@@ -343,7 +347,7 @@ nonisolated enum InsightRegistry {
             primitive: .longTermTrend,
             renderer: .gaitComposite,
             rationale: "Walking speed is a sensitive PD progression marker; a multi-month trend tracks mobility over time.",
-            source: .curated, safety: .clinicalReferral, minN: 6),
+            source: .curated, safety: .clinicalReferral),
     ]
 
     // MARK: Template instantiation (the exercise cluster, quantified over observed types)
@@ -370,8 +374,7 @@ nonisolated enum InsightRegistry {
                 renderer: template.renderer,
                 rationale: workoutRationales[raw] ?? genericWorkoutRationale,
                 source: template.source,
-                safety: template.safety,
-                minN: template.minN)
+                safety: template.safety)
         }
     }
 

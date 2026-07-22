@@ -34,7 +34,7 @@ flowchart TB
     I["Ingestion<br/>HealthKit + SwiftData + adapters<br/>→ canonical shapes: signals & events"]
     C["Catalog<br/>variable menu + summary stats<br/><i>(no raw rows)</i>"]
     R["Registry<br/>candidate analyses<br/>human-authored + LLM-proposed"]
-    J["Engine / Judge ⚖<br/>de-confound → run primitive → gate<br/>(effect size · n · significance · stability)<br/><b>the ONLY step allowed to claim 'real'</b>"]
+    J["Engine / Judge ⚖<br/>de-confound → run primitive → gate<br/>(effect size · n · significance)<br/><b>the ONLY step allowed to claim 'real'</b>"]
     V["Render<br/>chart + card UI"]
     I --> C --> R --> J --> V
   end
@@ -129,7 +129,7 @@ flowchart TB
 ## Why this beats pure LLM "discovery" — on quality *and* safety
 
 - **Quality.** The insights we've already built encode domain-specific statistical models a generic scanner could never invent — e.g. dose-response = onset-latency *by time-of-day bucket, truncated at the next dose, baseline-corrected*; wearing-off = *Kaplan-Meier survival with censoring*. Automated discovery only ever produces shallow "X correlates with Y" cards. **The primitives carry clinician-grade quality; the LLM carries breadth.**
-- **Safety.** Scanning every variable pair for "anything significant" is a false-discovery machine — test enough pairs at p<0.05 and chance alone manufactures hits. The LLM's value is as a *prior*: it proposes only *mechanistically plausible* hypotheses, which keeps the number of tests small and each hit more likely to be real. The gate then enforces discipline: multiple-comparison correction, minimum effect size, minimum n, and replication across time windows before anything is shown.
+- **Safety.** Scanning every variable pair for "anything significant" is a false-discovery machine — test enough pairs at p<0.05 and chance alone manufactures hits. The LLM's value is as a *prior*: it proposes only *mechanistically plausible* hypotheses, which keeps the number of tests small and each hit more likely to be real. The gate then enforces discipline: statistical significance and a structural minimum-n on every card, plus a minimum effect size **only where a sourced clinical threshold (MCID) exists** (wearing-off = 60 min/day OFF; gait = 0.06 m/s). Multiplicity is controlled **by design, not by a formal family-wise correction**: observational cards state facts (before→after against the user's own variability) and declare no verdict — no per-card claim to over-fire, so no family-wise error to control — while the few cards that *do* declare a verdict (wearing-off, gait) are MCID-gated and few. There is no cross-time-window replication step. See docs/design/insights-card-confidence-redesign.md.
 
 ---
 
@@ -147,7 +147,22 @@ This is not hypothetical — it surfaced on real data (Jun 21). The caffeine car
 
 It is deliberately **conservative**: for an exposure habitually taken near doses, n collapses and the honest output is "can't separate this from your medication" (no card) rather than a confident, wrong claim. On-device this flipped caffeine from **"Strong / −32% / 52 servings"** to **"Emerging / +9% / 13 dose-clean servings."** The **sign flip** (−32% → +9%) once dose-shadowed servings are removed is the proof that the original "benefit" was the medication. Sugar, with fewer than 5 dose-clean servings, correctly surfaces nothing — the gate's n-floor doing its job on the other side.
 
-**Why this lives in the Judge — not the Adapter or the Registry.** Confounding is a property of *the data and the question*, not of how a variable was ingested. So the guard belongs in the deterministic judging layer, alongside the gate that already enforces n / effect / significance / stability. It is a fourth discipline the Judge applies before it will call a pattern real: **de-confound, then gate.** And because the mechanism is reverse causation as much as correlation (you exercise *because* you're ON), the guard is **general across exposures**, not a food-specific patch — which is exactly why it earns a place in the architecture rather than in one card's code.
+**Why this lives in the Judge — not the Adapter or the Registry.** Confounding is a property of *the data and the question*, not of how a variable was ingested. So the guard belongs in the deterministic judging layer, alongside the gate that already enforces n / effect / significance. It is a fourth discipline the Judge applies before it will call a pattern real: **de-confound, then gate.** And because the mechanism is reverse causation as much as correlation (you exercise *because* you're ON), the guard is **general across exposures**, not a food-specific patch — which is exactly why it earns a place in the architecture rather than in one card's code.
+
+---
+
+## Constants ledger
+
+Every gate/threshold constant is one of four kinds. **Rule: a constant may not ship unclassified** — it carries a `Ledger:` tag in a doc comment at the constant itself, and its home is this table. This is the discipline that keeps the gate honest: the redesign that removed the arbitrary 15-min onset floor and the dead `minN` field started by noticing they had no defensible class.
+
+| Class | Meaning | Examples |
+|---|---|---|
+| **sourced** | A published clinical threshold, cited at the constant. | wearing-off MCID = **60 min/day** OFF (pramipexole pivotal trials); gait MCID = **0.06 m/s** (Hass 2014). |
+| **structural** | Derived from the data or a mathematical minimum — not a free knob. | windowed-effect & dose-window floors = **n ≥ 3** (minimum for a mean + a spread); dose-confound `onWindow` = the user's own KM median ON-duration; the significance bars **p ≤ 0.01 / 0.05** (conventional); the ported dose-window params (preMin 30 / postMin 180 / keyWindow 90 / minCoverage 0.5), parity-pinned to the validated Python lab. |
+| **provisional** | A placeholder awaiting data to calibrate; flagged as such. | dyskinesia noise floor = **0.5** (needs a dyskinetic user's stream — Bhav ≈ 0 can't calibrate); `offThreshold` = **1.0** tremor = OFF (tested, only ~6% swing, but not clinically anchored). |
+| **arbitrary** | Named tech debt — works, but has no principled basis yet. | time-of-day `bucketOf` cliffs (6 / 9.5 / 12.5 / 17); the Strong/Moderate **n-tiers** (dose 20/10, gait 24/12/6); `doseOnWindowFallback` = **190 min**. |
+
+No tremor MCID and no dose-onset MCID exist (literature-searched Jul 2026), which is *why* the tremor and dose-window cards moved to facts-over-verdict — there was nothing to source an effect gate to. The unwired `GateBar.minStability` axis (a reserved hook) is not a constant and not in this table.
 
 ---
 
@@ -189,7 +204,7 @@ The statistics, the charts, and the **parity tests** all survive and get *reused
 1. Leave the three cards running exactly as-is.
 2. Extract **one** primitive (start with gait's trend-regression — the cleanest). Re-express the card as `registry entry → primitive`. Parity tests prove the output is identical. Ship.
 3. Repeat for dose-response, then survival. Three primitives + a thin registry, still producing today's exact cards.
-4. Add the **gate** layer (significance + sufficiency + multiple-comparison correction).
+4. Add the **gate** layer (significance + sufficiency + MCID-gated effect size where a clinical threshold is sourced).
 5. Add **LLM hypothesis generation** feeding candidate registry entries.
 6. Swap hardcoded narration for **LLM narration**, keeping today's strings as a deterministic fallback.
 
@@ -273,7 +288,7 @@ There are two separate approvals, and the human only ever performs the first:
 | Approval | What it decides | Who | When |
 |---|---|---|---|
 | **Question → registry** | "Is this hypothesis sane and *safe* to let the engine test?" | **Human (you)** | At review time |
-| **Answer is real** | "Does this pattern clear effect size + n + significance + stability?" | **Engine, deterministically** | Per-user, automatic |
+| **Answer is real** | "Does this pattern clear significance + n, and effect size where an MCID is sourced?" | **Engine, deterministically** | Per-user, automatic |
 
 Approving the registry entry is **never** "Bhav blessed the conclusion that Tai Chi helps." It is "Bhav agreed Tai Chi-vs-tremor is a sound, safe *question*." The engine then judges the answer against each user's own data and may surface nothing. This is the entire safety story: a human admits hypotheses to the test set; only deterministic statistics promote one to a visible insight.
 

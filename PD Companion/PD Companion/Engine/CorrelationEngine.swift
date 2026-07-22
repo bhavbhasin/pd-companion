@@ -388,6 +388,7 @@ nonisolated enum CorrelationEngine {
 
     /// Conservative default ON-window (minutes) used when the per-user KM median isn't
     /// estimable. ≈ the validated median ON-duration (~192 min).
+    /// Ledger: arbitrary (a fallback magnitude, not principled). See docs/intelligence-architecture.md.
     static let doseOnWindowFallback: Double = 190
 
     /// The dose-confound guard's ON-window, sourced from the SAME validated KM median
@@ -541,6 +542,10 @@ nonisolated extension CorrelationEngine {
         var minN: Int? = nil
         var minEffect: Double? = nil
         var maxP: Double? = nil
+        /// RESERVED, UNWIRED: no `GateSpec` sets this, so the gate never applies a stability
+        /// bar today. Kept as a generic hook for a future split-half / cross-window stability
+        /// check (its intended input, `WindowedEffect.perEvent`, is computed but not yet
+        /// consumed). Do not cite "stability" as an active gate axis until a spec sets it.
         var minStability: Double? = nil
     }
 
@@ -620,6 +625,7 @@ nonisolated extension CorrelationEngine {
     /// Minimum clinically important difference in daily OFF time: 60 min/day, the
     /// stricter end of the −1.0…−1.3 h seen in the pramipexole pivotal trials.
     /// Published, not tuned on our data. docs/design/wearing-off-margin.md.
+    /// Ledger: sourced (pramipexole pivotal trials). docs/intelligence-architecture.md.
     static let wearingOffMCIDMinPerDay = 60.0
 
     /// Dose-sufficiency: n (doses) only. Reused by formulation estimability and the
@@ -645,6 +651,9 @@ nonisolated extension CorrelationEngine {
     /// claims one is absent. The tiers are deliberately shared: "how sure are we" reads the
     /// same to the user either way, so only the question underneath differs.
     /// See `gaitInsight` and docs/design/confidence-presence-vs-absence.md.
+    /// Ledger: p bars 0.01/0.05 = structural (conventional significance); the n-tiers
+    /// (24/12/6 months) = arbitrary (named tech debt — how much data earns each badge).
+    /// Same split applies to `doseResponseGate`'s n-tiers. docs/intelligence-architecture.md.
     static let gaitTrendGate = GateSpec(
         strong:   GateBar(minN: 24, maxP: 0.01),
         moderate: GateBar(minN: 12, maxP: 0.05),
@@ -686,7 +695,9 @@ nonisolated extension CorrelationEngine {
         let delta: Double          // meanAfter − meanBefore (signed)
         let pctChange: Double      // 100·delta / meanBefore (NaN if baseline ≈ 0)
         let pValue: Double?
-        let perEvent: [Double]     // per-event (after − before), for stability / split-half
+        let perEvent: [Double]     // per-event (after − before). Intended for a future stability
+                                   // / split-half check; computed but NOT yet consumed (see
+                                   // GateBar.minStability, likewise unwired).
     }
 
     /// For each event, mean signal in `[start − preMin, start)` vs
@@ -816,6 +827,7 @@ nonisolated extension CorrelationEngine {
 nonisolated extension CorrelationEngine {
 
     // Tunables mirror the Python constants exactly.
+    // Ledger: structural (ported from the validated Python lab, parity-pinned). docs/intelligence-architecture.md.
     static let preMin = 30.0       // baseline window before the dose
     static let postMin = 180.0     // max trajectory window after the dose
     static let binMin = 5.0        // resampling resolution relative to dose
@@ -846,6 +858,9 @@ nonisolated extension CorrelationEngine {
         let binValues: [Double]
     }
 
+    // Ledger: arbitrary (named tech debt — fixed clock cliffs blend e.g. a 1pm near-lunch dose
+    // with a 4pm one; the parked fix moves to time-since-meal). docs/intelligence-architecture.md
+    // + docs/design/insights-card-confidence-redesign.md (Open/parked).
     static func bucketOf(_ hour: Double) -> Bucket {
         switch hour {
         case 6..<9.5:    return .morning
@@ -1066,6 +1081,7 @@ nonisolated extension CorrelationEngine {
 
 nonisolated extension CorrelationEngine {
 
+    // Ledger: provisional (tested — only ~6% swing — but not clinically anchored). docs/intelligence-architecture.md.
     static let offThreshold = 1.0   // tremor >= this == OFF
     static let maxWindow = 300.0    // look up to 5h post-dose for the natural decay
     static let gapIso = 240.0       // "isolated" dose = next dose >= this many min away
