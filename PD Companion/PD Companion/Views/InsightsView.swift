@@ -1097,7 +1097,7 @@ private struct GaitTrendChartView: View {
             .frame(height: 170)
             .accessibilityLabel("\(chart.metricLabel) over the years, monthly medians with a trend line")
 
-            Text("\(chart.metricLabel) (\(chart.unitLabel)) · monthly medians with trend. \(chart.higherIsWorse ? "Lower" : "Higher") is better.")
+            Text("\(chart.metricLabel) · month by month, with trend line. \(chart.higherIsWorse ? "Lower" : "Higher") is better.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }

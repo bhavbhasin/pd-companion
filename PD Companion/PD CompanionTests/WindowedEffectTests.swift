@@ -101,6 +101,36 @@ struct WindowedEffectTests {
         #expect(!insights.contains { $0.title.localizedCaseInsensitiveContains("Tango") })
     }
 
+    /// Template instantiation (item 1e): an UNLISTED activity — rowing was never a
+    /// hand-wired registry line — now fires a card once it clears the gate, proving the
+    /// exercise template stamps a question per observed type. The old 13-entry design
+    /// silently dropped rowing no matter how much you rowed. A never-performed activity
+    /// still stays silent (only observed types instantiate).
+    @Test func templateSurfacesUnlistedActivity() throws {
+        let rowingRaw = HKWorkoutActivityType.rowing.rawValue
+        var workouts: [WorkoutEvent] = []
+        var samples: [TremorPoint] = []
+        for i in 0..<8 {
+            let start = Self.t0.addingTimeInterval(Double(i) * 24 * Self.hour + 12 * Self.hour)
+            workouts.append(WorkoutEvent(start: start, duration: Self.hour, activityRawValue: rowingRaw))
+            for m in stride(from: 60.0, through: 10.0, by: -10.0) {
+                samples.append(TremorPoint(timestamp: start.addingTimeInterval(-m * 60), tremorScore: 2.0))
+            }
+            for m in stride(from: 10.0, through: 90.0, by: 10.0) {
+                samples.append(TremorPoint(timestamp: start.addingTimeInterval(Self.hour + m * 60),
+                                           tremorScore: i % 2 == 0 ? 1.0 : 1.1))
+            }
+        }
+        let insights = CorrelationEngine.generateInsights(
+            samples: samples, doses: [], gait: [:], workouts: workouts)
+        let rowing = try #require(insights.first { $0.title.localizedCaseInsensitiveContains("Rowing") },
+                                  "rowing should card via the template even though it was never hand-wired")
+        #expect(rowing.title.localizedCaseInsensitiveContains("tremor"))
+        #expect(rowing.summary.localizedCaseInsensitiveContains("lower"))
+        // Swimming never performed → no swimming card (only observed types instantiate).
+        #expect(!insights.contains { $0.title.localizedCaseInsensitiveContains("Swimming") })
+    }
+
     /// The food cluster's RENDERER path: 8 caffeine intakes with a real post-intake
     /// tremor rise, fed through the caffeine registry entry's windowed-effect renderer,
     /// produce a card — proving the renderer serves food through the generic exposure

@@ -125,6 +125,18 @@ nonisolated enum GaitMetric: String, CaseIterable, Sendable {
         }
     }
 
+    /// Patient-facing label — plain words, no gait-lab jargon (John's feedback: "double
+    /// support" / "walking asymmetry" mean nothing to a patient). `display` keeps the
+    /// technical term for any clinician-facing surface.
+    var plainLabel: String {
+        switch self {
+        case .walkingSpeed:  "walking speed"
+        case .stepLength:    "step length"
+        case .doubleSupport: "balance"
+        case .asymmetry:     "step evenness"
+        }
+    }
+
     /// Display unit. The percentage metrics are stored as fractions; a view that shows
     /// them as "%" must scale by 100 (the hero chart is walking speed, in m/s).
     var unit: String {
@@ -232,8 +244,19 @@ nonisolated enum CorrelationEngine {
         let onWindow = (workouts.isEmpty && food.isEmpty)
             ? doseOnWindowFallback
             : doseOnWindowMinutes(samples: samples, doses: levodopaDoses, sleep: effSleep)
+        // Expand template entries (the exercise cluster) into one concrete question per
+        // workout type actually seen, THEN run. Singular entries pass through untouched.
+        // HealthKit knowledge (which raw value is which activity) stays in InsightRegistry;
+        // the engine only hands over the observed raw values.
+        let observedWorkoutTypes = Set(workouts.map(\.activityRawValue))
         return InsightRegistry.starter
             .filter { $0.status == .active }
+            .flatMap { entry -> [RegistryEntry] in
+                switch entry.instantiation {
+                case .singular:        return [entry]
+                case .perObservedType: return InsightRegistry.instantiate(entry, observedRawValues: observedWorkoutTypes)
+                }
+            }
             .compactMap { run($0, samples: samples, doses: levodopaDoses,
                               gait: gait, workouts: workouts, food: food,
                               onWindow: onWindow, sleep: effSleep) }
@@ -1811,10 +1834,10 @@ nonisolated extension CorrelationEngine {
         func phrase(_ m: GaitMetric) -> String? {
             guard let t = prog.trend(m) else { return nil }
             let word: String
-            if !t.isSignificant { word = "flat" }
+            if !t.isSignificant { word = "steady" }
             else if t.isWorsening { word = "declining" }
             else { word = (m == .doubleSupport) ? "steadier" : "improving" }
-            return "\(m.display.lowercased()) \(word)"
+            return "\(m.plainLabel) \(word)"
         }
         let others = [GaitMetric.stepLength, .doubleSupport, .asymmetry]
             .compactMap(phrase).joined(separator: " · ")
@@ -1835,9 +1858,9 @@ nonisolated extension CorrelationEngine {
             title: declining ? "Your mobility shows some change" : "Your mobility hasn't declined",
             summary: declining
                 ? "Over \(years) years, a gait marker is trending down — worth mentioning to your neurologist."
-                : "Over \(years) years: walking speed \(speedPct), with no measurable decline across your gait markers.",
+                : "Over \(years) years: walking speed \(speedPct), with no measurable decline in how you walk.",
             stage: .verdict,
-            finding: "Walking speed \(speedPct) over \(years)y; \(others). Monthly medians from Apple mobility metrics (\(speed.nMonths) months).",
+            finding: "Walking speed \(speedPct) over \(years) years; \(others). Tracked month by month from your iPhone's walking data (\(speed.nMonths) months).",
             mechanism: "Multi-year mobility metrics are noisy and shift with footwear, walking surface, phone placement, and device — read the direction, not the decimals. Not a clinical assessment.",
             confidence: confidence,
             evidenceDays: Int(prog.spanYears * 365.25),

@@ -37,6 +37,9 @@ nonisolated enum Variable: Hashable {
     // — Discrete events (a thing at a timestamp) —
     case levodopaDose
     case workout(HKWorkoutActivityType)
+    case anyWorkout                     // the exercise TEMPLATE's exposure: instantiated
+                                        // per workout type observed in the user's own data
+                                        // (never resolves to events itself — see Instantiation)
     case mindfulSession
     case meal(MealFilter)
     case foodAttribute(FoodAttribute)   // caffeine, sugar, … — the food cluster; mirrors .workout(type)
@@ -146,6 +149,21 @@ nonisolated enum RegistryStatus: Hashable {
     case disabled
 }
 
+/// How a registry entry becomes runnable questions.
+/// - `singular`: one hand-authored question, run as-is (the default; what the registry
+///   was originally for — a distinct mechanism + copy per line).
+/// - `perObservedType`: a question TEMPLATE, stamped by the engine into one concrete
+///   question per value observed in the user's OWN data. The exercise cluster is the
+///   first: instead of 13 hand-wired workout lines (one hypothesis stamped 13 times,
+///   with every unlisted activity — rowing, swimming, hiking — silently dropped), ONE
+///   template instantiates per workout type actually seen. New Apple activity types card
+///   for free; nobody hand-wires a workout again. The HUMAN-APPROVAL SEAM is intact: the
+///   *template* is the approved question; stamping it per observed type was never curation.
+nonisolated enum Instantiation: Hashable {
+    case singular
+    case perObservedType
+}
+
 /// The domain a question belongs to — the SEMANTIC home of the variable, set once
 /// per entry. This is the grouping axis the Insights screen clusters on, and it is
 /// INDEPENDENT of `primitive`/`renderer` (the math + card) and of `safety` (clinical
@@ -181,6 +199,8 @@ nonisolated struct RegistryEntry: Identifiable, Hashable {
     let safety: SafetyClass
     let minN: Int                  // sufficiency floor the gate enforces before showing anything
     var status: RegistryStatus = .active
+    /// Singular question (default) or a template stamped per observed value. See `Instantiation`.
+    var instantiation: Instantiation = .singular
 }
 
 // MARK: - The pre-wired 80%
@@ -262,109 +282,20 @@ nonisolated enum InsightRegistry {
             source: .curated, safety: .lifestyleExperiment, minN: 5),
 
         // ───────────── Exercise cluster (ONE primitive, many activity types) ─────────────
+        // ONE template, instantiated per workout type seen in the user's own data (was 13
+        // hand-wired lines — identical primitive/gate/renderer, differing only in rationale,
+        // and any unlisted activity silently dropped). The engine stamps a concrete question
+        // per observed type via `InsightRegistry.instantiate`; curated rationales are kept in
+        // `workoutRationales`, unlisted types get honest generic copy. Human-approval seam
+        // intact — the TEMPLATE is the approved question. See `Instantiation`.
         RegistryEntry(
-            id: "taichi-tremor", category: .exercise,
-            exposure: .workout(.taiChi), outcome: .tremor,
+            id: "workout-tremor", category: .exercise,
+            exposure: .anyWorkout, outcome: .tremor,
             primitive: .windowedEffect(preMin: 30, postMin: 120),
             renderer: .windowedEffect,
-            rationale: "Tai Chi is well-supported in the PD literature for reducing tremor and improving balance.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
-
-        RegistryEntry(
-            id: "boxing-tremor", category: .exercise,
-            exposure: .workout(.boxing), outcome: .tremor,
-            primitive: .windowedEffect(preMin: 30, postMin: 120),
-            renderer: .windowedEffect,
-            rationale: "Non-contact boxing (Rock Steady–style) is a common PD exercise program; test its post-session tremor effect.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
-
-        RegistryEntry(
-            id: "yoga-tremor", category: .exercise,
-            exposure: .workout(.yoga), outcome: .tremor,
-            primitive: .windowedEffect(preMin: 30, postMin: 120),
-            renderer: .windowedEffect,
-            rationale: "Yoga is associated with reduced rigidity and stress in PD; test its post-session tremor effect.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
-
-        RegistryEntry(
-            id: "cycling-tremor", category: .exercise,
-            exposure: .workout(.cycling), outcome: .tremor,
-            primitive: .windowedEffect(preMin: 30, postMin: 120),
-            renderer: .windowedEffect,
-            rationale: "Forced-rate aerobic cycling has notable PD motor evidence; test its post-session tremor effect.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
-
-        RegistryEntry(
-            id: "walking-tremor", category: .exercise,
-            exposure: .workout(.walking), outcome: .tremor,
-            primitive: .windowedEffect(preMin: 30, postMin: 120),
-            renderer: .windowedEffect,
-            rationale: "Aerobic walking is the most accessible PD exercise; test its post-session tremor effect.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
-
-        RegistryEntry(
-            id: "strength-tremor", category: .exercise,
-            exposure: .workout(.functionalStrengthTraining), outcome: .tremor,
-            primitive: .windowedEffect(preMin: 30, postMin: 120),
-            renderer: .windowedEffect,
-            rationale: "Resistance training improves PD motor scores; test its post-session tremor effect.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
-
-        RegistryEntry(
-            id: "tabletennis-tremor", category: .exercise,
-            exposure: .workout(.tableTennis), outcome: .tremor,
-            primitive: .windowedEffect(preMin: 30, postMin: 120),
-            renderer: .windowedEffect,
-            rationale: "Table tennis demands rapid aiming, reaction, and footwork; anecdotal and emerging evidence suggests benefit for PD motor symptoms.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
-
-        RegistryEntry(
-            id: "pickleball-tremor", category: .exercise,
-            exposure: .workout(.pickleball), outcome: .tremor,
-            primitive: .windowedEffect(preMin: 30, postMin: 120),
-            renderer: .windowedEffect,
-            rationale: "Pickleball combines aerobic movement, agility, and social engagement; anecdotally reported to help PD symptoms.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
-
-        RegistryEntry(
-            id: "tango-tremor", category: .exercise,
-            exposure: .workout(.socialDance), outcome: .tremor,
-            primitive: .windowedEffect(preMin: 30, postMin: 120),
-            renderer: .windowedEffect,
-            rationale: "Argentine tango has documented PD benefits for balance and gait (partner dance maps to HealthKit social dance); test its post-session tremor effect.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
-
-        RegistryEntry(
-            id: "rock-climbing-tremor", category: .exercise,
-            exposure: .workout(.climbing), outcome: .tremor,
-            primitive: .windowedEffect(preMin: 30, postMin: 120),
-            renderer: .windowedEffect,
-            rationale: "Climbing demands focus, grip, and full-body coordination; anecdotally reported to ease PD symptoms — test its post-session tremor effect.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
-
-        RegistryEntry(
-            id: "running-tremor", category: .exercise,
-            exposure: .workout(.running), outcome: .tremor,
-            primitive: .windowedEffect(preMin: 30, postMin: 120),
-            renderer: .windowedEffect,
-            rationale: "High-intensity aerobic exercise has some of the strongest PD motor evidence (e.g. the SPARX treadmill trial); test its post-run tremor effect.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
-
-        RegistryEntry(
-            id: "hiit-tremor", category: .exercise,
-            exposure: .workout(.highIntensityIntervalTraining), outcome: .tremor,
-            primitive: .windowedEffect(preMin: 30, postMin: 120),
-            renderer: .windowedEffect,
-            rationale: "High-intensity interval training pushes aerobic intensity, the axis PD motor evidence favors; test its post-session tremor effect.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
-
-        RegistryEntry(
-            id: "mindbody-tremor", category: .exercise,
-            exposure: .workout(.mindAndBody), outcome: .tremor,
-            primitive: .windowedEffect(preMin: 30, postMin: 120),
-            renderer: .windowedEffect,
-            rationale: "PD-specific programs that pair mental focus with physical coordination log as mind-and-body workouts; test their post-session tremor effect. Blended bucket — split into specific types if a distinct program needs its own read.",
-            source: .curated, safety: .lifestyleExperiment, minN: 5),
+            rationale: "Exercise cluster template: for each workout type the user actually logs, test its post-session tremor effect. Curated per-type rationales in `workoutRationales`.",
+            source: .curated, safety: .lifestyleExperiment, minN: 5,
+            instantiation: .perObservedType),
 
         RegistryEntry(
             id: "mindfulness-tremor", category: .stress,
@@ -413,5 +344,59 @@ nonisolated enum InsightRegistry {
             renderer: .gaitComposite,
             rationale: "Walking speed is a sensitive PD progression marker; a multi-month trend tracks mobility over time.",
             source: .curated, safety: .clinicalReferral, minN: 6),
+    ]
+
+    // MARK: Template instantiation (the exercise cluster, quantified over observed types)
+
+    /// Expand a `.perObservedType` template into one concrete question per workout type
+    /// present in the user's data. Lives HERE (not the engine) because it needs HealthKit —
+    /// `HKWorkoutActivityType` + its display name — which the engine deliberately never
+    /// imports; the engine passes plain raw values in and gets plain `RegistryEntry`s back.
+    ///
+    /// Only types we can NAME are carded: an unknown/`.other` type falls back to the generic
+    /// "Workout" label, and a card titled "Workout and your tremor" says nothing — so it is
+    /// skipped rather than shown. Deterministic order (sorted raw values) so the surfaced set
+    /// is stable across runs. Each instance is `.singular`, so it never re-expands.
+    static func instantiate(_ template: RegistryEntry, observedRawValues: Set<UInt>) -> [RegistryEntry] {
+        observedRawValues.sorted().compactMap { raw -> RegistryEntry? in
+            guard let type = HKWorkoutActivityType(rawValue: raw), type.displayName != "Workout"
+            else { return nil }
+            return RegistryEntry(
+                id: "\(template.id)-\(raw)",
+                category: template.category,
+                exposure: .workout(type),
+                outcome: template.outcome,
+                primitive: template.primitive,
+                renderer: template.renderer,
+                rationale: workoutRationales[raw] ?? genericWorkoutRationale,
+                source: template.source,
+                safety: template.safety,
+                minN: template.minN)
+        }
+    }
+
+    /// Honest generic provenance for a workout type with no curated note.
+    static let genericWorkoutRationale =
+        "Exercise can shift PD motor symptoms; test this activity's post-session tremor effect in your own data."
+
+    /// Curated per-type rationales — provenance/audit trail (the human-approval touches),
+    /// keyed by `HKWorkoutActivityType.rawValue`. Not user-facing (the card's mechanism copy
+    /// is the shared exercise hedge); preserved so the "why this question exists" trail
+    /// survives the collapse from 13 hand lines to one template.
+    static let workoutRationales: [UInt: String] = [
+        HKWorkoutActivityType.taiChi.rawValue: "Tai Chi is well-supported in the PD literature for reducing tremor and improving balance.",
+        HKWorkoutActivityType.boxing.rawValue: "Non-contact boxing (Rock Steady–style) is a common PD exercise program.",
+        HKWorkoutActivityType.yoga.rawValue: "Yoga is associated with reduced rigidity and stress in PD.",
+        HKWorkoutActivityType.cycling.rawValue: "Forced-rate aerobic cycling has notable PD motor evidence.",
+        HKWorkoutActivityType.walking.rawValue: "Aerobic walking is the most accessible PD exercise.",
+        HKWorkoutActivityType.functionalStrengthTraining.rawValue: "Resistance training improves PD motor scores.",
+        HKWorkoutActivityType.traditionalStrengthTraining.rawValue: "Resistance training improves PD motor scores.",
+        HKWorkoutActivityType.tableTennis.rawValue: "Table tennis demands rapid aiming, reaction, and footwork; emerging evidence suggests PD motor benefit.",
+        HKWorkoutActivityType.pickleball.rawValue: "Pickleball combines aerobic movement, agility, and social engagement; anecdotally reported to help PD symptoms.",
+        HKWorkoutActivityType.socialDance.rawValue: "Argentine tango has documented PD benefits for balance and gait (partner dance maps to HealthKit social dance).",
+        HKWorkoutActivityType.climbing.rawValue: "Climbing demands focus, grip, and full-body coordination; anecdotally reported to ease PD symptoms.",
+        HKWorkoutActivityType.running.rawValue: "High-intensity aerobic exercise has some of the strongest PD motor evidence (e.g. the SPARX treadmill trial).",
+        HKWorkoutActivityType.highIntensityIntervalTraining.rawValue: "High-intensity interval training pushes aerobic intensity, the axis PD motor evidence favors.",
+        HKWorkoutActivityType.mindAndBody.rawValue: "PD-specific programs that pair mental focus with physical coordination log as mind-and-body workouts.",
     ]
 }
