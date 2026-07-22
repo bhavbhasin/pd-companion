@@ -85,7 +85,7 @@ struct TremorPoint: Sendable {
 /// One mobility-metric reading (a value at a time). `Sendable` so the gait analysis
 /// runs off the main thread like the tremor work. Foreign-source filtering happens at
 /// fetch time, so by here every sample is the user's own.
-struct GaitSample: Sendable {
+struct GaitSample: Sendable, Codable {
     let date: Date
     let value: Double
 }

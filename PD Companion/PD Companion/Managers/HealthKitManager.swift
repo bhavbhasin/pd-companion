@@ -736,18 +736,35 @@ class HealthKitManager: ObservableObject {
     func fetchGaitSeries(
         excludedSources: Set<String> = []
     ) async -> [GaitMetric: [GaitSample]] {
-        let start = Calendar.current.date(byAdding: .year, value: -12, to: Date()) ?? .distantPast
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date())
+        let signature = GaitCache.signature(excludedSources)
+        // Cache read/write off the main actor (small JSON, but no reason to block UI).
+        let cached = await Task.detached { GaitCache.load() }.value
+        // Only reuse the cache if it was built under the SAME source-exclusion set.
+        let usable = (cached?.excludedSignature == signature) ? cached : nil
+
+        let now = Date()
+        let fullStart = Calendar.current.date(byAdding: .year, value: -12, to: now) ?? .distantPast
+
         var out: [GaitMetric: [GaitSample]] = [:]
+        var metricsPayload: [String: GaitCache.MetricCache] = [:]
         for metric in GaitMetric.allCases {
-            out[metric] = await fetchGaitMetric(metric, predicate: predicate, excluded: excludedSources)
+            let prior = usable?.metrics[metric.rawValue]
+            // Incremental: query only [last fetch, now]; full 12-year sweep on a cold cache.
+            let start = prior?.watermark ?? fullStart
+            let fresh = await fetchGaitMetric(metric, start: start, end: now, excluded: excludedSources)
+            let merged = (prior?.samples ?? []) + fresh   // disjoint time ranges → no dedup
+            out[metric] = merged
+            metricsPayload[metric.rawValue] = GaitCache.MetricCache(watermark: now, samples: merged)
         }
+        let payload = GaitCache.Payload(excludedSignature: signature, metrics: metricsPayload)
+        await Task.detached { GaitCache.save(payload) }.value
         return out
     }
 
     private func fetchGaitMetric(
-        _ metric: GaitMetric, predicate: NSPredicate, excluded: Set<String>
+        _ metric: GaitMetric, start: Date, end: Date, excluded: Set<String>
     ) async -> [GaitSample] {
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
         let (type, unit) = Self.gaitHKType(metric)
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
         return await withCheckedContinuation { continuation in
