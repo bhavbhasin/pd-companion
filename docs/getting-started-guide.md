@@ -15,14 +15,19 @@ You don't have to log anything every day. The watch and your iPhone do the work.
 ## Set it up (3 steps, once)
 
 1. **Install Kampa** from the TestFlight email invitation, then open it.
-2. **Allow both permission screens.** Kampa shows two prompts the first time:
+2. **Allow all three permission screens.** Kampa shows three prompts the first time:
    - **Health data** - tap *Turn On All*, then *Allow*.
    - **Medications** - tap *Allow*.
+   - **Motion & Fitness** - tap *Allow*. This one powers tremor tracking - without it, your tremor graph stays empty even though everything else works.
 
-   Both matter. If you tap "Don't Allow" by mistake, you can fix it later in **iPhone Settings → Apps → Health → Data Access & Devices → Kampa**.
-3. **Wear your Apple Watch** during the day (and overnight if you track sleep). That's it.
+   All three matter. If you tap "Don't Allow" by mistake, you can fix it later:
+   - Health: **iPhone Settings → Apps → Health → Data Access & Devices → Kampa**
+   - Motion & Fitness: **iPhone Settings → Privacy & Security → Motion & Fitness → Kampa** (make sure it's on)
+3. **Set up Kampa on your Apple Watch too.** Tremor tracking runs on the watch, so open the **Kampa app on your Apple Watch once** to start it (install it from the Watch app on your iPhone if it isn't there yet). Then just wear the watch during the day - and overnight if you track sleep. That's it.
 
 > **Watch requirement:** Apple Watch Series 4 or newer, on watchOS 10 or later. Tremor tracking needs the watch on your wrist.
+>
+> **If your tremor graph stays empty after a day or two,** it's almost always the Motion & Fitness permission (step 2) or the Kampa watch app not being opened (step 3). Check those first.
 
 ---
 

@@ -15,10 +15,10 @@
     src:url('file:///Users/bhav/documents/ParkinsonsProject/PD%20Companion/PD%20Companion/Fonts/Geist-SemiBold.ttf'); }
 
   :root{ --blue:#4A8CD6; --ink:#1A1D22; --gray:#6B7280; --line:#E0E0E0; --tint:#F4F8FD; --tint-line:#D9E6F5; }
-  @page{ size:Letter; margin:12mm 16mm; }
+  @page{ size:Letter; margin:11mm 16mm; }
   *{ box-sizing:border-box; }
   body{ font-family:'Geist',-apple-system,'Helvetica Neue',sans-serif; color:var(--ink);
-    font-size:12.4px; line-height:1.5; margin:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    font-size:12.4px; line-height:1.42; margin:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 
   /* Header — matches the neurologist report: brand-blue wave mark + kāmpa wordmark (ā in brand blue) */
   .head{ display:flex; align-items:center; justify-content:space-between; padding-bottom:11px; border-bottom:1px solid var(--line); }
@@ -30,16 +30,16 @@
   .eyebrow .k{ font-size:11px; font-weight:600; letter-spacing:0.12em; color:var(--blue); text-transform:uppercase; }
   .eyebrow .s{ font-size:11.5px; color:var(--gray); margin-top:2px; }
 
-  h2{ font-size:14.5px; font-weight:600; color:var(--ink); margin:13px 0 6px; }
-  p{ margin:0 0 8px; }
-  .lead{ font-size:13.4px; color:#33373D; margin:14px 0 4px; }
+  h2{ font-size:14.5px; font-weight:600; color:var(--ink); margin:10px 0 5px; }
+  p{ margin:0 0 7px; }
+  .lead{ font-size:13.4px; color:#33373D; margin:12px 0 4px; }
   .lead b{ color:var(--ink); font-weight:600; }
-  ol,ul{ margin:4px 0 8px; padding-left:20px; }
-  li{ margin:0 0 5px; }
+  ol,ul{ margin:4px 0 7px; padding-left:20px; }
+  li{ margin:0 0 4px; }
   b,strong{ font-weight:600; }
   em{ color:#42474E; }
 
-  .foot{ margin-top:18px; padding-top:10px; border-top:2px solid var(--blue); }
+  .foot{ margin-top:13px; padding-top:9px; border-top:2px solid var(--blue); }
   .foot .fine{ font-size:10px; color:var(--gray); line-height:1.55; }
   .foot .fine b{ color:#4a4f57; }
   .foot .contact{ font-size:12px; margin-top:7px; }
@@ -72,17 +72,20 @@
   <h2>Set up &mdash; 3 steps, once</h2>
   <ol>
     <li><b>Install Kampa</b> from the TestFlight email invitation, then open it.</li>
-    <li><b>Allow both permission screens</b> the first time - <b>Health data</b> (tap <em>Turn On All</em>) and
-        <b>Medications</b> (tap <em>Allow</em>). Tapped the wrong one? Fix it in
-        <em>Settings &rsaquo; Apps &rsaquo; Health &rsaquo; Data Access &amp; Devices &rsaquo; Kampa</em>.</li>
-    <li><b>Wear your Apple Watch</b> during the day, and overnight if you track sleep.</li>
+    <li><b>Allow all three permission screens</b> - <b>Health</b> (tap <em>Turn On All</em>),
+        <b>Medications</b> (tap <em>Allow</em>), and <b>Motion &amp; Fitness</b> (tap <em>Allow</em>).
+        Motion &amp; Fitness powers tremor tracking - without it your tremor graph stays empty while everything
+        else works. Fix a wrong tap in <em>Settings &rsaquo; Privacy &amp; Security &rsaquo; Motion &amp; Fitness</em>
+        (or <em>Settings &rsaquo; Apps &rsaquo; Health</em>).</li>
+    <li><b>Open Kampa on your Apple Watch once</b> to start tremor tracking (install it from the Watch app on your
+        iPhone if needed), then wear the watch through the day - and overnight for sleep.</li>
   </ol>
 
   <h2>Tracked automatically &mdash; you never log these</h2>
   <p><b>Tremor &amp; dyskinesia</b> from the Apple Watch; <b>walking &amp; gait, sleep, heart rate, and HRV</b>
-  from your iPhone and Watch. Once permissions are on, this happens on its own. Tremor tracking begins after
-  about a day of Watch wear, so an empty tremor view at first is normal &mdash; and if your phone still looks
-  empty after that, open Kampa on your <b>Apple Watch</b> for about 30 seconds (iPhone nearby) to sync.</p>
+  from your iPhone and Watch - all on their own once permissions are on. Tremor starts after about a day of Watch
+  wear, so an empty view at first is normal; if it's still empty after a day or two, check that <b>Motion &amp;
+  Fitness</b> is on and that you've opened Kampa on the Watch.</p>
   <p><b>Wear a glucose monitor?</b> Any brand that writes to Apple Health &mdash; Dexcom Stelo, Abbott Lingo,
   FreeStyle Libre &mdash; is read automatically and shown as its own band on your Review timeline. Nothing to
   set up beyond the CGM's own app.</p>
