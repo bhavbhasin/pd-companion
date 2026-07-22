@@ -82,9 +82,109 @@ struct DayForecastTests {
             todaysReadings: [], dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now) == nil)
     }
 
-    /// No dose logged today → nothing to project forward → nil.
-    @Test func hiddenWithoutTodaysDose() {
+    /// No dose logged today AND the substrate is too thin (the corpus only has ~16 clean
+    /// dose-free readings/day, under the ~1h floor) → nil. The zero-dose day itself no
+    /// longer hides the panel — thin data does (Phase 0, forecast-composition-model.md).
+    @Test func hiddenWithoutTodaysDoseWhenSubstrateThin() {
         let c = Self.corpus(doseCount: 22)
+        #expect(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [], todaysReadings: [],
+            dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now) == nil)
+    }
+
+    // MARK: zero-dose flat band (Phase 0)
+
+    /// The dosed corpus + a dense awake dose-free afternoon block each day (hours 14–19,
+    /// well past the dose ON window, one reading/min at a stable level with spread).
+    /// Enough clean days for the band; the dosed path is untouched by the addition.
+    private static func corpusWithSubstrate(doseCount: Int) -> (history: [TremorPoint], doses: [Dose]) {
+        var (history, doses) = corpus(doseCount: doseCount)
+        for i in 0..<doseCount {
+            let day = base.addingTimeInterval(Double(i) * 24 * hour)
+            for m in stride(from: 0.0, to: 300.0, by: 1.0) {   // 300 readings/day
+                // Levels cycle 1.4 / 1.8 / 2.2 → median 1.8, q25 ≈ 1.4, q75 ≈ 2.2.
+                let level = 1.4 + Double(Int(m) % 3) * 0.4
+                history.append(TremorPoint(timestamp: day.addingTimeInterval(14 * hour + m * 60),
+                                           tremorScore: level))
+            }
+        }
+        return (history, doses)
+    }
+
+    /// Zero-dose day with an estimable substrate → the flat-band forecast: band values
+    /// from the clean readings, whole-day coverage, a flat `.typical` projection, and no
+    /// dose vocabulary (no next-OFF).
+    @Test func zeroDoseDayGetsFlatBand() throws {
+        let c = Self.corpusWithSubstrate(doseCount: 22)
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [], todaysReadings: [],
+            dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now))
+
+        let band = try #require(f.band)
+        #expect(abs(band.median - 1.8) < 0.05)
+        #expect(band.q25 < band.median && band.median < band.q75)
+        #expect(band.nDays == 22)
+        #expect(f.confidence == .moderate)                  // 22 days: ≥14, <28
+        #expect(f.nextOffStart == nil)                      // no dose vocabulary
+        #expect(f.segments.first?.start == Self.dayStart)   // covers the whole day
+        #expect(f.segments.last?.end == Self.dayEnd)
+        // The un-elapsed remainder is the flat band, never ON/OFF.
+        let future = f.segments.filter { !$0.observed }
+        #expect(!future.isEmpty)
+        #expect(future.allSatisfy { $0.phase == .typical })
+    }
+
+    /// The elapsed part of a zero-dose day is measured tremor classified against the
+    /// band's own upper edge: a morning running clearly above q75 reads `.above`, one
+    /// inside the band reads `.typical` — and per the persistence NO-GO, neither changes
+    /// the flat projection after `now`.
+    @Test func zeroDoseObservedClassifiesAgainstBand() throws {
+        let c = Self.corpusWithSubstrate(doseCount: 22)
+        var measured: [TremorPoint] = []
+        for m in stride(from: 0.0, through: 120.0, by: 5.0) {   // 9:00–11:00, well above q75
+            measured.append(TremorPoint(timestamp: Self.todayDose.addingTimeInterval(m * 60),
+                                        tremorScore: 3.0))
+        }
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [], todaysReadings: measured,
+            dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now))
+
+        let probe = Self.todayDose.addingTimeInterval(30 * 60)
+        let seg = try #require(f.segments.first { probe >= $0.start && probe < $0.end })
+        #expect(seg.observed)
+        #expect(seg.phase == .above)
+        // The rough morning must NOT recenter the remainder (persistence NO-GO).
+        #expect(f.segments.filter { !$0.observed }.allSatisfy { $0.phase == .typical })
+    }
+
+    /// A never-medicated user (no doses anywhere) gets the same band through the same
+    /// code path — medication is an event, not a user trait.
+    @Test func unmedicatedUserGetsFlatBand() throws {
+        let c = Self.corpusWithSubstrate(doseCount: 22)
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: [],
+            todaysDoses: [], todaysReadings: [],
+            dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now))
+        #expect(f.band != nil)
+    }
+
+    /// A dosed day carries NO band — the two vocabularies never mix.
+    @Test func dosedDayCarriesNoBand() throws {
+        let c = Self.corpusWithSubstrate(doseCount: 22)
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [Dose(timestamp: Self.todayDose, name: "Sinemet")],
+            todaysReadings: [], dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now))
+        #expect(f.band == nil)
+        #expect(f.nextOffStart != nil)
+    }
+
+    /// Below the cold-start floor (7 clean days) → nil, the honest "learning your rhythm".
+    @Test func zeroDoseHiddenBelowColdStartFloor() {
+        let c = Self.corpusWithSubstrate(doseCount: 5)
         #expect(CorrelationEngine.dayForecast(
             history: c.history, allDoses: c.doses,
             todaysDoses: [], todaysReadings: [],

@@ -313,11 +313,9 @@ private struct DayReviewContent: View {
         }
         let allDoses = await healthKit.fetchMedicationDoses()
         let ds = dayStart, de = dayEnd
+        // No early-out on a zero-dose day: the engine returns the flat-band forecast for it
+        // (Phase 0, forecast-composition-model.md) — medication is an event, not a user trait.
         let todays = allDoses.filter { $0.timestamp >= ds && $0.timestamp < de }
-        guard !todays.isEmpty else {
-            forecast = nil
-            return
-        }
         let history = ((try? modelContext.fetch(FetchDescriptor<TremorReading>())) ?? [])
             .map { TremorPoint(timestamp: $0.timestamp, tremorScore: $0.tremorScore) }
         let todaysReadings = dayReadings.map {
@@ -369,7 +367,8 @@ private struct DayReviewContent: View {
                 )
                 // Directly under the tremor line + sharing its 12h scroll, so the forecast
                 // band reads straight down from the chart (dose/workout markers align).
-                // Today only; hidden when the wearing-off model isn't estimable.
+                // Today only; hidden when neither the wearing-off model (dosed day) nor
+                // the flat personal band (zero-dose day) is estimable yet.
                 if let forecast {
                     DayAheadPanel(forecast: forecast, dayStart: dayStart, dayEnd: dayEnd,
                                   scrollX: $chartScrollX, selectedTime: $selectedTime)

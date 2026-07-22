@@ -2124,7 +2124,12 @@ nonisolated extension CorrelationEngine {
 nonisolated extension CorrelationEngine {
 
     struct DayForecast: Sendable {
-        enum Phase: Sendable { case on, off, unknown }
+        /// `.on`/`.off` are the dosed-day vocabulary (levodopa state). `.typical`/`.above`
+        /// are the ZERO-DOSE vocabulary — measured level vs the user's own typical band
+        /// (at/below vs above its upper edge). Deliberately separate cases: ON/OFF is
+        /// clinical medication language and must never label an unmedicated day.
+        /// See docs/design/forecast-composition-model.md (Phase 0).
+        enum Phase: Sendable { case on, off, unknown, typical, above }
         struct Segment: Sendable {
             let start: Date
             let end: Date
@@ -2146,6 +2151,21 @@ nonisolated extension CorrelationEngine {
         // headline's current-state call ONLY; the band stays smoothed (honest after the fact). nil
         // when too little recent data to override the reconstructed segment. See design note Symptom 2.
         var nowState: Phase? = nil
+        // Set ONLY on a zero-dose day (Phase 0, forecast-composition-model.md): the user's
+        // flat personal band — the validated best unconditional forecast (every conditioning
+        // lever tested NO-GO, Jul 22). nil on a dosed day; the view switches vocabulary on it.
+        var band: SubstrateBand? = nil
+    }
+
+    /// The flat personal band: median + middle-50% spread of the user's AWAKE, DOSE-FREE
+    /// tremor across history. The substrate floor of the composition model — always
+    /// estimable once enough clean days exist, no hourly shape (validated NO-GO: the
+    /// time-of-day swing is smaller than day-to-day noise at a single hour).
+    struct SubstrateBand: Sendable {
+        let median: Double
+        let q25: Double
+        let q75: Double
+        let nDays: Int      // distinct days contributing ≥ substrateMinReadingsPerDay clean readings
     }
 
     /// A signed adjustment a future validated lever applies to the projection (shifts
@@ -2237,6 +2257,65 @@ nonisolated extension CorrelationEngine {
         return out
     }
 
+    // MARK: substrate band (Phase 0 — the zero-dose forecast floor)
+
+    /// Drug-tail guard appended after a dose's ON window when sampling the substrate — a
+    /// gap labeled OFF may still carry a fading levodopa tail. Mirrors the validation
+    /// script (analysis/run_circadian_substrate.py RESIDUAL_BUFFER_MIN).
+    /// Ledger: provisional (models the PK tail; not user-tuned).
+    static let substrateResidualBufferMin = 30.0
+    /// A day contributes to the band only with ~1h of clean awake dose-free wear — less
+    /// and its "day" is a sliver that would drag the band toward whatever moment it caught.
+    /// Mirrors analysis/run_persistence.py MIN_READINGS_PER_DAY. Ledger: provisional.
+    static let substrateMinReadingsPerDay = 60
+    /// Day-count tiers for the band. The floor (7) is the cold-start week the design doc
+    /// already names ("first ~week: learning your rhythm"); the upper tiers are arbitrary
+    /// (named tech debt, same class as gaitTrendGate's n-tiers — how much data earns each
+    /// badge). docs/design/forecast-composition-model.md, cold-start-priors.md.
+    static let substrateBandGate = GateSpec(
+        strong:   GateBar(minN: 28),
+        moderate: GateBar(minN: 14),
+        floor:    GateBar(minN: 7))
+
+    /// The flat personal band from history: median + IQR of awake, dose-free tremor.
+    /// Excludes readings inside any sleep interval (rest tremor is suppressed in sleep —
+    /// sampling it fakes a calm baseline; same censor the wearing-off card ships) and
+    /// inside any dose's ON window + residual tail (per-formulation duration when that
+    /// formulation is estimable, `doseOnWindowFallback` otherwise). For a never-medicated
+    /// user both exclusion sets are just smaller — same code path, no user roles.
+    /// Returns nil below the cold-start floor.
+    static func substrateBand(history: [TremorPoint], allDoses: [Dose],
+                              sleep: [SleepInterval],
+                              models: [String: PulseModel]) -> SubstrateBand? {
+        var excl: [(start: Date, end: Date)] = sleep.map { ($0.start, $0.end) }
+        for d in allDoses {
+            let durMin = (models[formulationKey(d.name)]?.onDuration ?? doseOnWindowFallback)
+                + substrateResidualBufferMin
+            excl.append((d.timestamp, d.timestamp.addingTimeInterval(durMin * 60)))
+        }
+        let exclusions = mergeIntervals(excl)
+
+        // Single sweep over time-sorted readings against merged, sorted exclusions —
+        // O(n log n), not the naive n×intervals scan (history is the full tremor table).
+        let sorted = history.sorted { $0.timestamp < $1.timestamp }
+        var clean: [Double] = []
+        var perDay: [Date: Int] = [:]
+        var i = 0
+        for p in sorted {
+            while i < exclusions.count, exclusions[i].end <= p.timestamp { i += 1 }
+            if i < exclusions.count, exclusions[i].start <= p.timestamp { continue }  // inside
+            clean.append(p.tremorScore)
+            perDay[calendar.startOfDay(for: p.timestamp), default: 0] += 1
+        }
+
+        let nDays = perDay.values.filter { $0 >= substrateMinReadingsPerDay }.count
+        guard nDays >= substrateBandGate.floor.minN ?? 0, !clean.isEmpty else { return nil }
+        return SubstrateBand(median: percentile(clean, 0.5),
+                             q25: percentile(clean, 0.25),
+                             q75: percentile(clean, 0.75),
+                             nDays: nDays)
+    }
+
     private static let forecastObservedBinMin = 30.0
     // A measured ON/OFF flip must persist ≥ this many bins to count as a distinct episode.
     // Binary-thresholding a continuous tremor that hovers near the OFF line produces
@@ -2260,15 +2339,27 @@ nonisolated extension CorrelationEngine {
         sleep: [SleepInterval] = []
     ) -> DayForecast? {
         let doses = todaysDoses.sorted { $0.timestamp < $1.timestamp }
-        guard !doses.isEmpty else { return nil }
 
         // Fit a wearing-off/onset model PER FORMULATION from full history. Each dose is then
         // projected with its OWN formulation's timing (IR vs plant-source levodopa have
         // different onset + ON-duration; pooling them describes neither). A formulation
         // appears only if its own data clears the estimability floor — the gate is the
         // classifier, so inert/non-pulsatile substances self-exclude with no drug list.
+        // Computed BEFORE the zero-dose branch: the substrate also needs the per-formulation
+        // ON-durations to censor historical dose windows out of the band.
         let sig = history.map { (time: $0.timestamp, value: $0.tremorScore) }
         let models = estimableFormulations(signal: sig, doses: allDoses, sleep: sleep)
+
+        // ZERO-DOSE DAY (Phase 0, forecast-composition-model.md): nothing to project, but
+        // the day still gets a forecast — the flat personal band, which is the VALIDATED
+        // best unconditional forecast (every conditioning lever tested NO-GO Jul 22). This
+        // is what makes the forecast exist for unmedicated users and weaning days; the old
+        // behavior (nil → panel vanishes) treated medication as a user trait, not an event.
+        guard !doses.isEmpty else {
+            return typicalBandForecast(history: history, allDoses: allDoses, models: models,
+                                       todaysReadings: todaysReadings, dayStart: dayStart,
+                                       dayEnd: dayEnd, now: now, sleep: sleep)
+        }
         guard !models.isEmpty else { return nil }
 
         // Combined model over the union of estimable-formulation doses: the confidence + IQR
@@ -2346,6 +2437,36 @@ nonisolated extension CorrelationEngine {
                            confidence: confidence, nowState: live?.phase)
     }
 
+    /// The zero-dose forecast: observed reconstruction of the elapsed day CLASSIFIED
+    /// AGAINST THE USER'S OWN BAND (above its upper edge vs at/below it), then the flat
+    /// band projected for the remainder. The projection is deliberately flat — persistence
+    /// validated NO-GO (a high morning does not predict a high afternoon), so today's
+    /// readings inform the observed side only and never recenter the projection.
+    /// ON/OFF never appears here: that is medication vocabulary (see Phase).
+    private static func typicalBandForecast(
+        history: [TremorPoint], allDoses: [Dose], models: [String: PulseModel],
+        todaysReadings: [TremorPoint], dayStart: Date, dayEnd: Date, now: Date,
+        sleep: [SleepInterval]
+    ) -> DayForecast? {
+        guard let band = substrateBand(history: history, allDoses: allDoses,
+                                       sleep: sleep, models: models),
+              let confidence = gate(substrateBandGate, n: band.nDays) else { return nil }
+
+        // Observed: same 30-min bin + despeckle machinery as the dosed path, but the
+        // classification line is the band's own upper edge (q75) — a structural boundary
+        // (the band's definition), not a picked constant.
+        let observed = observedTimeline(readings: todaysReadings, dayStart: dayStart,
+                                        end: min(now, dayEnd), threshold: band.q75,
+                                        high: .above, low: .typical)
+        let projected = [DayForecast.Segment(start: dayStart, end: dayEnd,
+                                             phase: .typical, observed: false)]
+        let segments = spliceAtNow(observed: observed, projected: projected,
+                                   now: now, dayStart: dayStart, dayEnd: dayEnd)
+        return DayForecast(segments: segments, now: now,
+                           nextOffStart: nil, nextOffRange: nil,
+                           confidence: confidence, band: band)
+    }
+
     // MARK: forecast helpers
 
     /// Union of overlapping/touching intervals, sorted by start. `gapTolSec` also bridges
@@ -2393,7 +2514,13 @@ nonisolated extension CorrelationEngine {
     /// Observed ON/OFF over [dayStart, end] from measured tremor: 30-min bins, OFF when
     /// the bin mean ≥ offThreshold, ON below, unknown when the bin has no readings
     /// (not-worn). De-noised (sub-hour flips absorbed) then coalesced. Marked observed=true.
-    static func observedTimeline(readings: [TremorPoint], dayStart: Date, end: Date)
+    /// The zero-dose path reuses the identical machinery with its own vocabulary: the
+    /// classification line becomes the band's q75 and the phases `.above`/`.typical`
+    /// (defaults preserve the dosed path exactly).
+    static func observedTimeline(readings: [TremorPoint], dayStart: Date, end: Date,
+                                 threshold: Double = offThreshold,
+                                 high: DayForecast.Phase = .off,
+                                 low: DayForecast.Phase = .on)
         -> [DayForecast.Segment] {
         guard end > dayStart else { return [] }
         let binSec = forecastObservedBinMin * 60
@@ -2408,13 +2535,14 @@ nonisolated extension CorrelationEngine {
                 raw.append(.unknown); binMean.append(nil)
             } else {
                 let mean = inBin.map(\.tremorScore).reduce(0, +) / Double(inBin.count)
-                raw.append(mean >= offThreshold ? .off : .on); binMean.append(mean)
+                raw.append(mean >= threshold ? high : low); binMean.append(mean)
             }
             bounds.append((binStart, binEnd))
             binStart = binEnd
         }
         guard !bounds.isEmpty else { return [] }
-        let phases = despeckle(raw, means: binMean, minRun: forecastMinRunBins)
+        let phases = despeckle(raw, means: binMean, minRun: forecastMinRunBins,
+                               threshold: threshold)
         // Coalesce equal-phase runs, averaging the measured tremor across each run so the
         // segment carries how severe it actually was (drives OFF shading in the view).
         var segs: [DayForecast.Segment] = []
@@ -2442,7 +2570,8 @@ nonisolated extension CorrelationEngine {
     /// far from the line has decisively left the ambiguous zone the de-noise was meant to clean up.
     /// Empty `means` = gate off (legacy behavior: absorb every short run).
     static func despeckle(_ phases: [DayForecast.Phase], means: [Double?] = [], minRun: Int,
-                          confidentMargin: Double = 0.5) -> [DayForecast.Phase] {
+                          confidentMargin: Double = 0.5,
+                          threshold: Double = offThreshold) -> [DayForecast.Phase] {
         guard phases.count > 1, minRun > 1 else { return phases }
         var out = phases
         while true {
@@ -2459,7 +2588,7 @@ nonisolated extension CorrelationEngine {
                 guard means.count == phases.count else { return false }
                 let ms = (runs[idx].lo...runs[idx].hi).compactMap { means[$0] }
                 guard !ms.isEmpty else { return false }
-                return abs(ms.reduce(0, +) / Double(ms.count) - offThreshold) >= confidentMargin
+                return abs(ms.reduce(0, +) / Double(ms.count) - threshold) >= confidentMargin
             }
             // Shortest sub-minRun ON/OFF run that has a non-unknown neighbor to absorb into AND
             // isn't a confident (decisively-past-threshold) episode.

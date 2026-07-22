@@ -7,8 +7,11 @@ import Charts
 // 12h visible window, scroll position, and left gutter — so it sits directly under the
 // tremor line and reads straight down (dose/workout markers on the chart above align to
 // the band below). The elapsed part is MEASURED tremor (solid); the rest is PROJECTED
-// (faded). Doses are the only input — a future validated lever (e.g. boxing) bends the
-// same single band via WindowAdjustment; it never gets its own card or timeline.
+// (faded). Doses are the only projected event — a future validated lever (e.g. boxing)
+// bends the same single band via WindowAdjustment; it never gets its own card or timeline.
+// A ZERO-DOSE day renders the flat personal band instead (forecast.band != nil): elapsed
+// day classified against the user's own typical range, remainder flat — different labels
+// (never ON/OFF), same bar. See docs/design/forecast-composition-model.md, Phase 0.
 //
 // SAFETY: forecast/observation only — never a dosing instruction.
 struct DayAheadPanel: View {
@@ -27,12 +30,14 @@ struct DayAheadPanel: View {
     // ON = medication working (blue, calm). OFF = wearing-off (muted red — NOT orange,
     // which is dyskinesia on the chart above). Unknown = no watch data (gray). Labels
     // carry the meaning; color is a second cue, never the only one.
+    // Zero-dose vocabulary reuses the same hues (typical = calm blue, above = muted red)
+    // with different LABELS — ON/OFF is medication language and never appears there.
     private static let offColor = Color(red: 0.82, green: 0.28, blue: 0.30)
     private func color(_ phase: CorrelationEngine.DayForecast.Phase) -> Color {
         switch phase {
-        case .on:      return Insight.brandBlue
-        case .off:     return Self.offColor
-        case .unknown: return .gray
+        case .on, .typical:  return Insight.brandBlue
+        case .off, .above:   return Self.offColor
+        case .unknown:       return .gray
         }
     }
 
@@ -40,10 +45,15 @@ struct DayAheadPanel: View {
     // agrees with the tremor line above instead of painting every wearing-off window the same
     // alarm-red (offThreshold sits at "Slight" on a 0–4 scale — a Mild OFF shouldn't look like
     // a Strong one). ON and projected stay flat: projected has no measurement to defer to.
+    // Zero-dose `.above` shades the same way, from ITS classification line (the band's q75).
     private func fillOpacity(_ seg: CorrelationEngine.DayForecast.Segment) -> Double {
         guard seg.observed else { return 0.32 }                    // projected: faded, flat
-        guard seg.phase == .off, let t = seg.meanTremor else { return 0.9 }  // ON / no reading
-        let lo = CorrelationEngine.offThreshold, hi = 3.5          // threshold … Strong
+        guard seg.phase == .off || seg.phase == .above,
+              let t = seg.meanTremor else { return 0.9 }           // ON/typical / no reading
+        let lo = seg.phase == .above
+            ? (forecast.band?.q75 ?? CorrelationEngine.offThreshold)
+            : CorrelationEngine.offThreshold
+        let hi = 3.5                                               // … Strong
         let s = min(max((t - lo) / (hi - lo), 0), 1)
         return 0.45 + 0.45 * s
     }
@@ -78,11 +88,33 @@ struct DayAheadPanel: View {
         forecast.segments.first { $0.start > forecast.now && !$0.observed && $0.phase == .on }?.start
     }
 
+    // Severity name for a 0–4 tremor level (full words — the chart's axis abbreviates
+    // "Mod" for space; a sentence shouldn't).
+    private func levelName(_ t: Double) -> String {
+        switch Int(t.rounded()) {
+        case 0: return "None"
+        case 1: return "Slight"
+        case 2: return "Mild"
+        case 3: return "Moderate"
+        default: return "Strong"
+        }
+    }
+
     // Plain-language, present-tense, threshold-free — and forward-leaning: it leads with
     // the next transition (the forecast's whole point), not the current sliver. So a dose
     // that hasn't kicked in yet reads as "ON coming," not "you're OFF." Never a dosing
     // instruction — the onset time is the user's own latency, stated as expectation.
     private var headline: String {
+        // Zero-dose day: the flat personal band, stated as expectation. Descriptive only —
+        // no ON/OFF, no transition times (there are none to project), and deliberately NOT
+        // conditioned on how today has gone so far (persistence validated NO-GO).
+        if let band = forecast.band {
+            let mid = levelName(band.median)
+            let lo = levelName(band.q25), hi = levelName(band.q75)
+            let range = lo == hi ? "usually staying around \(lo)"
+                                 : "usually between \(lo) and \(hi)"
+            return "No doses logged today — expect around your typical level: \(mid), \(range)."
+        }
         switch phaseAtNow {
         case .on:
             // Inside the wear-off uncertainty band already (now past its lower bound) — the
@@ -223,8 +255,14 @@ struct DayAheadPanel: View {
 
     private var legend: some View {
         HStack(spacing: 14) {
-            swatch(color: Insight.brandBlue, label: "ON")
-            swatch(color: Self.offColor, label: "OFF")
+            if forecast.band != nil {
+                // Zero-dose vocabulary: measured level vs the user's own typical band.
+                swatch(color: Insight.brandBlue, label: "Typical or better")
+                swatch(color: Self.offColor, label: "Above typical")
+            } else {
+                swatch(color: Insight.brandBlue, label: "ON")
+                swatch(color: Self.offColor, label: "OFF")
+            }
             swatch(color: .gray, label: "No watch data")
         }
     }
