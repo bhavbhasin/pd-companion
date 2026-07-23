@@ -37,7 +37,8 @@ struct DayInReviewView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 dateHeader
                     .padding(.horizontal)
-                    .padding(.vertical, 8)
+                    .padding(.top, 0)
+                    .padding(.bottom, 8)
                     .background(.bar)
             }
             .navigationTitle("Review")
