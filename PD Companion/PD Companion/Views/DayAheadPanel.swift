@@ -111,9 +111,21 @@ struct DayAheadPanel: View {
         if let band = forecast.band {
             let mid = levelName(band.median)
             let lo = levelName(band.q25), hi = levelName(band.q75)
-            let range = lo == hi ? "usually staying around \(lo)"
-                                 : "usually between \(lo) and \(hi)"
-            return "No doses logged today — expect around your typical level: \(mid), \(range)."
+            // The 5-name scale is coarse: median + both quartiles can round to the same
+            // word, which made the range read as one-sided ("Mild, between Slight and Mild").
+            // State a range ONLY across the names that differ FROM the median, so the copy
+            // never contradicts itself and never over-claims precision the buckets don't have.
+            let spread: String
+            if lo == mid && hi == mid {
+                spread = "usually staying around \(mid)"           // all three collapse
+            } else if lo == mid {
+                spread = "usually \(mid) to \(hi)"                  // spreads upward only
+            } else if hi == mid {
+                spread = "usually \(lo) to \(mid)"                 // spreads downward only
+            } else {
+                spread = "usually between \(lo) and \(hi)"         // genuinely straddles
+            }
+            return "No doses logged today — expect around your typical level: \(mid), \(spread)."
         }
         switch phaseAtNow {
         case .on:
@@ -296,6 +308,32 @@ private struct NowPulse: View {
 }
 
 #if DEBUG
+#Preview("Zero-dose day — flat personal band") {
+    let day = Calendar.current.startOfDay(for: .now)
+    func t(_ h: Double) -> Date { day.addingTimeInterval(h * 3600) }
+    let now = t(14.5)
+    typealias Seg = CorrelationEngine.DayForecast.Segment
+    // Elapsed day classified against the band's q75: a typical morning, one stretch that
+    // ran above the band (shaded by severity), a not-worn gap — then the flat projection.
+    let segments: [Seg] = [
+        Seg(start: t(7),    end: t(10),   phase: .typical, observed: true),
+        Seg(start: t(10),   end: t(11.5), phase: .above,   observed: true, meanTremor: 2.7),
+        Seg(start: t(11.5), end: t(12.5), phase: .unknown, observed: true),
+        Seg(start: t(12.5), end: now,     phase: .typical, observed: true),
+        Seg(start: now,     end: t(24),   phase: .typical, observed: false),
+    ]
+    let forecast = CorrelationEngine.DayForecast(
+        segments: segments, now: now,
+        nextOffStart: nil, nextOffRange: nil,       // no dose vocabulary on a zero-dose day
+        confidence: .moderate,
+        band: .init(median: 1.8, q25: 1.4, q75: 2.2, nDays: 22))
+    return ScrollView {
+        DayAheadPanel(forecast: forecast, dayStart: day, dayEnd: t(24),
+                      scrollX: .constant(t(9)), selectedTime: .constant(nil))
+            .padding()
+    }
+}
+
 #Preview("Today's forecast — mid-afternoon") {
     let day = Calendar.current.startOfDay(for: .now)
     func t(_ h: Double) -> Date { day.addingTimeInterval(h * 3600) }
