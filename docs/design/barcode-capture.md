@@ -41,6 +41,39 @@ All on-device: Vision/VisionKit + bundled corpus + FM. **No per-scan network cal
 - **License:** USDA Branded = US-gov public domain, clean to embed. Open Food Facts = ODbL (attribution + share-alike) - needs a real read before use as any fallback source; not an assumption.
 - **Coverage:** US-centric; the NorthAfrican-6% lesson repeats for imported packaged goods. OCR is the escape hatch for those - expect it, don't rediscover it.
 
+## Corpus generation — `scripts/food/build_barcode_corpus.py`
+
+**Storage boundary (load-bearing):** the corpus is reference data - bundle / On-Demand Resources only, **never** in the CloudKit sync path. Same class as `FoodDB.json` (rides in the app bundle, not iCloud). Only the resulting FoodEvent syncs. A 40 MB corpus multiplied across every user's iCloud would be a storage/sync disaster.
+
+**Size strategy = build-time reduction.** Ship only what the engine + UI need, not raw USDA Branded. Per record:
+- **GTIN** - 8 B integer key.
+- **5 macros** (protein/fat/sugar/fiber/caffeine) quantized to 1 B grams each = 5 B. Drop the other ~40 USDA nutrients. (Grams, not presence flags - keeps quantitative attributes open later, still tiny.)
+- **Product name** - the size driver, ~30-35 B.
+
+~53 B/record (name = ~41 B of it). Name dominates → the only lever that matters is **compressing the names blob**; filters and brand-dedup are duds (see MEASURED below).
+
+**MEASURED (FDC Branded 2026-04-30, `build_barcode_corpus.py`):**
+- **Count: 1,999,950 products** (~4× the old 400-500k guess). ~1.87M have usable macros.
+- **Filters are duds:** the set is essentially all-US, all-active - US filter drops 13k, discontinued drops 4k. Dropping no-macro records is the only real cut (2.0M → 1.87M).
+- **Naive SQLite = ~160 MB** (uncompressed names + page overhead) - NOT shippable.
+- **Names compress hard** (repetitive brands/units): 76.8 MB raw → **19.7 MB zlib** (3.9×) / 10.1 MB lzma (7.6×).
+- **Realistic on-device: ~42-52 MB** = 32 MB binary index (8 B gtin + 5 B macros + 4 B name offset) + 10-20 MB compressed names.
+
+**Format consequence:** can't be naive SQLite. Use a **binary gtin index + chunk-compressed names blob** (mmap, binary-search, decompress one chunk per scan) → keeps BOTH download and on-disk ~50 MB. Alternative (ship-compressed → inflate to SQLite on first launch) is simpler but balloons on-disk back to ~160 MB. Prefer the binary index since on-phone footprint matters, not just download.
+
+**Verdict: viable.** ~50 MB via ODR = zero bytes for non-scanning users, one-time ~50 MB pull for scanners. Barcode-with-corpus stays Phase 1; OCR stays Phase 2.
+
+**Script steps:**
+1. **Acquire + measure** - FDC "Branded Foods" bulk dataset; report real count + raw size (closes the verify-count gate).
+2. **Extract** - per product: `gtinUpc`, brand + description, the 5 target nutrients only.
+3. **Reduce** - nutrients → quantized grams (1 B each).
+4. **Clean** - dedup GTINs (keep latest revision), drop no-GTIN / no-usable-macro records, normalize names, strip serving noise.
+5. **Emit** - indexed SQLite keyed on GTIN + optional brand-string table.
+6. **Report go/no-go** - final store size, per-record byte breakdown (name vs nutrition vs key), % records with complete macros.
+7. **Verify** - scan a handful of real products (protein bars), confirm each resolves.
+
+**Routing:** deliberate/verified session (not Fable) - output feeds a launch-affecting size decision, numbers must be trustworthy.
+
 ## Effort read
 Phase 1 is bounded but real: camera permission + VisionKit UI, a corpus-generation script (USDA Branded → indexed store, the load-bearing piece), the reduction rule, `LogEntrySheet` wiring. Phase 1 alone removes the protein-bar annoyance and is worth doing standalone. Phase 2 is additive - defer until barcode coverage proves insufficient in practice.
 
