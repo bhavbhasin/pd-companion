@@ -198,23 +198,36 @@ def compress_test(policy, names):
 #             record = u64 gtin (LE, sorted asc) | u8 flags | 5× u8 macro
 #             flags bit i set => macro i (protein,fat,sugar,fiber,caffeine) known.
 #             "known" is distinct from a 0 value (sugar-free != sugar-unknown).
-# names.bin : "KBNM" | u16 ver | u16 chunk | u32 nchunks | (nchunks+1)× u32 dir
-#             | zlib chunks. chunk c holds names for records [c*chunk:(c+1)*chunk],
-#             each name = u16 len + utf8. Record i's name = chunk i//chunk, item i%chunk.
+# names.bin : "KBNM" | u16 ver | u16 chunk | u32 nchunks
+#             | (nchunks+1)× u32 offset | nchunks× u32 rawlen | raw-DEFLATE chunks.
+#             chunk c holds names for records [c*chunk:(c+1)*chunk], each = u16 len + utf8.
+#             Record i's name = chunk i//chunk, item i%chunk. Raw deflate (wbits=-15) so
+#             Apple's Compression framework (COMPRESSION_ZLIB = raw deflate) reads it.
 CHUNK = 256
 
-def emit_binary(prefix, records):
+def _deflate_raw(data):
     import zlib
-    # dedup by GTIN (keep last), parse to int, drop unusable keys
+    co = zlib.compressobj(9, zlib.DEFLATED, -15)  # -15 = raw, no zlib header/trailer
+    return co.compress(data) + co.flush()
+
+def emit_binary(prefix, records):
+    # dedup by GTIN, parse to int, drop unusable keys; keep the most-complete record
+    # per barcode (more known macros wins; ties -> later file order).
     by_gtin = {}
     for (gtin, name, p, fat, sug, fib, caf) in records:
         try:
             g = int(gtin)
         except (ValueError, TypeError):
             continue
-        if g <= 0 or g.bit_length() > 64:
+        if g <= 0 or g >= 10**14:     # GTIN is <= 14 digits; drop junk
             continue
-        by_gtin[g] = (name or "", p, fat, sug, fib, caf)
+        cand = (name or "", p, fat, sug, fib, caf)
+        if g in by_gtin:
+            known_new = sum(v is not None for v in (p, fat, sug, fib, caf))
+            known_old = sum(v is not None for v in by_gtin[g][1:])
+            if known_new < known_old:
+                continue
+        by_gtin[g] = cand
     gtins = sorted(by_gtin)
     n = len(gtins)
     log(f"Emitting {n:,} records (after GTIN dedup) -> {prefix}-index.bin / -names.bin")
@@ -239,20 +252,22 @@ def emit_binary(prefix, records):
 
     # names.bin
     nchunks = (n + CHUNK - 1) // CHUNK
-    blobs = []
+    blobs, rawlens = [], []
     for c in range(nchunks):
         buf = bytearray()
         for g in gtins[c * CHUNK:(c + 1) * CHUNK]:
             nm = by_gtin[g][0].encode("utf-8")[:65535]
             buf += struct.pack("<H", len(nm)) + nm
-        blobs.append(zlib.compress(bytes(buf), 9))
-    directory, off = [], 0
+        rawlens.append(len(buf))
+        blobs.append(_deflate_raw(bytes(buf)))
+    offsets, off = [], 0
     for b in blobs:
-        directory.append(off)
+        offsets.append(off)
         off += len(b)
-    directory.append(off)  # end sentinel
+    offsets.append(off)  # end sentinel
     names = bytearray(b"KBNM" + struct.pack("<HHI", 1, CHUNK, nchunks))
-    names += b"".join(struct.pack("<I", o) for o in directory)
+    names += b"".join(struct.pack("<I", o) for o in offsets)   # nchunks+1 offsets
+    names += b"".join(struct.pack("<I", r) for r in rawlens)   # nchunks raw lengths
     names += b"".join(blobs)
     names_path = f"{prefix}-names.bin"
     with open(names_path, "wb") as f:
