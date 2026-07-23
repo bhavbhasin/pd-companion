@@ -22,6 +22,11 @@ struct DayInReviewView: View {
     @State private var selectedEvent: DayEvent?
     @State private var showingBackup = false
 
+    // One size/weight for all three top-bar icons (plus, gear, lightbulb) so they render
+    // at matched height — the default toolbar font let the heavier `lightbulb.max` glyph
+    // sit taller than the outline pair, most visible in landscape.
+    private static let toolbarIconFont = Font.system(size: 18, weight: .regular)
+
     var body: some View {
         NavigationStack {
             DayReviewContent(
@@ -46,12 +51,14 @@ struct DayInReviewView: View {
                             showingLogSheet = true
                         } label: {
                             Image(systemName: "plus")
+                                .font(Self.toolbarIconFont)
                                 .accessibilityLabel("Log entry")
                         }
                         Button {
                             showingBackup = true
                         } label: {
                             Image(systemName: "gearshape")
+                                .font(Self.toolbarIconFont)
                                 .accessibilityLabel("Settings")
                         }
                     }
@@ -61,6 +68,7 @@ struct DayInReviewView: View {
                         InsightsView()
                     } label: {
                         Image(systemName: "lightbulb.max")
+                            .font(Self.toolbarIconFont)
                             .accessibilityLabel("Insights")
                     }
                 }
@@ -344,7 +352,7 @@ private struct DayReviewContent: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 10) {
                 if connectivity.syncIsStale {
                     staleWatchBanner
                 }
@@ -402,7 +410,10 @@ private struct DayReviewContent: View {
                     daylightMinutes: healthKit.dayDaylightMinutes
                 )
             }
-            .padding()
+            // Tighter side gutters + inter-card spacing to reclaim real estate as more
+            // panels appear (was default 16 all round + 16 spacing).
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
         }
         // Recompute the forecast on day change, and when today's doses or readings move.
         .task(id: forecastKey) { await recomputeForecast() }

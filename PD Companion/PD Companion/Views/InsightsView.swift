@@ -452,13 +452,15 @@ private struct InsightsList: View {
     var body: some View {
         ScrollView {
             if hasInsights {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
                     ForEach(orderedInsights, id: \.wrappedValue.id) { $insight in
                         InsightCard(insight: $insight)
                     }
                     disclaimerFooter
                 }
-                .padding()
+                // Match the Review screen's tightened gutter (was default 16 all round).
+                .padding(.horizontal, 12)
+                .padding(.vertical, 12)
             } else {
                 InsightsEmptyState()
                     .padding()
