@@ -508,6 +508,17 @@ class HealthKitManager: ObservableObject {
         }
     }
 
+    /// Full HRV (SDNN) history for the HRV trend drill-down — timestamped samples across
+    /// all available data (Apple Watch HRV spans years). Fetched on demand when the HRV
+    /// detail sheet opens, NOT part of the Review day load. Reuses the day-range fetch (so
+    /// the same source-exclusion applies); the 10-year lower bound comfortably covers any
+    /// Watch history without hardcoding a start date.
+    func fetchHRVHistory() async -> [HRVSample] {
+        let end = Date()
+        let start = Calendar.current.date(byAdding: .year, value: -10, to: end) ?? end
+        return await fetchHRVSamplesInRange(from: start, to: end)
+    }
+
     private func fetchTimeInDaylightInRange(from start: Date, to end: Date) async -> Double? {
         let type = HKQuantityType.quantityType(forIdentifier: .timeInDaylight)!
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end)

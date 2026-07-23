@@ -21,6 +21,7 @@ struct DayInReviewView: View {
     @State private var showingLogSheet = false
     @State private var selectedEvent: DayEvent?
     @State private var showingBackup = false
+    @State private var showingHRVDetail = false
 
     // One size/weight for all three top-bar icons (plus, gear, lightbulb) so they render
     // at matched height — the default toolbar font let the heavier `lightbulb.max` glyph
@@ -32,7 +33,8 @@ struct DayInReviewView: View {
             DayReviewContent(
                 selectedDate: selectedDate,
                 onEventTap: { selectedEvent = $0 },
-                onDataChanged: refreshLatestReadingDate
+                onDataChanged: refreshLatestReadingDate,
+                onSelectHRV: { showingHRVDetail = true }
             )
             .safeAreaInset(edge: .top, spacing: 0) {
                 dateHeader
@@ -84,6 +86,11 @@ struct DayInReviewView: View {
             }
             .sheet(isPresented: $showingBackup) {
                 BackupSheet()
+            }
+            .sheet(isPresented: $showingHRVDetail) {
+                HRVDetailSheet(dayValue: healthKit.dayHRV,
+                               dayCount: healthKit.dayHRVSamples.count,
+                               dayDate: selectedDate)
             }
             .sheet(isPresented: $showingDatePicker) {
                 NavigationStack {
@@ -227,6 +234,7 @@ private struct DayReviewContent: View {
     private let dayEnd: Date
     private let onEventTap: (DayEvent) -> Void
     private let onDataChanged: () -> Void
+    private let onSelectHRV: () -> Void
 
     // Shared horizontal-scroll position for the stacked Tremor + Glucose charts, so they
     // pan together and a spike lines up with the meal/dose that caused it. Both charts bind
@@ -249,7 +257,8 @@ private struct DayReviewContent: View {
 
     init(selectedDate: Date,
          onEventTap: @escaping (DayEvent) -> Void,
-         onDataChanged: @escaping () -> Void) {
+         onDataChanged: @escaping () -> Void,
+         onSelectHRV: @escaping () -> Void) {
         let start = Calendar.current.startOfDay(for: selectedDate)
         let end = Calendar.current.date(byAdding: .day, value: 1, to: start)
             ?? start.addingTimeInterval(86400)
@@ -257,6 +266,7 @@ private struct DayReviewContent: View {
         self.dayEnd = end
         self.onEventTap = onEventTap
         self.onDataChanged = onDataChanged
+        self.onSelectHRV = onSelectHRV
         _chartScrollX = State(initialValue: start)
         _dayReadings = Query(
             filter: #Predicate<TremorReading> { $0.timestamp >= start && $0.timestamp < end },
@@ -361,7 +371,8 @@ private struct DayReviewContent: View {
                     sleep: healthKit.daySleep,
                     tremorReadings: dayReadings,
                     dyskinesiaReadings: dayDyskinesia,
-                    hrv: healthKit.dayHRV
+                    hrv: healthKit.dayHRV,
+                    onSelectHRV: onSelectHRV
                 )
                 TremorTimelinePanel(
                     readings: dayReadings,
@@ -476,6 +487,7 @@ private struct GlanceCard: View {
     let tremorReadings: [TremorReading]
     let dyskinesiaReadings: [DyskinesiaReading]
     let hrv: Double?
+    var onSelectHRV: () -> Void = {}
 
     // Constant identity colors (blue = tremor, orange = dyskinesia) match the chart's two
     // waveforms exactly — this card doubles as the chart's implicit legend. Height/number
@@ -490,8 +502,14 @@ private struct GlanceCard: View {
                      value: tremorValue, sub: tremorLabel)
             }
             HStack(spacing: 16) {
-                stat(icon: "bolt.heart.fill", color: .purple,
-                     value: hrvValue, sub: hrvLabel)
+                // HRV is the first tile to open a trend drill-down (#2). Only this tile is
+                // tappable in v1; the others gain the same door as their trend surfaces land.
+                Button(action: onSelectHRV) {
+                    stat(icon: "bolt.heart.fill", color: .purple,
+                         value: hrvValue, sub: hrvLabel)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
                 stat(icon: "waveform.path", color: .dyskinesia,
                      value: dyskinesiaValue, sub: dyskinesiaLabel)
             }
