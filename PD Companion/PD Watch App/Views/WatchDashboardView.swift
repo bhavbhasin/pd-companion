@@ -67,38 +67,18 @@ struct WatchDashboardView: View {
         VStack(spacing: 6) {
             Text("Monitoring active")
                 .font(.headline)
-            Text("Tremor data will appear as it becomes available")
+            // One calm reassurance that "empty" is normal, not broken. Raw query errors are
+            // deliberately NOT surfaced here — transient warm-up errors (e.g. CMErrorDomain
+            // 103) are a false alarm on a patient's wrist, and diagnostics belong on the phone
+            // (Settings → Data sources), not on a 40mm face. Only actionable state earns the
+            // wrist: the "Motion access needed" case above.
+            Text("Tremor readings will appear as they're collected")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.kampaBlue)
                 .multilineTextAlignment(.center)
-            statusFooter
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 24)
-    }
-
-    // Discreet real-state line so an empty screen is diagnosable from a screenshot: when we
-    // last checked, how many samples came back, and any surfaced error — instead of a bare
-    // reassurance that hides every failure mode behind one message.
-    private var statusFooter: some View {
-        VStack(spacing: 2) {
-            Text(lastCheckedText)
-            if let error = movementManager.error {
-                Text(error)
-                    .foregroundStyle(.orange)
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .font(.system(size: 10))
-        .foregroundStyle(.secondary)
-        .padding(.top, 10)
-    }
-
-    private var lastCheckedText: String {
-        guard let date = movementManager.lastQueryDate else { return "Waiting for first check…" }
-        let f = DateFormatter()
-        f.timeStyle = .short
-        return "Last checked \(f.string(from: date)) · 0 readings"
     }
 
     private var latestReadingView: some View {
