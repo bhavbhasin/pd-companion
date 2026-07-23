@@ -96,10 +96,13 @@ struct VoiceLogDraft {
         if type == .symptom {
             let words = raw.lowercased().split { !$0.isLetter }.map(String.init)
             self.giSymptom = words.lazy.compactMap(GISymptom.match(word:)).first
-            self.giSeverity = words.lazy.compactMap(GISeverity.match(word:)).first ?? .present
+            // No spoken grade → default to mild (the confirm screen lets the user bump it);
+            // "present" is no longer an offered severity. GISeverity.match only yields
+            // mild/moderate/severe, so voice never produces .present.
+            self.giSeverity = words.lazy.compactMap(GISeverity.match(word:)).first ?? .mild
         } else {
             self.giSymptom = nil
-            self.giSeverity = .present
+            self.giSeverity = .mild
         }
 
         // Anchor: a spoken time wins; otherwise the viewed day at the current clock time,

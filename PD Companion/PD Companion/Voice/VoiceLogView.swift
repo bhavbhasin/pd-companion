@@ -33,7 +33,7 @@ struct VoiceLogView: View {
     @State private var mindfulnessMinutes = 10
     /// Editable GI symptom + severity — seeded from the parse, corrected before saving.
     @State private var giSymptom: GISymptom = .constipation
-    @State private var giSeverity: GISeverity = .present
+    @State private var giSeverity: GISeverity = .mild
     @State private var committing = false
     @State private var commitError: String?
 
@@ -187,14 +187,14 @@ struct VoiceLogView: View {
                 // classifier) is corrected before anything is written to Apple Health.
                 Section("Symptom") {
                     Picker("Symptom", selection: $giSymptom) {
-                        ForEach(GISymptom.allCases) { s in
+                        ForEach(GISymptom.loggable) { s in
                             Label(s.displayName, systemImage: s.iconName).tag(s)
                         }
                     }
                 }
                 Section("Severity") {
                     Picker("Severity", selection: $giSeverity) {
-                        ForEach(GISeverity.allCases) { Text($0.displayName).tag($0) }
+                        ForEach(GISeverity.loggable) { Text($0.displayName).tag($0) }
                     }
                     .pickerStyle(.segmented)
                 }

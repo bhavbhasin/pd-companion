@@ -34,7 +34,7 @@ struct LogEntrySheet: View {
                 ) { path.append(.mindfulness) }
                 menuRow(
                     icon: GISymptom.timelineSymbol, iconBg: GISymptom.tint.opacity(0.15), iconColor: GISymptom.tint,
-                    title: "Symptom", subtitle: "A GI symptom, when present"
+                    title: "Bowel/Urinary", subtitle: "Constipation or urinary, when present"
                 ) { path.append(.symptom) }
             }
             .listStyle(.insetGrouped)
@@ -369,7 +369,7 @@ struct LogSymptomScreen: View {
     let onSaved: (Date) -> Void
 
     @State private var symptom: GISymptom = .constipation
-    @State private var severity: GISeverity = .present
+    @State private var severity: GISeverity = .mild
     @State private var when: Date
     @State private var isSaving = false
     @State private var errorMessage: String?
@@ -390,13 +390,13 @@ struct LogSymptomScreen: View {
         Form {
             Section("Symptom") {
                 LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(GISymptom.allCases) { chip($0) }
+                    ForEach(GISymptom.loggable) { chip($0) }
                 }
                 .padding(.vertical, 4)
             }
             Section("Severity") {
                 Picker("Severity", selection: $severity) {
-                    ForEach(GISeverity.allCases) { Text($0.displayName).tag($0) }
+                    ForEach(GISeverity.loggable) { Text($0.displayName).tag($0) }
                 }
                 .pickerStyle(.segmented)
             }
