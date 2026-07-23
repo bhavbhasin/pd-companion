@@ -45,3 +45,6 @@ website/images/detail-meditation-card.jpg
 
 # Raw screen recordings (source only, not deployed)
 website/images/*.mov
+
+# Design doc with personal validation data — keep untracked like BACKLOG
+docs/design/forecast-composition-model.md
