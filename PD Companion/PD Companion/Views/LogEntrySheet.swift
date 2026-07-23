@@ -148,6 +148,14 @@ struct LogFoodScreen: View {
 
     @State private var description: String = ""
     @State private var timestamp: Date
+    @State private var showingScanner = false
+    // Set when a barcode scan resolved a product: the exact name we filled in, and the
+    // corpus-derived attributes. Save prefers these over re-classifying the text — but
+    // only while the description is still the scanned name (editing it reverts to the
+    // text classifier, since the user is now describing a different food).
+    @State private var scannedName: String?
+    @State private var scannedAttributes: [FoodAttribute]?
+    @State private var scanMissMessage: String?
 
     init(defaultDate: Date, onSaved: @escaping (Date) -> Void) {
         self.onSaved = onSaved
@@ -174,8 +182,20 @@ struct LogFoodScreen: View {
                     TextEditor(text: $description)
                         .frame(minHeight: 80)
                 }
-                Text("Just describe it. We'll estimate protein, fiber, and sugar for you later.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Button {
+                    scanMissMessage = nil
+                    showingScanner = true
+                } label: {
+                    Label("Scan a package barcode", systemImage: "barcode.viewfinder")
+                }
+                if let scanMissMessage {
+                    Text(scanMissMessage).font(.caption).foregroundStyle(.secondary)
+                } else if let note = scanResultNote {
+                    Text(note).font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("Describe it, or scan a package. We'll estimate protein, fiber, and sugar for you later.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
 
             Section(header: Text("When")) {
@@ -187,11 +207,21 @@ struct LogFoodScreen: View {
         }
         .navigationTitle("Log food")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingScanner) {
+            BarcodeScannerView { code in handleScan(code) }
+        }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
                     let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let attrs = FoodAttributeClassifier.shared.classify(trimmed)
+                    // Barcode attributes win while the text is still the scanned name;
+                    // once the user edits it, fall back to the free-text classifier.
+                    let attrs: [FoodAttribute]
+                    if trimmed == scannedName, let scanned = scannedAttributes {
+                        attrs = scanned
+                    } else {
+                        attrs = FoodAttributeClassifier.shared.classify(trimmed)
+                    }
                     let event = FoodEvent(timestamp: timestamp, userDescription: trimmed, attributes: attrs)
                     modelContext.insert(event)
                     onSaved(timestamp)
@@ -200,6 +230,30 @@ struct LogFoodScreen: View {
                 .disabled(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
+    }
+
+    // A logged barcode resolves the product name into the description + its corpus
+    // attributes; a miss leaves a quiet note and the user types it instead.
+    private func handleScan(_ code: String) {
+        if let product = BarcodeCorpus.shared.product(forScanned: code) {
+            description = product.name
+            scannedName = product.name
+            scannedAttributes = BarcodeCorpus.shared.attributes(product)
+            scanMissMessage = nil
+        } else {
+            scanMissMessage = "Barcode not recognized — describe it instead."
+        }
+    }
+
+    // The "what we'll record" line, shown only while the description still matches the
+    // scanned product (an edit reverts to text classification, so the note clears).
+    private var scanResultNote: String? {
+        let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let scannedName, trimmed == scannedName, let attrs = scannedAttributes else { return nil }
+        guard !attrs.isEmpty else {
+            return "Scanned. No notable protein, sugar, fiber, fat, or caffeine."
+        }
+        return "Scanned — recording: \(attrs.map(\.displayName).joined(separator: ", "))."
     }
 }
 
