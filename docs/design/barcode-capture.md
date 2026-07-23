@@ -52,16 +52,21 @@ All on-device: Vision/VisionKit + bundled corpus + FM. **No per-scan network cal
 
 ~53 B/record (name = ~41 B of it). Name dominates → the only lever that matters is **compressing the names blob**; filters and brand-dedup are duds (see MEASURED below).
 
-**MEASURED (FDC Branded 2026-04-30, `build_barcode_corpus.py`):**
-- **Count: 1,999,950 products** (~4× the old 400-500k guess). ~1.87M have usable macros.
-- **Filters are duds:** the set is essentially all-US, all-active - US filter drops 13k, discontinued drops 4k. Dropping no-macro records is the only real cut (2.0M → 1.87M).
-- **Naive SQLite = ~160 MB** (uncompressed names + page overhead) - NOT shippable.
-- **Names compress hard** (repetitive brands/units): 76.8 MB raw → **19.7 MB zlib** (3.9×) / 10.1 MB lzma (7.6×).
-- **Realistic on-device: ~42-52 MB** = 32 MB binary index (8 B gtin + 5 B macros + 4 B name offset) + 10-20 MB compressed names.
+**MEASURED (FDC Branded 2026-04-30, `build_barcode_corpus.py`; artifact round-trip-verified against raw):**
+- **2.0M rows → 439,082 UNIQUE products.** The dataset resubmits each barcode ~4.3× (only 465k distinct GTIN strings in 2M rows) - dedup by GTIN is the dominant size lever, not compression.
+- **Filters are duds:** essentially all-US, all-active (US drops 13k, discontinued 4k). Dropping no-macro records is the only useful filter.
+- **Final artifact = 11.8 MB** (6.1 MB index + 5.7 MB compressed names) for all 439k products. **Bundle it - no ODR needed.** (Naive SQLite would have been ~160 MB; the 2M→439k dedup + name compression is what collapses it.)
 
-**Format consequence:** can't be naive SQLite. Use a **binary gtin index + chunk-compressed names blob** (mmap, binary-search, decompress one chunk per scan) → keeps BOTH download and on-disk ~50 MB. Alternative (ship-compressed → inflate to SQLite on first launch) is simpler but balloons on-disk back to ~160 MB. Prefer the binary index since on-phone footprint matters, not just download.
+**Format (`--emit` produces `*-index.bin` + `*-names.bin`):**
+- **index.bin:** header + 439k × 14 B records, **sorted by GTIN** for binary search. Record = `u64 gtin | u8 flags | 5×u8 macros`. The flags byte marks which macros are *known* - "unknown" must stay distinct from "0 g" (sugar-free ≠ sugar-unknown), else the engine reads missing data as absence.
+- **names.bin:** names in 256-record chunks, each zlib-compressed. Chunk addressing is **implicit** from the record index (chunk = i/256, item = i%256) - no per-record name pointer. One small decompress per scan.
 
-**Verdict: viable.** ~50 MB via ODR = zero bytes for non-scanning users, one-time ~50 MB pull for scanners. Barcode-with-corpus stays Phase 1; OCR stays Phase 2.
+**Swift-side design notes (from the measurement):**
+- **Normalize the scanned barcode to integer form before lookup** (strip leading zeros) - the corpus key is the int GTIN, and a US UPC-A is an EAN-13 minus its leading zero. Without this, ~23k leading-zero variants miss.
+- **Dedup keeps one record per GTIN arbitrarily (file order).** Refine to keep the most-complete-macros / most-recent `modified_date` record before shipping - a data-quality nicety, not a blocker.
+- Add a `gtin < 10^14` filter to drop invalid >14-digit junk (1 record today).
+
+**Verdict: viable and cheap.** 11.8 MB bundled. Barcode-with-corpus stays Phase 1; OCR stays Phase 2.
 
 **Script steps:**
 1. **Acquire + measure** - FDC "Branded Foods" bulk dataset; report real count + raw size (closes the verify-count gate).

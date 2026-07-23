@@ -15,7 +15,7 @@ Usage:
 import argparse
 import csv
 import os
-import sqlite3
+import struct
 import sys
 import time
 
@@ -48,8 +48,9 @@ def log(msg):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("dataset_dir")
-    ap.add_argument("--emit", help="write a SQLite corpus for this policy")
-    ap.add_argument("--policy", default="us_active",
+    ap.add_argument("--emit", metavar="PREFIX",
+                    help="write the binary corpus: PREFIX-index.bin + PREFIX-names.bin")
+    ap.add_argument("--policy", default="us_active_macros",
                     help="filter policy for --emit: all | us | active | us_active | us_active_macros")
     ap.add_argument("--compress-test", metavar="POLICY",
                     help="measure compressed names-blob + index size for POLICY")
@@ -169,7 +170,7 @@ def main():
         compress_test(args.compress_test, test_names)
 
     if args.emit:
-        emit(args.emit, records)
+        emit_binary(args.emit, records)
 
 
 def compress_test(policy, names):
@@ -192,26 +193,73 @@ def compress_test(policy, names):
     print()
 
 
-def emit(path, records):
-    log(f"Emitting {len(records):,} records -> {path}")
-    if os.path.exists(path):
-        os.remove(path)
-    con = sqlite3.connect(path)
-    con.execute("""CREATE TABLE product(
-        gtin INTEGER PRIMARY KEY, name TEXT,
-        protein INT, fat INT, sugar INT, fiber INT, caffeine INT)""")
-    ins = []
+# --- Binary corpus format (see docs/design/barcode-capture.md) ---------------
+# index.bin : "KBIX" | u16 ver | u16 chunk | u32 count | count × record
+#             record = u64 gtin (LE, sorted asc) | u8 flags | 5× u8 macro
+#             flags bit i set => macro i (protein,fat,sugar,fiber,caffeine) known.
+#             "known" is distinct from a 0 value (sugar-free != sugar-unknown).
+# names.bin : "KBNM" | u16 ver | u16 chunk | u32 nchunks | (nchunks+1)× u32 dir
+#             | zlib chunks. chunk c holds names for records [c*chunk:(c+1)*chunk],
+#             each name = u16 len + utf8. Record i's name = chunk i//chunk, item i%chunk.
+CHUNK = 256
+
+def emit_binary(prefix, records):
+    import zlib
+    # dedup by GTIN (keep last), parse to int, drop unusable keys
+    by_gtin = {}
     for (gtin, name, p, fat, sug, fib, caf) in records:
         try:
             g = int(gtin)
-        except ValueError:
+        except (ValueError, TypeError):
             continue
-        ins.append((g, name, p, fat, sug, fib, caf))
-    con.executemany("INSERT OR REPLACE INTO product VALUES (?,?,?,?,?,?,?)", ins)
-    con.commit()
-    con.execute("VACUUM")
-    con.close()
-    log(f"  wrote {os.path.getsize(path)/1e6:.1f} MB ({len(ins):,} rows after GTIN dedup)")
+        if g <= 0 or g.bit_length() > 64:
+            continue
+        by_gtin[g] = (name or "", p, fat, sug, fib, caf)
+    gtins = sorted(by_gtin)
+    n = len(gtins)
+    log(f"Emitting {n:,} records (after GTIN dedup) -> {prefix}-index.bin / -names.bin")
+
+    # index.bin
+    idx = bytearray(b"KBIX" + struct.pack("<HHI", 1, CHUNK, n))
+    for g in gtins:
+        _, p, fat, sug, fib, caf = by_gtin[g]
+        vals = [p, fat, sug, fib, caf]
+        flags = 0
+        packed = []
+        for bit, v in enumerate(vals):
+            if v is not None:
+                flags |= (1 << bit)
+                packed.append(v)
+            else:
+                packed.append(0)
+        idx += struct.pack("<QB5B", g, flags, *packed)
+    idx_path = f"{prefix}-index.bin"
+    with open(idx_path, "wb") as f:
+        f.write(idx)
+
+    # names.bin
+    nchunks = (n + CHUNK - 1) // CHUNK
+    blobs = []
+    for c in range(nchunks):
+        buf = bytearray()
+        for g in gtins[c * CHUNK:(c + 1) * CHUNK]:
+            nm = by_gtin[g][0].encode("utf-8")[:65535]
+            buf += struct.pack("<H", len(nm)) + nm
+        blobs.append(zlib.compress(bytes(buf), 9))
+    directory, off = [], 0
+    for b in blobs:
+        directory.append(off)
+        off += len(b)
+    directory.append(off)  # end sentinel
+    names = bytearray(b"KBNM" + struct.pack("<HHI", 1, CHUNK, nchunks))
+    names += b"".join(struct.pack("<I", o) for o in directory)
+    names += b"".join(blobs)
+    names_path = f"{prefix}-names.bin"
+    with open(names_path, "wb") as f:
+        f.write(names)
+
+    im, nm_ = os.path.getsize(idx_path) / 1e6, os.path.getsize(names_path) / 1e6
+    log(f"  index.bin {im:.1f} MB + names.bin {nm_:.1f} MB = {im + nm_:.1f} MB total")
 
 
 if __name__ == "__main__":
