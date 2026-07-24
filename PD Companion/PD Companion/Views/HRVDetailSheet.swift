@@ -29,7 +29,7 @@ struct HRVDetailSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 10) {
                     todaySection
                     if loading {
                         ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
@@ -37,7 +37,8 @@ struct HRVDetailSheet: View {
                         compareSection
                     }
                 }
-                .padding()
+                .padding(.horizontal, 12)
+                .padding(.vertical, 12)
             }
             .navigationTitle("HRV")
             .navigationBarTitleDisplayMode(.inline)
@@ -78,7 +79,7 @@ struct HRVDetailSheet: View {
                     .font(.title)
                     .foregroundStyle(Color.hrvAccent)
                 Text(dayValue.map { "\(Int($0))" } ?? "—")
-                    .font(.system(size: 40, weight: .semibold, design: .rounded))
+                    .font(.largeTitle.weight(.semibold))
                     .foregroundStyle(Color.hrvAccent)
                 Text("ms").font(.title3).foregroundStyle(.secondary)
             }
@@ -155,17 +156,15 @@ struct HRVDetailSheet: View {
                 .font(.caption).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
         } else {
-            Chart(series, id: \.date) { point in
-                LineMark(x: .value("Date", point.date), y: .value("HRV", point.value))
-                    .foregroundStyle(.purple)
-                    .interpolationMethod(.monotone)
-                if range == .week {
-                    PointMark(x: .value("Date", point.date), y: .value("HRV", point.value))
-                        .foregroundStyle(.purple)
-                }
-            }
-            .chartYAxisLabel("ms")
-            .frame(height: 180)
+            // Shared scrubbable chart — drag to read any day/month as a number.
+            ScrubbableTrendChart(
+                points: series.map { TrendPoint(date: $0.date, value: $0.value) },
+                accent: .purple,
+                yAxisLabel: "ms",
+                valueText: { "\(Int($0)) ms" },
+                showPoints: range == .week,
+                monthlyDates: range == .year || range == .all
+            )
         }
     }
 }
@@ -187,6 +186,9 @@ enum HRVRange: String, CaseIterable, Identifiable {
 
 // HRV's identity accent (matches the glance tile's `bolt.heart.fill` and the trend line).
 extension Color { static let hrvAccent = Color.purple }
+
+// Sleep's identity accent (matches the glance tile's indigo `bed.double.fill`).
+extension Color { static let sleepAccent = Color.indigo }
 
 struct HRVComparison { let text: String; let valence: HRVValence }
 

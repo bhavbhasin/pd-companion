@@ -26,6 +26,17 @@ struct GlucoseSample: Sendable, Equatable {
     let source: String
 }
 
+/// One night reduced for the Sleep trend + score — derived from the SAME stage flatten the
+/// daily view uses, one entry per sleep-day (Apple's ~6 PM boundary). `date` is the sleep-day's
+/// start-of-day, so it keys and sorts cleanly alongside the other daily series.
+struct NightSleep: Equatable {
+    let date: Date
+    let asleepHours: Double
+    let wakeUps: Int          // interruptions between onset and final wake
+    let awakeMinutes: Double
+    let bedtime: Date?
+}
+
 struct SleepBreakdown: Equatable {
     var totalAsleepHours: Double
     var deepHours: Double

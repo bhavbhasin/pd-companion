@@ -571,51 +571,104 @@ class HealthKitManager: ObservableObject {
                 // spans the stager left blank. This recovers sleep the Watch missed (a
                 // late-detected onset) without letting a coarse all-night block steamroll
                 // the Watch's real awake/interruption detail.
-                let primarySources = Set(
-                    relevant.filter {
-                        $0.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
-                        $0.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue
-                    }.map { $0.sourceRevision.source.bundleIdentifier }
-                )
+                continuation.resume(returning: Self.reduceSleepNight(relevant))
+            }
+            store.execute(query)
+        }
+    }
 
-                // Flatten to one stage-per-moment timeline (also dedupes a single source
-                // that overlaps itself across syncs), with staging sources winning per-moment.
-                let segments = Self.flattenSleepStages(relevant, primarySources: primarySources)
+    /// Reduce one night's raw sleep samples to a `SleepBreakdown`. Shared by the daily fetch and
+    /// the multi-night history fetch so both count sleep identically (gap-fill across sources,
+    /// stage flatten, interruptions). Pure/static → safe to run off the query callback.
+    private nonisolated static func reduceSleepNight(_ relevant: [HKCategorySample]) -> SleepBreakdown {
+        // Gap-fill across sources: a "staging" source (one that emits Deep/REM — e.g. Apple
+        // Watch) is authoritative wherever it tracked; coarser sources (e.g. AutoSleep, which
+        // only writes "asleep unspecified") fill ONLY the spans the stager left blank.
+        let primarySources = Set(
+            relevant.filter {
+                $0.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
+                $0.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue
+            }.map { $0.sourceRevision.source.bundleIdentifier }
+        )
 
-                var deep = 0.0, rem = 0.0, core = 0.0, awake = 0.0
-                for seg in segments {
-                    let dur = seg.end.timeIntervalSince(seg.start)
-                    switch seg.stage {
-                    case .deep:  deep += dur
-                    case .rem:   rem += dur
-                    case .core:  core += dur
-                    case .awake: awake += dur
-                    }
+        // Flatten to one stage-per-moment timeline (also dedupes a single source that overlaps
+        // itself across syncs), with staging sources winning per-moment.
+        let segments = flattenSleepStages(relevant, primarySources: primarySources)
+
+        var deep = 0.0, rem = 0.0, core = 0.0, awake = 0.0
+        for seg in segments {
+            let dur = seg.end.timeIntervalSince(seg.start)
+            switch seg.stage {
+            case .deep:  deep += dur
+            case .rem:   rem += dur
+            case .core:  core += dur
+            case .awake: awake += dur
+            }
+        }
+
+        let asleepSegments = segments.filter { $0.stage != .awake }
+        let bedtime = asleepSegments.first?.start
+        let wakeTime = asleepSegments.last?.end
+        let interruptions: Int
+        if let bedtime, let wakeTime {
+            interruptions = segments.filter {
+                $0.stage == .awake && $0.start > bedtime && $0.end < wakeTime
+            }.count
+        } else {
+            interruptions = 0
+        }
+        return SleepBreakdown(
+            totalAsleepHours: (deep + rem + core) / 3600.0,
+            deepHours: deep / 3600.0,
+            remHours: rem / 3600.0,
+            coreHours: core / 3600.0,
+            awakeMinutes: awake / 60.0,
+            interruptions: interruptions,
+            bedtime: bedtime,
+            wakeTime: wakeTime,
+            stages: segments
+        )
+    }
+
+    /// Per-night sleep across (effectively) the user's full history, for the Sleep trend + score.
+    /// One query pulls every sleep sample, then each night is reduced with the SAME logic as the
+    /// daily view. Fetched on demand when the Sleep detail sheet opens, NOT part of the day load.
+    /// Nights are bucketed by Apple's ~6 PM sleep-day boundary: a sample belongs to sleep-day D
+    /// if it falls in [6 PM(D-1), 6 PM(D)) — i.e. `startOfDay(endDate + 6h)`.
+    func fetchSleepHistory() async -> [NightSleep] {
+        let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
+        let end = Date()
+        let start = Calendar.current.date(byAdding: .year, value: -10, to: end) ?? end
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: sleepType, predicate: predicate,
+                limit: HKObjectQueryNoLimit, sortDescriptors: nil
+            ) { _, samples, _ in
+                guard let raw = samples as? [HKCategorySample] else {
+                    continuation.resume(returning: [])
+                    return
                 }
-
-                let asleepSegments = segments.filter { $0.stage != .awake }
-                let bedtime = asleepSegments.first?.start
-                let wakeTime = asleepSegments.last?.end
-                let interruptions: Int
-                if let bedtime, let wakeTime {
-                    interruptions = segments.filter {
-                        $0.stage == .awake && $0.start > bedtime && $0.end < wakeTime
-                    }.count
-                } else {
-                    interruptions = 0
+                let included = Self.includedSources(raw, excluded: HealthSourcePrefs.excluded)
+                let cal = Calendar.current
+                let byNight = Dictionary(grouping: included) { sample in
+                    cal.startOfDay(for: sample.endDate.addingTimeInterval(6 * 3600))
                 }
-                let breakdown = SleepBreakdown(
-                    totalAsleepHours: (deep + rem + core) / 3600.0,
-                    deepHours: deep / 3600.0,
-                    remHours: rem / 3600.0,
-                    coreHours: core / 3600.0,
-                    awakeMinutes: awake / 60.0,
-                    interruptions: interruptions,
-                    bedtime: bedtime,
-                    wakeTime: wakeTime,
-                    stages: segments
-                )
-                continuation.resume(returning: breakdown)
+                var nights: [NightSleep] = []
+                for (day, nightSamples) in byNight {
+                    let b = Self.reduceSleepNight(nightSamples)
+                    guard b.hasData else { continue }
+                    nights.append(NightSleep(
+                        date: day,
+                        asleepHours: b.totalAsleepHours,
+                        wakeUps: b.interruptions,
+                        awakeMinutes: b.awakeMinutes,
+                        bedtime: b.bedtime
+                    ))
+                }
+                nights.sort { $0.date < $1.date }
+                continuation.resume(returning: nights)
             }
             store.execute(query)
         }

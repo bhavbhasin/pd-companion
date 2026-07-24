@@ -22,6 +22,7 @@ struct DayInReviewView: View {
     @State private var selectedEvent: DayEvent?
     @State private var showingBackup = false
     @State private var showingHRVDetail = false
+    @State private var showingSleepDetail = false
 
     // One size/weight for all three top-bar icons (plus, gear, lightbulb) so they render
     // at matched height — the default toolbar font let the heavier `lightbulb.max` glyph
@@ -34,7 +35,8 @@ struct DayInReviewView: View {
                 selectedDate: selectedDate,
                 onEventTap: { selectedEvent = $0 },
                 onDataChanged: refreshLatestReadingDate,
-                onSelectHRV: { showingHRVDetail = true }
+                onSelectHRV: { showingHRVDetail = true },
+                onSelectSleep: { showingSleepDetail = true }
             )
             .safeAreaInset(edge: .top, spacing: 0) {
                 dateHeader
@@ -91,6 +93,9 @@ struct DayInReviewView: View {
                 HRVDetailSheet(dayValue: healthKit.dayHRV,
                                dayCount: healthKit.dayHRVSamples.count,
                                dayDate: selectedDate)
+            }
+            .sheet(isPresented: $showingSleepDetail) {
+                SleepDetailSheet(daySleep: healthKit.daySleep, dayDate: selectedDate)
             }
             .sheet(isPresented: $showingDatePicker) {
                 NavigationStack {
@@ -235,6 +240,7 @@ private struct DayReviewContent: View {
     private let onEventTap: (DayEvent) -> Void
     private let onDataChanged: () -> Void
     private let onSelectHRV: () -> Void
+    private let onSelectSleep: () -> Void
 
     // Shared horizontal-scroll position for the stacked Tremor + Glucose charts, so they
     // pan together and a spike lines up with the meal/dose that caused it. Both charts bind
@@ -258,7 +264,8 @@ private struct DayReviewContent: View {
     init(selectedDate: Date,
          onEventTap: @escaping (DayEvent) -> Void,
          onDataChanged: @escaping () -> Void,
-         onSelectHRV: @escaping () -> Void) {
+         onSelectHRV: @escaping () -> Void,
+         onSelectSleep: @escaping () -> Void) {
         let start = Calendar.current.startOfDay(for: selectedDate)
         let end = Calendar.current.date(byAdding: .day, value: 1, to: start)
             ?? start.addingTimeInterval(86400)
@@ -267,6 +274,7 @@ private struct DayReviewContent: View {
         self.onEventTap = onEventTap
         self.onDataChanged = onDataChanged
         self.onSelectHRV = onSelectHRV
+        self.onSelectSleep = onSelectSleep
         _chartScrollX = State(initialValue: start)
         _dayReadings = Query(
             filter: #Predicate<TremorReading> { $0.timestamp >= start && $0.timestamp < end },
@@ -372,7 +380,8 @@ private struct DayReviewContent: View {
                     tremorReadings: dayReadings,
                     dyskinesiaReadings: dayDyskinesia,
                     hrv: healthKit.dayHRV,
-                    onSelectHRV: onSelectHRV
+                    onSelectHRV: onSelectHRV,
+                    onSelectSleep: onSelectSleep
                 )
                 TremorTimelinePanel(
                     readings: dayReadings,
@@ -488,6 +497,7 @@ private struct GlanceCard: View {
     let dyskinesiaReadings: [DyskinesiaReading]
     let hrv: Double?
     var onSelectHRV: () -> Void = {}
+    var onSelectSleep: () -> Void = {}
 
     // Constant identity colors (blue = tremor, orange = dyskinesia) match the chart's two
     // waveforms exactly — this card doubles as the chart's implicit legend. Height/number
@@ -496,8 +506,13 @@ private struct GlanceCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 16) {
-                stat(icon: "bed.double.fill", color: .indigo,
-                     value: sleepValue, sub: "Total sleep")
+                // Sleep opens its trend/score drill-down (#2), same as HRV.
+                Button(action: onSelectSleep) {
+                    stat(icon: "bed.double.fill", color: .indigo,
+                         value: sleepValue, sub: "Total sleep")
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
                 stat(icon: "waveform.path.ecg", color: .blue,
                      value: tremorValue, sub: tremorLabel)
             }
