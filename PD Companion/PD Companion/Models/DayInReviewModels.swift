@@ -29,7 +29,9 @@ struct GlucoseSample: Sendable, Equatable {
 /// One night reduced for the Sleep trend + score — derived from the SAME stage flatten the
 /// daily view uses, one entry per sleep-day (Apple's ~6 PM boundary). `date` is the sleep-day's
 /// start-of-day, so it keys and sorts cleanly alongside the other daily series.
-struct NightSleep: Equatable {
+/// One reduced night. `Codable` so the history can be cached on disk (see `SleepHistoryStore`) —
+/// re-deriving it from raw HealthKit samples costs over a second at multi-year histories.
+struct NightSleep: Equatable, Codable {
     let date: Date
     let asleepHours: Double
     let wakeUps: Int          // interruptions between onset and final wake

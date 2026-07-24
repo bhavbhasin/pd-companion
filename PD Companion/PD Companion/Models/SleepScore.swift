@@ -136,11 +136,34 @@ struct SleepScore: Equatable {
 
     // MARK: Baseline
 
+    /// Score a whole history causally: each night against the trailing-13 baseline of the nights
+    /// BEFORE it. The one place nights are turned into scores — the glance tile, the detail card
+    /// and the trend line all read this table, so a night has exactly one score in the app.
+    ///
+    /// Carries the prior bedtimes forward in one pass. Calling `baselineBedtimeMinutes(nights[..<i])`
+    /// per night re-converted the whole prefix just to keep its last 13 — quadratic, and measured at
+    /// ~1s over 2,188 nights because every conversion runs `Calendar.dateComponents`.
+    static func scoreHistory(_ nights: [NightSleep]) -> [(date: Date, score: SleepScore)] {
+        var priorBedtimes: [Double] = []      // minutes since 6 PM, ascending, nights BEFORE this one
+        return nights.map { night in
+            let baseline: Double? = priorBedtimes.count >= baselineNights
+                ? priorBedtimes.suffix(baselineNights).reduce(0, +) / Double(baselineNights)
+                : nil
+            let s = score(night, baselineBedtimeMinutes: baseline)
+            if let b = night.bedtime { priorBedtimes.append(minutesSince6PM(b)) }
+            return (night.date, s)
+        }
+    }
+
     /// The usual bedtime as minutes since 6 PM, averaged over the trailing `baselineNights` nights
     /// that have one (Apple uses the last 13). Measuring from 6 PM (the sleep-day boundary) keeps
     /// typical late-evening bedtimes off the midnight wrap, so this is a plain mean with no
     /// circular-stats machinery. nil until there are enough nights to be honest about "usual".
-    static func baselineBedtimeMinutes(_ nights: [NightSleep]) -> Double? {
+    ///
+    /// Pass only the nights BEFORE the one being scored. A night included in its own baseline
+    /// drags "usual" toward itself and under-reports its own deviation — a 1:38 AM bedtime pulled
+    /// the baseline 20 min later and bought back 4 bedtime points.
+    static func baselineBedtimeMinutes<C: Collection>(_ nights: C) -> Double? where C.Element == NightSleep {
         let mins = nights.compactMap { $0.bedtime.map(minutesSince6PM) }.suffix(baselineNights)
         guard mins.count >= baselineNights else { return nil }
         return mins.reduce(0, +) / Double(mins.count)

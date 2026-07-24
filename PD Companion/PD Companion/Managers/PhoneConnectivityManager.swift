@@ -203,11 +203,6 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
             context.insert(TremorReading(from: sample))
             inserted += 1
         }
-        // DIAGNOSTIC (temporary): the batch's own time span + how much of it the phone already
-        // had. If inserted=0 with [lo,hi] sitting well before `latestStoredSampleTimestamp`,
-        // the watch is re-shipping known data (a per-launch waste); if hi ≈ our newest, it's a
-        // benign boundary catch-up. See the sync-redundancy investigation.
-        syncLog("[sync] persistSamples batch span [\(lo.timeIntervalSince1970) .. \(hi.timeIntervalSince1970)] overlapExisting=\(existing.count)/\(samples.count) newestStored=\(latestStoredSampleTimestamp()?.timeIntervalSince1970 ?? -1)")
         // Loud save — never swallow a save error. A silent `try?` made a failed persist
         // indistinguishable from "never arrived", hiding the last step of the
         // receive→dedup→insert→save pipeline. See docs/design/watch-sync-payload-options.md (Step 1).

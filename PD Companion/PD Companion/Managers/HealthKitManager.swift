@@ -79,6 +79,14 @@ class HealthKitManager: ObservableObject {
     /// sees it. Set in `fetchDayInReview`; step-1 approximation (see the glucose fetch note).
     @Published var hasEverHadGlucose = false
 
+    /// Every night's sleep score, keyed by its sleep-day. The glance tile and the detail sheet both
+    /// read this, so a night shows one number everywhere. Populated by `loadSleepHistory()`.
+    @Published var sleepScores: [Date: SleepScore] = [:]
+    /// The nights behind `sleepScores`, kept so the detail sheet can build its trend off the same
+    /// load instead of re-running the query.
+    private(set) var sleepHistory: [NightSleep] = []
+    private var sleepHistoryLoadedAt: Date?
+
     private let writeTypes: Set<HKSampleType> = {
         var types: Set<HKSampleType> = [
             HKObjectType.categoryType(forIdentifier: .mindfulSession)!,
@@ -630,15 +638,58 @@ class HealthKitManager: ObservableObject {
         )
     }
 
-    /// Per-night sleep across (effectively) the user's full history, for the Sleep trend + score.
-    /// One query pulls every sleep sample, then each night is reduced with the SAME logic as the
-    /// daily view. Fetched on demand when the Sleep detail sheet opens, NOT part of the day load.
-    /// Nights are bucketed by Apple's ~6 PM sleep-day boundary: a sample belongs to sleep-day D
-    /// if it falls in [6 PM(D-1), 6 PM(D)) — i.e. `startOfDay(endDate + 6h)`.
-    func fetchSleepHistory() async -> [NightSleep] {
+    /// Loads and scores the sleep history, incrementally. Nights already reduced are read from disk;
+    /// HealthKit is queried only for the tail, so the full multi-year query runs once per install
+    /// rather than once per launch. In-memory, one load per hour is still plenty — the only night
+    /// that can change is the current one. `force` discards both caches and rebuilds.
+    @MainActor
+    func loadSleepHistory(force: Bool = false) async {
+        if !force, let at = sleepHistoryLoadedAt, Date().timeIntervalSince(at) < 3600 { return }
+
+        let excluded = HealthSourcePrefs.excluded
+        let cached = force ? nil : SleepHistoryStore.load(excluded: excluded)
+
+        // Re-query a few days behind the last stored night rather than only what's strictly newer:
+        // the Watch keeps syncing a night's samples after the fact, so the most recent nights can
+        // still gain segments. Anything older has settled.
+        let cal = Calendar.current
+        let since = (cached?.last?.date).flatMap { cal.date(byAdding: .day, value: -3, to: $0) }
+        let fresh = await fetchSleepHistory(since: since)
+
+        // A night keyed to day D draws on samples from the evening of D−1, so the FIRST night in the
+        // window is always cut off by the predicate — it reduces to a bedtime hours too late. Left
+        // to overwrite the cache it corrupts a settled night, drags the 13-night bedtime baseline
+        // with it, and quietly changes scores on later nights. Only accept nights whose whole sleep
+        // period is inside the window; the boundary night keeps its cached value.
+        let firstComplete = since.flatMap { cal.date(byAdding: .day, value: 1, to: $0) }
+        let usable = fresh.filter { night in firstComplete.map { night.date >= $0 } ?? true }
+
+        var byDate = Dictionary(uniqueKeysWithValues: (cached ?? []).map { ($0.date, $0) })
+        for night in usable { byDate[night.date] = night }     // a re-read night supersedes the cache
+        let history = byDate.values.sorted { $0.date < $1.date }
+        guard !history.isEmpty else { return }
+
+        if history != cached { SleepHistoryStore.save(history, excluded: excluded) }
+
+        sleepHistory = history
+        sleepScores = Dictionary(
+            SleepScore.scoreHistory(history).map { (cal.startOfDay(for: $0.date), $0.score) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        sleepHistoryLoadedAt = Date()
+    }
+
+    /// Per-night sleep, reduced with the SAME logic as the daily view. Nights are bucketed by
+    /// Apple's ~6 PM sleep-day boundary: a sample belongs to sleep-day D if it falls in
+    /// [6 PM(D-1), 6 PM(D)) — i.e. `startOfDay(endDate + 6h)`.
+    ///
+    /// `since` bounds the query — pass the point past which the cache is untrustworthy; nil reads
+    /// everything (first run, or a forced rebuild). Note the first night in a bounded window is
+    /// necessarily clipped, since its samples start the evening before; `loadSleepHistory` drops it.
+    func fetchSleepHistory(since: Date? = nil) async -> [NightSleep] {
         let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
         let end = Date()
-        let start = Calendar.current.date(byAdding: .year, value: -10, to: end) ?? end
+        let start = since ?? Calendar.current.date(byAdding: .year, value: -10, to: end) ?? end
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
 
         return await withCheckedContinuation { continuation in

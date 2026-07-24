@@ -95,7 +95,7 @@ struct DayInReviewView: View {
                                dayDate: selectedDate)
             }
             .sheet(isPresented: $showingSleepDetail) {
-                SleepDetailSheet(daySleep: healthKit.daySleep, dayDate: selectedDate)
+                SleepDetailSheet(dayDate: selectedDate)
             }
             .sheet(isPresented: $showingDatePicker) {
                 NavigationStack {
@@ -383,6 +383,7 @@ private struct DayReviewContent: View {
                 }
                 GlanceCard(
                     sleep: healthKit.daySleep,
+                    sleepScore: healthKit.sleepScores[dayStart],
                     tremorReadings: dayReadings,
                     dyskinesiaReadings: dayDyskinesia,
                     hrv: healthKit.dayHRV,
@@ -446,6 +447,9 @@ private struct DayReviewContent: View {
         }
         // Recompute the forecast on day change, and when today's doses or readings move.
         .task(id: forecastKey) { await recomputeForecast() }
+        // Sleep scores for the glance tile. Cached in the manager, so this is a no-op after the
+        // first load and the detail sheet reuses it rather than re-querying.
+        .task { await healthKit.loadSleepHistory() }
         // Option B: when a sync lands a new reading for the visible day, nudge the parent
         // to re-read the latest-reading timestamp so the header label stays live.
         .onChange(of: dayReadings.last?.timestamp) { _, _ in onDataChanged() }
@@ -523,6 +527,8 @@ enum DyskinesiaDisplay {
 
 private struct GlanceCard: View {
     let sleep: SleepBreakdown?
+    /// Scored from the shared history, so this tile shows the same number the drill-down opens on.
+    var sleepScore: SleepScore? = nil
     let tremorReadings: [TremorReading]
     let dyskinesiaReadings: [DyskinesiaReading]
     let hrv: Double?
@@ -545,7 +551,7 @@ private struct GlanceCard: View {
                 // Sleep opens its trend/score drill-down (#2), same as HRV.
                 Button(action: onSelectSleep) {
                     stat(icon: "bed.double.fill", color: .indigo,
-                         value: sleepValue, sub: "Total sleep")
+                         value: sleepValue, sub: sleepLabel)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -606,12 +612,15 @@ private struct GlanceCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    // The tile leads with the score because that's what tapping it opens on — every other tile's
+    // number is the quantity its trend charts, and sleep was the one that changed on tap. Duration
+    // isn't lost, it moves to the sub-line, where it replaces a label that carried no information.
     private var sleepValue: String {
-        guard let s = sleep, s.hasData else { return "—" }
-        let h = Int(s.totalAsleepHours)
-        let m = Int((s.totalAsleepHours - Double(h)) * 60)
-        return "\(h)h \(m)m"
+        guard let score = sleepScore else { return "—" }
+        return "\(score.total)"
     }
+
+    private let sleepLabel = "Sleep score"
 
     private var avgTremor: Double? {
         guard !tremorReadings.isEmpty else { return nil }

@@ -18,8 +18,7 @@ struct SleepDetailSheet: View {
     @EnvironmentObject var healthKit: HealthKitManager
     @Environment(\.dismiss) private var dismiss
 
-    /// The tapped tile's night — section 1 mirrors what the tile showed.
-    let daySleep: SleepBreakdown?
+    /// The tapped tile's night. Its score comes from the loaded history, not a separate fetch.
     let dayDate: Date
 
     @State private var data: SleepTrendData?
@@ -49,8 +48,9 @@ struct SleepDetailSheet: View {
             }
         }
         .task {
-            let history = await healthKit.fetchSleepHistory()
-            data = SleepTrendData.build(history: history, now: Date())
+            // Shares the Review screen's cached load rather than re-running the 10-year query.
+            await healthKit.loadSleepHistory()
+            data = SleepTrendData.build(history: healthKit.sleepHistory, now: Date())
             loading = false
         }
     }
@@ -59,23 +59,22 @@ struct SleepDetailSheet: View {
 
     private var isToday: Bool { Calendar.current.isDateInToday(dayDate) }
 
-    /// The selected night as a `NightSleep`, scored with the history baseline once loaded.
-    private var dayScore: SleepScore? {
-        guard let s = daySleep, s.hasData else { return nil }
-        let night = NightSleep(date: Calendar.current.startOfDay(for: dayDate),
-                               asleepHours: s.totalAsleepHours,
-                               wakeUps: s.interruptions,
-                               awakeMinutes: s.awakeMinutes,
-                               bedtime: s.bedtime)
-        return SleepScore.score(night, baselineBedtimeMinutes: data?.baselineBedtime)
-    }
+    /// The selected night's score, read from the history the trend is built on. It used to score
+    /// `daySleep` (the day-window fetch) separately against a baseline that included this very
+    /// night — two sources and a contaminated baseline, which is how the card and the scrubber
+    /// showed different numbers for the same night. nil until the history load finishes.
+    private var dayScore: SleepScore? { data?.score(on: dayDate) }
 
     private var lastNightSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(isToday ? "Last night" : dayDate.formatted(.dateTime.weekday(.wide).month().day()))
                 .font(.headline)
 
-            if let score = dayScore {
+            if loading {
+                // Section 1 now waits on the same history the trend uses — that shared load is
+                // what guarantees the two agree.
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
+            } else if let score = dayScore {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: "bed.double.fill")
                         .font(.title)
@@ -221,25 +220,19 @@ struct SleepTrendData {
     private let p90: Double?
     private let daily: [TrendPoint]        // one score per night, ascending
     private let trend: CorrelationEngine.TrendResult?
+    private let scored: [(date: Date, score: SleepScore)]   // the same nights, full component breakdown
 
     static func build(history: [NightSleep], now: Date) -> SleepTrendData {
         let cal = Calendar.current
-        // Display baseline = the trailing-13-night average bedtime (Apple's window), used to score
-        // the currently-shown night in the sheet.
-        let baseline = SleepScore.baselineBedtimeMinutes(history)
 
-        // Each historical night is scored against ITS OWN trailing-13 baseline (causal — a night
-        // is judged only by the nights before it), so the trend line matches what the score would
-        // have read on that morning.
-        let daily: [TrendPoint] = history.enumerated().map { i, night in
-            let prior = history[..<i]
-                .compactMap { $0.bedtime.map(SleepScore.minutesSince6PM) }
-                .suffix(SleepScore.baselineNights)
-            let nightBaseline: Double? = prior.count >= SleepScore.baselineNights
-                ? prior.reduce(0, +) / Double(prior.count) : nil
-            let s = SleepScore.score(night, baselineBedtimeMinutes: nightBaseline)
-            return TrendPoint(date: night.date, value: Double(s.total))
-        }
+        // One scoring pass, shared with the glance tile (see `SleepScore.scoreHistory`): a night
+        // is judged only by the nights before it, so the trend line matches what the score would
+        // have read on that morning, and no surface can disagree with another about a night.
+        let scored = SleepScore.scoreHistory(history)
+        let daily: [TrendPoint] = scored.map { TrendPoint(date: $0.date, value: Double($0.score.total)) }
+
+        // Display baseline: the nights before the most recent one, on the same causal rule.
+        let baseline = SleepScore.baselineBedtimeMinutes(history.dropLast())
 
         func mean(sinceDaysAgo days: Int) -> Double? {
             guard let cutoff = cal.date(byAdding: .day, value: -days, to: now) else { return nil }
@@ -263,7 +256,15 @@ struct SleepTrendData {
 
         return SleepTrendData(baselineBedtime: baseline, avg7: mean(sinceDaysAgo: 7),
                               avg30: mean(sinceDaysAgo: 30), avgAll: avgAll,
-                              p10: p10, p90: p90, daily: daily, trend: trend)
+                              p10: p10, p90: p90, daily: daily, trend: trend,
+                              scored: scored)
+    }
+
+    /// The score for one night, as the trend line has it. Section 1 and the scrubber therefore
+    /// read the same number for the same night by construction.
+    func score(on date: Date) -> SleepScore? {
+        let cal = Calendar.current
+        return scored.first { cal.isDate($0.date, inSameDayAs: date) }?.score
     }
 
     private static func percentile(_ sorted: [Double], _ q: Double) -> Double? {
