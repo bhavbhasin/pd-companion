@@ -257,6 +257,12 @@ private struct DayReviewContent: View {
     // hidden. Recomputed when the day, its doses, or its readings change (see task id).
     @State private var forecast: CorrelationEngine.DayForecast?
 
+    // Per-tile trend drill-downs (tremor/dyskinesia) — presented here in the child because
+    // their day values come from these SwiftData @Queries (HRV/Sleep sheets live on the parent,
+    // where their HealthKit day values are).
+    @State private var showingTremorDetail = false
+    @State private var showingDyskinesiaDetail = false
+
     @Query private var dayReadings: [TremorReading]
     @Query private var dayDyskinesia: [DyskinesiaReading]
     @Query private var dayFoodEvents: [FoodEvent]
@@ -381,7 +387,9 @@ private struct DayReviewContent: View {
                     dyskinesiaReadings: dayDyskinesia,
                     hrv: healthKit.dayHRV,
                     onSelectHRV: onSelectHRV,
-                    onSelectSleep: onSelectSleep
+                    onSelectSleep: onSelectSleep,
+                    onSelectTremor: { showingTremorDetail = true },
+                    onSelectDyskinesia: { showingDyskinesiaDetail = true }
                 )
                 TremorTimelinePanel(
                     readings: dayReadings,
@@ -448,6 +456,28 @@ private struct DayReviewContent: View {
             chartScrollX = newStart
             selectedTime = nil
         }
+        .sheet(isPresented: $showingTremorDetail) {
+            SeverityTrendSheet(
+                title: "Tremor", glyph: "waveform.path.ecg", accent: .blue,
+                dayValue: avgTremorToday, dayCount: dayReadings.count, dayDate: dayStart,
+                load: SeverityTrendSheet.tremorHistory)
+        }
+        .sheet(isPresented: $showingDyskinesiaDetail) {
+            SeverityTrendSheet(
+                title: "Dyskinesia", glyph: "waveform.path", accent: .dyskinesia,
+                dayValue: avgDyskinesiaToday, dayCount: dayDyskinesia.count, dayDate: dayStart,
+                load: SeverityTrendSheet.dyskinesiaHistory)
+        }
+    }
+
+    // The tapped day's averages — mirror exactly what the glance tiles show, so section 1 of
+    // each sheet matches the tile the user tapped.
+    private var avgTremorToday: Double? {
+        dayReadings.isEmpty ? nil
+            : dayReadings.reduce(0.0) { $0 + $1.tremorScore } / Double(dayReadings.count)
+    }
+    private var avgDyskinesiaToday: Double? {
+        DyskinesiaDisplay.dayAverage(dayDyskinesia)
     }
 }
 
@@ -498,6 +528,12 @@ private struct GlanceCard: View {
     let hrv: Double?
     var onSelectHRV: () -> Void = {}
     var onSelectSleep: () -> Void = {}
+    var onSelectTremor: () -> Void = {}
+    var onSelectDyskinesia: () -> Void = {}
+
+    /// Icon-chip edge. Scaled so the chip grows with the label at larger Dynamic Type sizes
+    /// instead of the glyph outgrowing its wash.
+    @ScaledMetric private var chipSize: CGFloat = 30
 
     // Constant identity colors (blue = tremor, orange = dyskinesia) match the chart's two
     // waveforms exactly — this card doubles as the chart's implicit legend. Height/number
@@ -505,7 +541,7 @@ private struct GlanceCard: View {
     // gradient was a redundant 3rd encoding that over-signalled a noisy daily average.)
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 16) {
+            HStack(spacing: 10) {
                 // Sleep opens its trend/score drill-down (#2), same as HRV.
                 Button(action: onSelectSleep) {
                     stat(icon: "bed.double.fill", color: .indigo,
@@ -513,20 +549,28 @@ private struct GlanceCard: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                stat(icon: "waveform.path.ecg", color: .blue,
-                     value: tremorValue, sub: tremorLabel)
+                // Tremor opens its cross-day trend drill-down (#2).
+                Button(action: onSelectTremor) {
+                    stat(icon: "waveform.path.ecg", color: .blue,
+                         value: tremorValue, sub: tremorLabel)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            HStack(spacing: 16) {
-                // HRV is the first tile to open a trend drill-down (#2). Only this tile is
-                // tappable in v1; the others gain the same door as their trend surfaces land.
+            HStack(spacing: 10) {
+                // All four tiles are now trend-drill-down doors (Sleep/HRV/Tremor/Dyskinesia).
                 Button(action: onSelectHRV) {
                     stat(icon: "bolt.heart.fill", color: .purple,
                          value: hrvValue, sub: hrvLabel)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                stat(icon: "waveform.path", color: .dyskinesia,
-                     value: dyskinesiaValue, sub: dyskinesiaLabel)
+                Button(action: onSelectDyskinesia) {
+                    stat(icon: "waveform.path", color: .dyskinesia,
+                         value: dyskinesiaValue, sub: dyskinesiaLabel)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding()
@@ -536,13 +580,30 @@ private struct GlanceCard: View {
 
     private func stat(icon: String, color: Color, value: String, sub: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon).foregroundStyle(color).font(.title3).frame(width: 28)
+            // The tinted icon chip is the tile's affordance: a flat card carrying a crafted colored
+            // glyph reads as an interactive unit (Health/Fitness do exactly this), and the wash
+            // reinforces each signal's identity color. It replaces the earlier bevel — a raised
+            // fill + hairline + drop shadow — which said "button" in a dated way.
+            Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(color)
+                .frame(width: chipSize, height: chipSize)
+                .background(
+                    RoundedRectangle(cornerRadius: chipSize * 0.28, style: .continuous)
+                        .fill(color.opacity(0.15))
+                )
             VStack(alignment: .leading, spacing: 1) {
                 Text(value).font(.headline)
+                // One line + graceful shrink keeps the two tiles in a row the same height.
                 Text(sub).font(.caption2).foregroundStyle(.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.85)
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
+        // No tile surface at all: the stats sit directly on the card, so the colored chip is the
+        // only structure. A filled rounded rect behind each one still read as a raised inset.
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var sleepValue: String {
@@ -629,6 +690,13 @@ private struct TremorTimelinePanel: View {
         guard firstEmptyEpoch > 0 else { return 0 }
         return Date().timeIntervalSince(Date(timeIntervalSince1970: firstEmptyEpoch)) / 86_400
     }
+
+    /// Top of the scrub readout. The callout hangs from `calloutAnchorY`; the crosshair stops a
+    /// hair below it, because the annotation's own 2pt spacing means the box's visible top edge
+    /// sits just under the anchor — ending the rule at the anchor left a sliver showing above the
+    /// callout. In this 0...4.6 domain 0.05 ≈ that 2pt. Neither crosses the event glyph lane (y≈4.3).
+    private let calloutAnchorY = 4.05
+    private let crosshairTopY = 4.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -724,13 +792,15 @@ private struct TremorTimelinePanel: View {
                         }
                     }
                     if let t = selectedTime {
-                        RuleMark(x: .value("Selected", t))
+                        RuleMark(x: .value("Selected", t),
+                                 yStart: .value("Scrub", 0),
+                                 yEnd: .value("Scrub", crosshairTopY))
                             .foregroundStyle(.gray.opacity(0.55))
                             .lineStyle(StrokeStyle(lineWidth: 1))
                         // Hang the callout from just under the event-glyph lane (glyphs sit at
                         // y≈4.3) into the plot's empty top — clears the glyphs and never clips
                         // at the card top. Invisible anchor point (symbolSize 0).
-                        PointMark(x: .value("Selected", t), y: .value("Callout lane", 4.05))
+                        PointMark(x: .value("Selected", t), y: .value("Callout lane", calloutAnchorY))
                             .symbolSize(0)
                             .annotation(position: .bottom, alignment: .center, spacing: 2,
                                         overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .plot))) {

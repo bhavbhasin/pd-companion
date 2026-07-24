@@ -31,6 +31,8 @@ struct ScrubbableTrendChart: View {
 
     // Native tap/drag selection (same interaction as the Tremor chart). Snapped to a real night.
     @State private var selectedDate: Date? = nil
+    /// Measured callout width, used only to clamp it inside the plot at the series' ends.
+    @State private var calloutWidth: CGFloat = 0
 
     private var selected: TrendPoint? {
         guard let d = selectedDate else { return nil }
@@ -38,6 +40,19 @@ struct ScrubbableTrendChart: View {
             abs($0.date.timeIntervalSince(d)) < abs($1.date.timeIntervalSince(d))
         }
     }
+
+    // y-domain from 0 with a thin margin above the data — just enough that the peak doesn't touch
+    // the frame. (It used to reserve 55% for an in-plot callout; the callout now sits above the
+    // plot, so that headroom was dead space between the top gridline and the axis-unit label.)
+    // An explicit domain + explicit axes keep the crosshair RuleMark inside the plot data area
+    // instead of spilling into the x-axis label band.
+    private var yLo: Double { min(points.map(\.value).min() ?? 0, 0) }
+    private var yHi: Double { points.map(\.value).max() ?? 1 }
+    private var ySpan: Double { max(yHi - yLo, 1) }
+    private var yDomain: ClosedRange<Double> { yLo...(yHi + ySpan * 0.08) }
+
+    /// Gap between the callout's bottom edge and the top of the plot (where the crosshair starts).
+    private let calloutGap: CGFloat = 4
 
     var body: some View {
         Chart {
@@ -51,27 +66,51 @@ struct ScrubbableTrendChart: View {
                 }
             }
             if let sel = selected {
-                // Full-height crosshair with the callout box hung from the top of the plot —
-                // the same floating-callout pattern as the Tremor chart and Apple's sleep trend.
                 RuleMark(x: .value("Date", sel.date))
                     .foregroundStyle(.gray.opacity(0.55))
                     .lineStyle(StrokeStyle(lineWidth: 1))
-                    .annotation(
-                        position: .top, alignment: .center, spacing: 2,
-                        overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .plot))
-                    ) {
-                        callout(sel)
-                    }
                 PointMark(x: .value("Date", sel.date), y: .value(yAxisLabel, sel.value))
                     .foregroundStyle(accent)
                     .symbolSize(90)
             }
         }
+        .chartYScale(domain: yDomain)
         .chartYAxisLabel(yAxisLabel)
+        .chartYAxis { AxisMarks() }
+        .chartXAxis { AxisMarks() }
         .frame(height: 200)
         .chartXSelection(value: $selectedDate)
+        .chartOverlay { proxy in calloutLane(proxy) }
         // A range/data swap invalidates the scrubbed point.
         .onChange(of: points) { selectedDate = nil }
+    }
+
+    // The callout lives ABOVE the plot, not inside it: a Charts `.annotation` can only hang in the
+    // plot area, where it crowds the data line no matter how it's anchored. Here it sits in the
+    // band the chart already reserves above the plot (the one holding the y-axis unit label),
+    // bottom-aligned to the top of the crosshair and tracking its x — so it never overlaps the
+    // series. Clamped to the plot's x-range, which also keeps it clear of the unit label.
+    @ViewBuilder
+    private func calloutLane(_ proxy: ChartProxy) -> some View {
+        GeometryReader { geo in
+            if let sel = selected, let anchor = proxy.plotFrame {
+                let plot = geo[anchor]
+                let center = plot.minX + (proxy.position(forX: sel.date) ?? 0)
+                let x = min(max(center - calloutWidth / 2, plot.minX),
+                            max(plot.maxX - calloutWidth, plot.minX))
+                ZStack(alignment: .bottomLeading) {
+                    Color.clear
+                    callout(sel)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { calloutWidth = $0 }
+                        .offset(x: x)
+                }
+                .frame(width: geo.size.width,
+                       height: max(plot.minY - calloutGap, 0),
+                       alignment: .bottomLeading)
+            }
+        }
+        // The overlay must never intercept the scrub gesture underneath it.
+        .allowsHitTesting(false)
     }
 
     // Styled to match the app's shared `CrosshairCallout`: a solid `systemBackground` box (adapts
