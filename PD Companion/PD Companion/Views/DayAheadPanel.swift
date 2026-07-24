@@ -59,11 +59,10 @@ struct DayAheadPanel: View {
     }
 
     private var phaseAtNow: CorrelationEngine.DayForecast.Phase? {
-        // Prefer the responsive live-edge read for the *current* state — the 30-min-binned segments
-        // lag ~30min at the edge. Fall back to the segment containing `now` when there's too little
-        // recent tremor to call it. See docs/design/tremor-averaging.md, Symptom 2.
-        if let live = forecast.nowState { return live }
-        return forecast.segments.first { forecast.now >= $0.start && forecast.now < $0.end }?.phase
+        // The current-state read is simply the segment containing `now` — the honest 30-min
+        // measured reconstruction. The old responsive live-edge override was removed (Jul 24 2026):
+        // on thin/irregular data it painted a false ON at the edge. See docs/design/tremor-averaging.md.
+        forecast.segments.first { forecast.now >= $0.start && forecast.now < $0.end }?.phase
     }
 
     // Rounded to the nearest 15 min: a personal dose-response estimate doesn't support

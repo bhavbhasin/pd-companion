@@ -2146,11 +2146,6 @@ nonisolated extension CorrelationEngine {
         let nextOffStart: Date?              // first projected OFF onset after `now`, if any
         let nextOffRange: ClosedRange<Date>? // uncertainty band around nextOffStart
         let confidence: Insight.Confidence
-        // Responsive "right now" ON/OFF from the last few minutes of raw tremor — bypasses the
-        // 30-min bin + 60-min despeckle that make `segments` lag ~30min at the live edge. Drives the
-        // headline's current-state call ONLY; the band stays smoothed (honest after the fact). nil
-        // when too little recent data to override the reconstructed segment. See design note Symptom 2.
-        var nowState: Phase? = nil
         // Set ONLY on a zero-dose day (Phase 0, forecast-composition-model.md): the user's
         // flat personal band — the validated best unconditional forecast (every conditioning
         // lever tested NO-GO, Jul 22). nil on a dosed day; the view switches vocabulary on it.
@@ -2426,15 +2421,9 @@ nonisolated extension CorrelationEngine {
             if half > 0 { nextOffRange = off.addingTimeInterval(-half)...off.addingTimeInterval(half) }
         }
 
-        // Responsive current-state read from raw tremor near `now` (the historical part of the
-        // band stays smoothed). It drives both the headline (nowState) AND the band's trailing
-        // sliver (applyLiveEdge), so the two agree at the live edge instead of the bar lagging.
-        let live = liveEdgeState(readings: todaysReadings, now: now)
-        let segmentsWithEdge = applyLiveEdge(segments, live: live, now: now)
-
-        return DayForecast(segments: segmentsWithEdge, now: now,
+        return DayForecast(segments: segments, now: now,
                            nextOffStart: nextOffStart, nextOffRange: nextOffRange,
-                           confidence: confidence, nowState: live?.phase)
+                           confidence: confidence)
     }
 
     /// The zero-dose forecast: observed reconstruction of the elapsed day CLASSIFIED
@@ -2621,58 +2610,12 @@ nonisolated extension CorrelationEngine {
         return s[lo] + (s[hi] - s[lo]) * (rank - Double(lo))
     }
 
-    /// Responsive current-state read: MEDIAN of the last `windowMin` of raw tremor, OFF when that
-    /// level clears the threshold and tremor isn't clearly falling (a dose kicking in). Median (not
-    /// a peak) so a single motion-artifact minute — e.g. a walk or eating — can't flip the headline
-    /// to OFF; it still beats the reconstructed band's ~30min lag (30-min bin + despeckle floor).
-    /// Returns nil when there aren't enough recent samples to responsibly override the band.
-    static func liveEdgeState(readings: [TremorPoint], now: Date,
-                              windowMin: Double = 15) -> (phase: DayForecast.Phase, level: Double)? {
-        let lo = now.addingTimeInterval(-windowMin * 60)
-        let window = readings.filter { $0.timestamp >= lo && $0.timestamp <= now }
-            .sorted { $0.timestamp < $1.timestamp }
-        guard window.count >= 3 else { return nil }
-        let level = percentile(window.map(\.tremorScore), 0.5)
-        // Trend: later-half mean vs earlier-half mean. "Clearly falling" means improving enough that
-        // a brief lingering peak shouldn't flip us to OFF — avoids live-edge flicker as a dose lands.
-        let mid = window.count / 2
-        let earlyMean = window[..<mid].map(\.tremorScore).reduce(0, +) / Double(mid)
-        let lateMean = window[mid...].map(\.tremorScore).reduce(0, +) / Double(window.count - mid)
-        let falling = lateMean < earlyMean - 0.15
-        return (level >= offThreshold && !falling) ? (.off, level) : (.on, level)
-    }
-
-    /// Overlay the responsive live-edge read onto the tail of the band so the bar's `now` end
-    /// agrees with the headline (both use `liveEdgeState`). Only the trailing `windowMin` is
-    /// touched — the rest of the reconstruction stays smoothed. No-op when `live` is nil. An OFF
-    /// sliver carries the live median as its severity so it shades like the tremor line, matching
-    /// how observed OFF segments shade. Observed segments end at `now` (spliced), so the window
-    /// falls entirely within them.
-    static func applyLiveEdge(_ segments: [DayForecast.Segment],
-                              live: (phase: DayForecast.Phase, level: Double)?,
-                              now: Date, windowMin: Double = 15) -> [DayForecast.Segment] {
-        guard let live else { return segments }
-        let edgeStart = now.addingTimeInterval(-windowMin * 60)
-        var out: [DayForecast.Segment] = []
-        for seg in segments {
-            // Untouched: fully before the edge window, or at/after now (the projected future).
-            if seg.end <= edgeStart || seg.start >= now { out.append(seg); continue }
-            if seg.start < edgeStart {   // keep the pre-window part as-is
-                out.append(.init(start: seg.start, end: edgeStart, phase: seg.phase,
-                                 observed: seg.observed, meanTremor: seg.meanTremor))
-            }
-            let lo = max(seg.start, edgeStart), hi = min(seg.end, now)
-            if hi > lo {                 // overwrite the edge window with the live read
-                out.append(.init(start: lo, end: hi, phase: live.phase, observed: true,
-                                 meanTremor: live.phase == .off ? live.level : nil))
-            }
-            if seg.end > now {           // preserve any future part (defensive; splice prevents it)
-                out.append(.init(start: now, end: seg.end, phase: seg.phase,
-                                 observed: seg.observed, meanTremor: seg.meanTremor))
-            }
-        }
-        return out
-    }
+    // The responsive live-edge nowcast (`liveEdgeState` + `applyLiveEdge`) was removed Jul 24 2026.
+    // It read the last 15 min of raw tremor to override the current-state call, but on thin/irregular
+    // data its "clearly falling" trend rule painted a false ON at the live edge (verified: median
+    // tremor 2.0 shown as ON because a mid-window dip tripped the trend test). There is too little
+    // signal in this cohort's data to nowcast reliably (all conditioners NO-GO, Jul 22), so the bar
+    // now shows only the honest 30-min reconstruction + projected band. See docs/design/tremor-averaging.md.
 
     /// Observed segments up to `now`, projected segments after — splitting whichever
     /// segment straddles `now` so the seam is exact.
