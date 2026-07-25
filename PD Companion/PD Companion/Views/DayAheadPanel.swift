@@ -141,7 +141,7 @@ struct DayAheadPanel: View {
         // on, so it never gets buried behind the generic expectation.
         switch phaseAtNow {
         case .below:
-            return "\(lead) - and you're running below your typical range right now (usually \(mid))."
+            return "\(lead) - and you're running better than usual right now (usually \(mid))."
         case .above:
             return "\(lead) - you're running above your typical range right now (usually \(mid))."
         default:
@@ -315,7 +315,10 @@ struct DayAheadPanel: View {
         let hot = sharedLabel([(.off, "OFF"), (.above, "above typical")])
         return HStack(spacing: 14) {
             if !calm.isEmpty { swatch(color: Insight.brandBlue, label: calm) }
-            if present.contains(.below) { swatch(color: Self.belowColor, label: "Below typical") }
+            // "Better than usual", NOT "below typical": on a symptom scale lower is better, so
+            // "below" reads as a deficit to anyone not already thinking in tremor units — the
+            // one label that could turn good news into a worried question. (Bhav, Jul 24.)
+            if present.contains(.below) { swatch(color: Self.belowColor, label: "Better than usual") }
             if !hot.isEmpty { swatch(color: Self.offColor, label: hot) }
             if present.contains(.unknown) { swatch(color: .gray, label: "No watch data") }
         }
