@@ -2124,12 +2124,14 @@ nonisolated extension CorrelationEngine {
 nonisolated extension CorrelationEngine {
 
     struct DayForecast: Sendable {
-        /// `.on`/`.off` are the dosed-day vocabulary (levodopa state). `.typical`/`.above`
-        /// are the ZERO-DOSE vocabulary — measured level vs the user's own typical band
-        /// (at/below vs above its upper edge). Deliberately separate cases: ON/OFF is
-        /// clinical medication language and must never label an unmedicated day.
-        /// See docs/design/forecast-composition-model.md (Phase 0).
-        enum Phase: Sendable { case on, off, unknown, typical, above }
+        /// `.on`/`.off` are the MEDICATION vocabulary (levodopa state) and may label only
+        /// time inside a dose-influence envelope. `.below`/`.typical`/`.above` are the
+        /// SUBSTRATE vocabulary — measured level vs the user's own band (below its lower
+        /// edge / within / above its upper edge) — and label everything else, including the
+        /// hours of a dosed day after the drug has cleared. Deliberately separate cases:
+        /// ON/OFF is clinical medication language and must never label a moment no dose can
+        /// explain. See docs/design/forecast-composition-model.md (Phase 0, Phase 0.5).
+        enum Phase: Sendable, Hashable { case on, off, unknown, typical, above, below }
         struct Segment: Sendable {
             let start: Date
             let end: Date
@@ -2161,6 +2163,58 @@ nonisolated extension CorrelationEngine {
         let q25: Double
         let q75: Double
         let nDays: Int      // distinct days contributing ≥ substrateMinReadingsPerDay clean readings
+    }
+
+    /// Which vocabulary is allowed to label a given moment, and where its lines sit. ONE
+    /// type holds the whole rule so the observed and projected sides cannot drift apart.
+    ///
+    /// - ON/OFF may label only time inside a **dose-influence envelope** — the span where a
+    ///   logged dose is still a live pharmacological explanation. Line = `offThreshold`
+    ///   ("am I actually controlled").
+    /// - Everywhere else the honest question is relative: measured level vs the user's OWN
+    ///   band. Lines = the band's own quartile edges, not picked constants.
+    /// - `.below` additionally requires being AWAKE. The band is estimated from awake
+    ///   readings, so scoring a sleeping reading against it is a category error, not a
+    ///   stricter test — rest tremor is suppressed in sleep, so every night would otherwise
+    ///   render as a "below your typical range" win and drown the real (awake) ones.
+    ///   Asleep-and-calm simply reads `.typical` (or `.on` inside an envelope): no special
+    ///   colour, no special phase. See docs/design/forecast-composition-model.md Phase 0.5.
+    struct PhaseVocabulary: Sendable {
+        let envelopes: [(start: Date, end: Date)]   // merged, chronological
+        let band: SubstrateBand?
+        let sleep: [(start: Date, end: Date)]       // merged, chronological
+
+        init(envelopes: [(start: Date, end: Date)], band: SubstrateBand?,
+             sleep: [SleepInterval] = []) {
+            self.envelopes = mergeIntervals(envelopes)
+            self.band = band
+            self.sleep = mergeIntervals(sleep.map { ($0.start, $0.end) })
+        }
+
+        func inEnvelope(_ t: Date) -> Bool { envelopes.contains { t >= $0.start && t < $0.end } }
+        func isAsleep(_ t: Date) -> Bool { sleep.contains { t >= $0.start && t < $0.end } }
+
+        /// Label one measured bin. Edges are inclusive toward the OUTSIDE on both sides
+        /// (`>= q75` is above, `<= q25` is below) — symmetric, and preserves the pre-existing
+        /// `.above` boundary exactly.
+        func phase(mean: Double, at t: Date) -> DayForecast.Phase {
+            if inEnvelope(t) { return mean >= offThreshold ? .off : .on }
+            guard let band else {
+                // Cold start: no band to compare against. Keep the shipped ON/OFF behaviour
+                // rather than inventing a sixth phase for "can't compare yet".
+                return mean >= offThreshold ? .off : .on
+            }
+            if mean >= band.q75 { return .above }
+            if mean <= band.q25, !isAsleep(t) { return .below }
+            return .typical
+        }
+
+        /// The de-noise line for the region containing `t`: the boundary `despeckle`'s
+        /// confidence margin is measured from (see `observedTimeline`).
+        func despeckleThreshold(at t: Date) -> Double {
+            if inEnvelope(t) { return offThreshold }
+            return band?.q75 ?? offThreshold
+        }
     }
 
     /// A signed adjustment a future validated lever applies to the projection (shifts
@@ -2311,6 +2365,50 @@ nonisolated extension CorrelationEngine {
                              nDays: nDays)
     }
 
+    // MARK: dose-influence envelope (Phase 0.5 — what ON/OFF is allowed to label)
+
+    /// The span(s) over which a logged dose is still a live explanation for how the user
+    /// feels, and therefore the ONLY time ON/OFF vocabulary may be used.
+    ///
+    /// Per dose: starts at the dose. Ends at the NEXT dose that same day if there is one
+    /// (you are inside the dosing day — the gap between two pills is a genuine wearing-off
+    /// OFF, which is exactly what the card is for), otherwise at its projected ON end plus
+    /// the drug-tail guard. Threshold-free: only logged events and the already-fitted
+    /// per-formulation timing decide it.
+    ///
+    /// A dose from BEFORE `dayStart` is included only when its own envelope actually reaches
+    /// into the day, and it is never bridged forward to today's first dose — an overnight gap
+    /// between last night's pill and this morning's is unmedicated time, not an OFF window.
+    /// (Bhav's Jul 24: one 5:23 AM dose, so the envelope ends mid-morning and the whole
+    /// remaining day is substrate vocabulary, not a 13-hour "wearing-off" claim.)
+    static func doseEnvelopes(todaysDoses: [Dose], priorDose: Dose?, dayStart: Date,
+                              model: (Dose) -> PulseModel?,
+                              onsetAdj: TimeInterval = 0, durAdj: TimeInterval = 0)
+        -> [(start: Date, end: Date)] {
+        /// End of a dose's own projected influence: ON end + the residual drug tail.
+        func selfEnd(_ d: Dose) -> Date? {
+            guard let m = model(d) else { return nil }
+            let onsetSec = m.onset(bucketOf(hourOfDay(d.timestamp))) * 60 + onsetAdj
+            let durSec = m.onDuration * 60 + durAdj
+            return d.timestamp
+                .addingTimeInterval(max(onsetSec + 60, durSec) + substrateResidualBufferMin * 60)
+        }
+
+        var out: [(start: Date, end: Date)] = []
+        let today = todaysDoses.sorted { $0.timestamp < $1.timestamp }
+        for (i, d) in today.enumerated() {
+            guard let own = selfEnd(d) else { continue }         // no pulse → no envelope
+            let next = i + 1 < today.count ? today[i + 1].timestamp : nil
+            out.append((d.timestamp, max(next ?? own, d.timestamp.addingTimeInterval(60))))
+        }
+        if let p = priorDose, let end = selfEnd(p), end > dayStart {
+            out.append((p.timestamp, end))
+        }
+        // Same one-bin de-jitter the projected ON windows get, so two doses can't leave a
+        // hairline substrate sliver between their envelopes.
+        return mergeIntervals(out, gapTolSec: forecastObservedBinMin * 60)
+    }
+
     private static let forecastObservedBinMin = 30.0
     // A measured ON/OFF flip must persist ≥ this many bins to count as a distinct episode.
     // Binary-thresholding a continuous tremor that hovers near the OFF line produces
@@ -2399,12 +2497,25 @@ nonisolated extension CorrelationEngine {
         // de-jitter floor the observed side gets. Reused for `nextOffStart` so the bar and the
         // headline's next-OFF time agree.
         let mergedOn = mergeIntervals(onIntervals, gapTolSec: forecastObservedBinMin * 60)
-        let projected = phaseTimeline(on: mergedOn,
-                                      dayStart: dayStart, dayEnd: dayEnd)
+
+        // Phase 0.5: ON/OFF is confined to the dose-influence envelope; the rest of a dosed
+        // day is substrate vocabulary against the user's own band. The band is therefore
+        // computed on dosed days too — it is no longer the "zero-dose day" flag it was in
+        // Phase 0, it is simply the band whenever it is estimable.
+        let priorDose = allDoses.filter { $0.timestamp < dayStart }
+            .max { $0.timestamp < $1.timestamp }
+        let envelopes = doseEnvelopes(todaysDoses: doses, priorDose: priorDose,
+                                      dayStart: dayStart, model: model,
+                                      onsetAdj: onsetAdj, durAdj: durAdj)
+        let band = substrateBand(history: history, allDoses: allDoses, sleep: sleep, models: models)
+        let vocabulary = PhaseVocabulary(envelopes: envelopes, band: band, sleep: sleep)
+
+        let projected = projectedTimeline(on: mergedOn, vocabulary: vocabulary,
+                                         dayStart: dayStart, dayEnd: dayEnd)
 
         // Observed phase for the elapsed day from measured tremor (honest reconstruction).
         let observed = observedTimeline(readings: todaysReadings, dayStart: dayStart,
-                                        end: min(now, dayEnd))
+                                        end: min(now, dayEnd), vocabulary: vocabulary)
 
         // Compose: observed up to `now`, projected after; split the straddling segment.
         let segments = spliceAtNow(observed: observed, projected: projected,
@@ -2423,7 +2534,7 @@ nonisolated extension CorrelationEngine {
 
         return DayForecast(segments: segments, now: now,
                            nextOffStart: nextOffStart, nextOffRange: nextOffRange,
-                           confidence: confidence)
+                           confidence: confidence, band: band)
     }
 
     /// The zero-dose forecast: observed reconstruction of the elapsed day CLASSIFIED
@@ -2441,12 +2552,12 @@ nonisolated extension CorrelationEngine {
                                        sleep: sleep, models: models),
               let confidence = gate(substrateBandGate, n: band.nDays) else { return nil }
 
-        // Observed: same 30-min bin + despeckle machinery as the dosed path, but the
-        // classification line is the band's own upper edge (q75) — a structural boundary
-        // (the band's definition), not a picked constant.
+        // Observed: same 30-min bin + despeckle machinery as the dosed path, with an EMPTY
+        // envelope — so every bin gets substrate vocabulary, classified against the band's
+        // own quartile edges (structural boundaries, not picked constants).
+        let vocabulary = PhaseVocabulary(envelopes: [], band: band, sleep: sleep)
         let observed = observedTimeline(readings: todaysReadings, dayStart: dayStart,
-                                        end: min(now, dayEnd), threshold: band.q75,
-                                        high: .above, low: .typical)
+                                        end: min(now, dayEnd), vocabulary: vocabulary)
         let projected = [DayForecast.Segment(start: dayStart, end: dayEnd,
                                              phase: .typical, observed: false)]
         let segments = spliceAtNow(observed: observed, projected: projected,
@@ -2477,39 +2588,56 @@ nonisolated extension CorrelationEngine {
         return out
     }
 
-    /// ON/OFF timeline over [dayStart, dayEnd] from merged ON intervals (everything
-    /// outside an ON interval is OFF). Every segment here is a projection.
-    static func phaseTimeline(on: [(start: Date, end: Date)],
-                              dayStart: Date, dayEnd: Date) -> [DayForecast.Segment] {
-        var segs: [DayForecast.Segment] = []
-        var cursor = dayStart
-        for iv in on {
-            let s = max(iv.start, dayStart), e = min(iv.end, dayEnd)
-            guard e > cursor else { continue }
-            if s > cursor {
-                segs.append(.init(start: cursor, end: s, phase: .off, observed: false))
-                cursor = s
-            }
-            segs.append(.init(start: cursor, end: e, phase: .on, observed: false))
-            cursor = e
-            if cursor >= dayEnd { break }
+    /// Projected timeline over [dayStart, dayEnd]: `.on` inside a projected ON window,
+    /// `.off` elsewhere INSIDE a dose-influence envelope (a genuine wearing-off gap), and
+    /// substrate `.typical` outside every envelope — the flat band, which is the validated
+    /// best unconditional forecast. With no band estimable yet the whole outside falls back
+    /// to `.off`, preserving the pre-Phase-0.5 behaviour for a cold-start user.
+    ///
+    /// Never projects `.below`/`.above`: those are measurements of what happened, and the
+    /// projection is deliberately flat (persistence validated NO-GO — today's readings never
+    /// recenter the remainder).
+    static func projectedTimeline(on: [(start: Date, end: Date)], vocabulary: PhaseVocabulary,
+                                 dayStart: Date, dayEnd: Date) -> [DayForecast.Segment] {
+        guard dayEnd > dayStart else { return [] }
+        let outside: DayForecast.Phase = vocabulary.band != nil ? .typical : .off
+
+        // Cut the day at every boundary either layer introduces, then label each slice by
+        // its midpoint — no cursor bookkeeping, and overlapping layers can't desync.
+        var cuts: Set<Date> = [dayStart, dayEnd]
+        for iv in on + vocabulary.envelopes {
+            if iv.start > dayStart, iv.start < dayEnd { cuts.insert(iv.start) }
+            if iv.end > dayStart, iv.end < dayEnd { cuts.insert(iv.end) }
         }
-        if cursor < dayEnd {
-            segs.append(.init(start: cursor, end: dayEnd, phase: .off, observed: false))
+        let bounds = cuts.sorted()
+
+        var segs: [DayForecast.Segment] = []
+        for i in 0..<(bounds.count - 1) {
+            let s = bounds[i], e = bounds[i + 1]
+            let mid = s.addingTimeInterval(e.timeIntervalSince(s) / 2)
+            let phase: DayForecast.Phase =
+                on.contains { mid >= $0.start && mid < $0.end } ? .on
+                : (vocabulary.inEnvelope(mid) ? .off : outside)
+            // Coalesce equal-phase neighbours so the view gets one rect per visible block.
+            if let last = segs.last, last.phase == phase, last.end == s {
+                segs[segs.count - 1] = .init(start: last.start, end: e, phase: phase, observed: false)
+            } else {
+                segs.append(.init(start: s, end: e, phase: phase, observed: false))
+            }
         }
         return segs
     }
 
-    /// Observed ON/OFF over [dayStart, end] from measured tremor: 30-min bins, OFF when
-    /// the bin mean ≥ offThreshold, ON below, unknown when the bin has no readings
+    /// Observed timeline over [dayStart, end] from measured tremor: 30-min bins, each bin's
+    /// mean labelled by `vocabulary` (ON/OFF inside a dose-influence envelope, substrate
+    /// below/typical/above outside it), `unknown` when the bin has no readings at all
     /// (not-worn). De-noised (sub-hour flips absorbed) then coalesced. Marked observed=true.
-    /// The zero-dose path reuses the identical machinery with its own vocabulary: the
-    /// classification line becomes the band's q75 and the phases `.above`/`.typical`
-    /// (defaults preserve the dosed path exactly).
+    ///
+    /// De-noise runs PER VOCABULARY REGION: a short run is only ever absorbed into a
+    /// neighbour that was asking the same question, so the envelope boundary — where the
+    /// vocabulary legitimately changes mid-day — can never be smoothed away.
     static func observedTimeline(readings: [TremorPoint], dayStart: Date, end: Date,
-                                 threshold: Double = offThreshold,
-                                 high: DayForecast.Phase = .off,
-                                 low: DayForecast.Phase = .on)
+                                 vocabulary: PhaseVocabulary)
         -> [DayForecast.Segment] {
         guard end > dayStart else { return [] }
         let binSec = forecastObservedBinMin * 60
@@ -2524,14 +2652,30 @@ nonisolated extension CorrelationEngine {
                 raw.append(.unknown); binMean.append(nil)
             } else {
                 let mean = inBin.map(\.tremorScore).reduce(0, +) / Double(inBin.count)
-                raw.append(mean >= threshold ? high : low); binMean.append(mean)
+                raw.append(vocabulary.phase(mean: mean, at: binStart)); binMean.append(mean)
             }
             bounds.append((binStart, binEnd))
             binStart = binEnd
         }
         guard !bounds.isEmpty else { return [] }
-        let phases = despeckle(raw, means: binMean, minRun: forecastMinRunBins,
-                               threshold: threshold)
+
+        // Split into maximal runs of bins sharing a vocabulary region, de-noise each with
+        // that region's own line, then stitch back in order.
+        var phases: [DayForecast.Phase] = []
+        var regionLo = 0
+        func flushRegion(_ hi: Int) {
+            guard hi > regionLo else { return }
+            phases += despeckle(Array(raw[regionLo..<hi]),
+                                means: Array(binMean[regionLo..<hi]),
+                                minRun: forecastMinRunBins,
+                                threshold: vocabulary.despeckleThreshold(at: bounds[regionLo].start))
+            regionLo = hi
+        }
+        for i in 1..<bounds.count
+        where vocabulary.inEnvelope(bounds[i].start) != vocabulary.inEnvelope(bounds[regionLo].start) {
+            flushRegion(i)
+        }
+        flushRegion(bounds.count)
         // Coalesce equal-phase runs, averaging the measured tremor across each run so the
         // segment carries how severe it actually was (drives OFF shading in the view).
         var segs: [DayForecast.Segment] = []

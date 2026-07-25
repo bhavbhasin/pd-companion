@@ -27,35 +27,35 @@ struct DayAheadPanel: View {
     @Binding var selectedTime: Date?
     @AppStorage("dayReview.expanded.forecast") private var expanded = true
 
-    // ON = medication working (blue, calm). OFF = wearing-off (muted red — NOT orange,
-    // which is dyskinesia on the chart above). Unknown = no watch data (gray). Labels
-    // carry the meaning; color is a second cue, never the only one.
-    // Zero-dose vocabulary reuses the same hues (typical = calm blue, above = muted red)
-    // with different LABELS — ON/OFF is medication language and never appears there.
+    // THREE hues, one meaning each — direction, not vocabulary:
+    //   blue  = calm      (ON inside a dose envelope; typical outside one)
+    //   red   = elevated  (OFF inside; above-typical outside) — muted, NOT orange, which is
+    //                      dyskinesia on the chart above
+    //   gray  = no reading
+    // The ON-vs-typical distinction is carried by the LABEL and headline, never by a new
+    // colour. One exception earns its own shade: `.below` (measurably below the user's own
+    // band, unmedicated, awake) is a deeper blue, because it is a stronger state than ON
+    // (below q25 vs below the 1.0 OFF line) and it is the whole point of the weaning story —
+    // it must be findable at a glance, not by scrubbing. See forecast-composition-model.md
+    // Phase 0.5 for the future option of collapsing it back into plain blue.
     private static let offColor = Color(red: 0.82, green: 0.28, blue: 0.30)
+    private static let belowColor = Color(red: 0.13, green: 0.36, blue: 0.66)
     private func color(_ phase: CorrelationEngine.DayForecast.Phase) -> Color {
         switch phase {
         case .on, .typical:  return Insight.brandBlue
+        case .below:         return Self.belowColor
         case .off, .above:   return Self.offColor
         case .unknown:       return .gray
         }
     }
 
-    // An OBSERVED OFF is shaded by how severe the measured tremor actually was, so the band
-    // agrees with the tremor line above instead of painting every wearing-off window the same
-    // alarm-red (offThreshold sits at "Slight" on a 0–4 scale — a Mild OFF shouldn't look like
-    // a Strong one). ON and projected stay flat: projected has no measurement to defer to.
-    // Zero-dose `.above` shades the same way, from ITS classification line (the band's q75).
+    // Flat fills. Severity shading on an observed OFF was removed (Jul 24 2026): the tremor
+    // chart sits directly above this bar and already reports severity precisely, so the shade
+    // duplicated it while quietly making "darker" mean two things — magnitude in red, category
+    // in blue. Shade now means exactly one thing (the `.below` category); opacity means exactly
+    // one thing (projected vs measured).
     private func fillOpacity(_ seg: CorrelationEngine.DayForecast.Segment) -> Double {
-        guard seg.observed else { return 0.32 }                    // projected: faded, flat
-        guard seg.phase == .off || seg.phase == .above,
-              let t = seg.meanTremor else { return 0.9 }           // ON/typical / no reading
-        let lo = seg.phase == .above
-            ? (forecast.band?.q75 ?? CorrelationEngine.offThreshold)
-            : CorrelationEngine.offThreshold
-        let hi = 3.5                                               // … Strong
-        let s = min(max((t - lo) / (hi - lo), 0), 1)
-        return 0.45 + 0.45 * s
+        seg.observed ? 0.9 : 0.32
     }
 
     private var phaseAtNow: CorrelationEngine.DayForecast.Phase? {
@@ -103,28 +103,58 @@ struct DayAheadPanel: View {
     // the next transition (the forecast's whole point), not the current sliver. So a dose
     // that hasn't kicked in yet reads as "ON coming," not "you're OFF." Never a dosing
     // instruction — the onset time is the user's own latency, stated as expectation.
+    // A day can now carry BOTH vocabularies (dosed morning, cleared evening), so which
+    // sentence to write is decided by the phase at `now`, not by the day.
+    private var isDoseVocabularyNow: Bool {
+        phaseAtNow == .on || phaseAtNow == .off
+    }
+
+    // End of the last stretch a dose could explain — the "your dose is past its window"
+    // anchor. Read off the timeline itself so the sentence and the bar can't disagree.
+    private var doseVocabularyEnd: Date? {
+        forecast.segments.last { $0.phase == .on || $0.phase == .off }?.end
+    }
+
+    /// The band's spread in severity words. The 5-name scale is coarse: median + both
+    /// quartiles can round to the same word, which made the range read as one-sided
+    /// ("Mild, between Slight and Mild"). State a range ONLY across names that differ FROM
+    /// the median, so the copy never contradicts itself or over-claims precision.
+    private func spreadText(_ band: CorrelationEngine.SubstrateBand) -> String {
+        let mid = levelName(band.median)
+        let lo = levelName(band.q25)
+        let hi = levelName(band.q75)
+        if lo == mid && hi == mid { return "usually staying around \(mid)" }
+        if lo == mid { return "usually \(mid) to \(hi)" }
+        if hi == mid { return "usually \(lo) to \(mid)" }
+        return "usually between \(lo) and \(hi)"
+    }
+
+    /// SUBSTRATE headline: a zero-dose day, OR a dosed day whose drug has cleared. The
+    /// opening clause states WHY substrate vocabulary applies — the old copy said "No doses
+    /// logged today" unconditionally, a lie on a day like Jul 24 (one 5:23 AM dose).
+    private func substrateHeadline(_ band: CorrelationEngine.SubstrateBand) -> String {
+        let mid = levelName(band.median)
+        let cleared = (doseVocabularyEnd.map { $0 <= forecast.now }) ?? false
+        let lead = cleared ? "Your last dose is past its expected window" : "No doses logged today"
+        // Where today sits relative to the band is a MEASUREMENT, so it leads when decisive
+        // in either direction — and a below-band stretch is the one the weaning story turns
+        // on, so it never gets buried behind the generic expectation.
+        switch phaseAtNow {
+        case .below:
+            return "\(lead) - and you're running below your typical range right now (usually \(mid))."
+        case .above:
+            return "\(lead) - you're running above your typical range right now (usually \(mid))."
+        default:
+            return "\(lead) - expect around your typical level: \(mid), \(spreadText(band))."
+        }
+    }
+
     private var headline: String {
-        // Zero-dose day: the flat personal band, stated as expectation. Descriptive only —
-        // no ON/OFF, no transition times (there are none to project), and deliberately NOT
-        // conditioned on how today has gone so far (persistence validated NO-GO).
-        if let band = forecast.band {
-            let mid = levelName(band.median)
-            let lo = levelName(band.q25), hi = levelName(band.q75)
-            // The 5-name scale is coarse: median + both quartiles can round to the same
-            // word, which made the range read as one-sided ("Mild, between Slight and Mild").
-            // State a range ONLY across the names that differ FROM the median, so the copy
-            // never contradicts itself and never over-claims precision the buckets don't have.
-            let spread: String
-            if lo == mid && hi == mid {
-                spread = "usually staying around \(mid)"           // all three collapse
-            } else if lo == mid {
-                spread = "usually \(mid) to \(hi)"                  // spreads upward only
-            } else if hi == mid {
-                spread = "usually \(lo) to \(mid)"                 // spreads downward only
-            } else {
-                spread = "usually between \(lo) and \(hi)"         // genuinely straddles
-            }
-            return "No doses logged today — expect around your typical level: \(mid), \(spread)."
+        // Substrate vocabulary wins whenever `now` isn't inside a dose's influence envelope.
+        // Descriptive only: no ON/OFF, no transition times, and deliberately NOT conditioned
+        // on how today has gone so far (persistence validated NO-GO).
+        if let band = forecast.band, !isDoseVocabularyNow {
+            return substrateHeadline(band)
         }
         switch phaseAtNow {
         case .on:
@@ -264,17 +294,30 @@ struct DayAheadPanel: View {
         .frame(height: 44)
     }
 
+    // Derived from the phases the day ACTUALLY contains, not from a day-level mode flag —
+    // a mixed day (dosed morning, cleared evening) legitimately carries both vocabularies.
+    // Blue and red each cover two phases, so when both vocabularies are present the swatch
+    // slashes them rather than showing two identical-looking colour chips.
+    private var present: Set<CorrelationEngine.DayForecast.Phase> {
+        Set(forecast.segments.map(\.phase))
+    }
+
+    /// Joined label for one colour that covers two phases ("ON / typical").
+    private func sharedLabel(_ pairs: [(CorrelationEngine.DayForecast.Phase, String)]) -> String {
+        let shown = present
+        var parts: [String] = []
+        for (phase, name) in pairs where shown.contains(phase) { parts.append(name) }
+        return parts.joined(separator: " / ")
+    }
+
     private var legend: some View {
-        HStack(spacing: 14) {
-            if forecast.band != nil {
-                // Zero-dose vocabulary: measured level vs the user's own typical band.
-                swatch(color: Insight.brandBlue, label: "Typical or better")
-                swatch(color: Self.offColor, label: "Above typical")
-            } else {
-                swatch(color: Insight.brandBlue, label: "ON")
-                swatch(color: Self.offColor, label: "OFF")
-            }
-            swatch(color: .gray, label: "No watch data")
+        let calm = sharedLabel([(.on, "ON"), (.typical, "typical")])
+        let hot = sharedLabel([(.off, "OFF"), (.above, "above typical")])
+        return HStack(spacing: 14) {
+            if !calm.isEmpty { swatch(color: Insight.brandBlue, label: calm) }
+            if present.contains(.below) { swatch(color: Self.belowColor, label: "Below typical") }
+            if !hot.isEmpty { swatch(color: Self.offColor, label: hot) }
+            if present.contains(.unknown) { swatch(color: .gray, label: "No watch data") }
         }
     }
 
@@ -329,6 +372,36 @@ private struct NowPulse: View {
     return ScrollView {
         DayAheadPanel(forecast: forecast, dayStart: day, dayEnd: t(24),
                       scrollX: .constant(t(9)), selectedTime: .constant(nil))
+            .padding()
+    }
+}
+
+#Preview("Mixed day — one early dose, then substrate") {
+    // The Jul 24 2026 shape (Phase 0.5): asleep through the only dose's window, awake into a
+    // measured OFF at the envelope's end, then substrate vocabulary for the rest of the day —
+    // including one dose-free stretch that ran BELOW the band (the weaning signal).
+    let day = Calendar.current.startOfDay(for: .now)
+    func t(_ h: Double) -> Date { day.addingTimeInterval(h * 3600) }
+    let now = t(18.5)
+    typealias Seg = CorrelationEngine.DayForecast.Segment
+    let segments: [Seg] = [
+        Seg(start: t(0),    end: t(5.4),  phase: .typical, observed: true),   // awake + asleep, calm
+        Seg(start: t(5.4),  end: t(8.75), phase: .on,      observed: true),   // inside the 5:23 AM envelope
+        Seg(start: t(8.75), end: t(9.0),  phase: .off,     observed: true, meanTremor: 2.0), // woke up wearing off
+        Seg(start: t(9.0),  end: t(9.5),  phase: .unknown, observed: true),   // watch gap
+        Seg(start: t(9.5),  end: t(14),   phase: .above,   observed: true, meanTremor: 1.8),
+        Seg(start: t(14),   end: t(16),   phase: .below,   observed: true, meanTremor: 0.4), // unmedicated calm
+        Seg(start: t(16),   end: now,     phase: .above,   observed: true, meanTremor: 1.7),
+        Seg(start: now,     end: t(24),   phase: .typical, observed: false),
+    ]
+    let forecast = CorrelationEngine.DayForecast(
+        segments: segments, now: now,
+        nextOffStart: nil, nextOffRange: nil,
+        confidence: .moderate,
+        band: .init(median: 1.05, q25: 0.5, q75: 1.6, nDays: 68))
+    return ScrollView {
+        DayAheadPanel(forecast: forecast, dayStart: day, dayEnd: t(24),
+                      scrollX: .constant(t(6)), selectedTime: .constant(nil))
             .padding()
     }
 }

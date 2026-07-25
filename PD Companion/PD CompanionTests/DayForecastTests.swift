@@ -171,15 +171,113 @@ struct DayForecastTests {
         #expect(f.band != nil)
     }
 
-    /// A dosed day carries NO band — the two vocabularies never mix.
-    @Test func dosedDayCarriesNoBand() throws {
+    /// A dosed day now DOES carry the band (Phase 0.5): `band` is no longer the "zero-dose
+    /// day" mode flag, it is the band whenever estimable — because the hours of a dosed day
+    /// after the drug clears are substrate, and need something to be compared against.
+    @Test func dosedDayCarriesBandForMixedVocabulary() throws {
         let c = Self.corpusWithSubstrate(doseCount: 22)
         let f = try #require(CorrelationEngine.dayForecast(
             history: c.history, allDoses: c.doses,
             todaysDoses: [Dose(timestamp: Self.todayDose, name: "Sinemet")],
             todaysReadings: [], dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now))
-        #expect(f.band == nil)
+        #expect(f.band != nil)
         #expect(f.nextOffStart != nil)
+    }
+
+    // MARK: dose-influence envelope + below-typical (Phase 0.5)
+
+    /// ON/OFF is confined to the dose-influence envelope: after the last dose's window plus
+    /// its residual tail, the day reverts to SUBSTRATE vocabulary. This is Bhav's Jul 24 bug —
+    /// one early dose used to paint "OFF (wearing-off)" across the following 13 hours.
+    @Test func envelopeEndsDoseVocabulary() throws {
+        let c = Self.corpusWithSubstrate(doseCount: 22)
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [Dose(timestamp: Self.todayDose, name: "Sinemet")],
+            todaysReadings: [], dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now))
+
+        // Late evening is far past the dose's envelope → substrate, never OFF.
+        let evening = Self.dayStart.addingTimeInterval(21 * Self.hour)
+        let seg = try #require(f.segments.first { evening >= $0.start && evening < $0.end })
+        #expect(seg.phase == .typical)
+        #expect(!seg.observed)
+        // The wearing-off tail INSIDE the envelope is still OFF — the useful claim survives.
+        #expect(f.segments.contains { $0.phase == .off })
+        // And the vocabulary switches exactly once, in that order: no OFF after substrate starts.
+        let firstTypical = try #require(f.segments.firstIndex { $0.phase == .typical })
+        #expect(!f.segments[firstTypical...].contains { $0.phase == .off || $0.phase == .on })
+    }
+
+    /// A dose from a PREVIOUS day whose window closed long ago must not extend today's
+    /// envelope: the pre-dose early morning is unmedicated time, not an OFF window.
+    @Test func stalepriorDoseDoesNotExtendEnvelope() throws {
+        let c = Self.corpusWithSubstrate(doseCount: 22)
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [Dose(timestamp: Self.todayDose, name: "Sinemet")],
+            todaysReadings: [], dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now))
+
+        let preDawn = Self.dayStart.addingTimeInterval(3 * Self.hour)
+        let seg = try #require(f.segments.first { preDawn >= $0.start && preDawn < $0.end })
+        #expect(seg.phase != .on && seg.phase != .off)
+    }
+
+    /// Measurably BELOW the user's own band, awake and dose-free → `.below`: the weaning
+    /// signal the app previously had no vocabulary for (it read the same as an ordinary day).
+    @Test func awakeCalmBelowBandReadsBelow() throws {
+        let c = Self.corpusWithSubstrate(doseCount: 22)   // band ≈ q25 1.4 / median 1.8 / q75 2.2
+        var measured: [TremorPoint] = []
+        for m in stride(from: 0.0, through: 120.0, by: 5.0) {
+            measured.append(TremorPoint(timestamp: Self.todayDose.addingTimeInterval(m * 60),
+                                        tremorScore: 0.6))   // well under q25
+        }
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [], todaysReadings: measured,
+            dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now))
+
+        let probe = Self.todayDose.addingTimeInterval(30 * 60)
+        let seg = try #require(f.segments.first { probe >= $0.start && probe < $0.end })
+        #expect(seg.observed)
+        #expect(seg.phase == .below)
+    }
+
+    /// The SAME calm readings while ASLEEP read `.typical`, never `.below`. The band is
+    /// estimated from awake readings, so scoring a sleeping one against it is a category
+    /// error — and rest tremor is suppressed in sleep, so every night would otherwise render
+    /// as a "below your typical range" win and drown the real (awake) ones.
+    @Test func asleepCalmDoesNotReadBelow() throws {
+        let c = Self.corpusWithSubstrate(doseCount: 22)
+        var measured: [TremorPoint] = []
+        for m in stride(from: 0.0, through: 120.0, by: 5.0) {
+            measured.append(TremorPoint(timestamp: Self.todayDose.addingTimeInterval(m * 60),
+                                        tremorScore: 0.6))
+        }
+        let asleep = [SleepInterval(start: Self.todayDose.addingTimeInterval(-30 * 60),
+                                    end: Self.todayDose.addingTimeInterval(150 * 60))]
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [], todaysReadings: measured,
+            dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now, sleep: asleep))
+
+        let probe = Self.todayDose.addingTimeInterval(30 * 60)
+        let seg = try #require(f.segments.first { probe >= $0.start && probe < $0.end })
+        #expect(seg.observed)
+        #expect(seg.phase == .typical)
+        #expect(!f.segments.contains { $0.phase == .below })
+    }
+
+    /// Cold start (dosed day, no estimable band yet) keeps the pre-Phase-0.5 behaviour:
+    /// ON/OFF across the whole day rather than a sixth "can't compare yet" phase.
+    @Test func coldStartWithoutBandKeepsDoseVocabularyAllDay() throws {
+        let c = Self.corpus(doseCount: 22)   // no dose-free substrate block → band nil
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [Dose(timestamp: Self.todayDose, name: "Sinemet")],
+            todaysReadings: [], dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now))
+        #expect(f.band == nil)
+        #expect(f.segments.last?.phase == .off)
+        #expect(!f.segments.contains { $0.phase == .typical || $0.phase == .below })
     }
 
     /// Below the cold-start floor (7 clean days) → nil, the honest "learning your rhythm".
