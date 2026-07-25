@@ -2205,7 +2205,13 @@ nonisolated extension CorrelationEngine {
                 return mean >= offThreshold ? .off : .on
             }
             if mean >= band.q75 { return .above }
-            if mean <= band.q25, !isAsleep(t) { return .below }
+            // "Better than usual" must clear BOTH lines: below the user's own lower quartile
+            // AND below the OFF line. Bhav's recalibrated q25 is 1.40, well above the 1.0 OFF
+            // line, so q25 alone would announce good news at a tremor level the medication
+            // vocabulary calls OFF — the original bug inverted. Requiring both makes the claim
+            // "as quiet as a working dose would leave you, with no dose on board", which is
+            // both explainable and unambiguous. No new constant; both lines already exist.
+            if mean <= band.q25, mean < offThreshold, !isAsleep(t) { return .below }
             return .typical
         }
 
@@ -2346,22 +2352,56 @@ nonisolated extension CorrelationEngine {
 
         // Single sweep over time-sorted readings against merged, sorted exclusions —
         // O(n log n), not the naive n×intervals scan (history is the full tremor table).
+        //
+        // Quartiles come from 30-MINUTE BIN MEANS, not raw readings — the same statistic the
+        // bar classifies. Tremor is right-skewed and floored at zero, so averaging compresses
+        // the upper tail while the floor stays put: measured on Bhav's 78 clean days, the raw
+        // q75 sat at 2.17 while the bin-mean q75 was 1.92, so only 8.6% of bins could ever
+        // clear "worse than usual" instead of the ~25% a 75th percentile is supposed to mean
+        // (the lower edge barely moved: 0.96 → 1.08). Comparing a smoothed statistic against
+        // unsmoothed quartiles is a unit mismatch, and it silently suppressed the upper tail.
+        // Bins are keyed off a fixed epoch grid so they align with `observedTimeline`'s
+        // midnight-anchored grid in any whole- or half-hour timezone. Fixed Jul 24 2026.
+        let binSec = forecastObservedBinMin * 60
         let sorted = history.sorted { $0.timestamp < $1.timestamp }
-        var clean: [Double] = []
+        var bins: [Int: (sum: Double, n: Int)] = [:]
         var perDay: [Date: Int] = [:]
         var i = 0
         for p in sorted {
             while i < exclusions.count, exclusions[i].end <= p.timestamp { i += 1 }
             if i < exclusions.count, exclusions[i].start <= p.timestamp { continue }  // inside
-            clean.append(p.tremorScore)
+            let key = Int((p.timestamp.timeIntervalSinceReferenceDate / binSec).rounded(.down))
+            let cur = bins[key] ?? (0, 0)
+            bins[key] = (cur.sum + p.tremorScore, cur.n + 1)
             perDay[calendar.startOfDay(for: p.timestamp), default: 0] += 1
         }
 
+        // Keep only bins lying ENTIRELY in clean time. A bin straddling a sleep or dose-window
+        // edge holds just the sliver next to that boundary — the minutes right after waking, or
+        // the tail of a drug window — which are systematically near zero, so straddling bins are
+        // a different population, not extra spread. Measured on Bhav's history: straddling bins
+        // (38% of all bins) have q25 = 0.18 against 1.40 for whole bins, dragging the pooled q25
+        // down to 1.08 and making "better than usual" far harder to earn than it should be.
+        // Containment, not a minimum reading count: a genuinely sparse bin inside clean time is
+        // the same statistic the bar computes for today, so it stays.
+        // Single ordered pass over bins against the merged exclusions (same incremental-pointer
+        // trick as the reading sweep above), not a scan per bin.
+        var binMeans: [Double] = []
+        var j = 0
+        for key in bins.keys.sorted() {
+            guard let agg = bins[key] else { continue }
+            let start = Date(timeIntervalSinceReferenceDate: Double(key) * binSec)
+            let end = start.addingTimeInterval(binSec)
+            while j < exclusions.count, exclusions[j].end <= start { j += 1 }
+            if j < exclusions.count, exclusions[j].start < end { continue }   // straddles an edge
+            binMeans.append(agg.sum / Double(agg.n))
+        }
+
         let nDays = perDay.values.filter { $0 >= substrateMinReadingsPerDay }.count
-        guard nDays >= substrateBandGate.floor.minN ?? 0, !clean.isEmpty else { return nil }
-        return SubstrateBand(median: percentile(clean, 0.5),
-                             q25: percentile(clean, 0.25),
-                             q75: percentile(clean, 0.75),
+        guard nDays >= substrateBandGate.floor.minN ?? 0, !binMeans.isEmpty else { return nil }
+        return SubstrateBand(median: percentile(binMeans, 0.5),
+                             q25: percentile(binMeans, 0.25),
+                             q75: percentile(binMeans, 0.75),
                              nDays: nDays)
     }
 

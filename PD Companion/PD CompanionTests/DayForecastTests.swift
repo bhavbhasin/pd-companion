@@ -102,9 +102,14 @@ struct DayForecastTests {
         var (history, doses) = corpus(doseCount: doseCount)
         for i in 0..<doseCount {
             let day = base.addingTimeInterval(Double(i) * 24 * hour)
-            for m in stride(from: 0.0, to: 300.0, by: 1.0) {   // 300 readings/day
-                // Levels cycle 1.4 / 1.8 / 2.2 → median 1.8, q25 ≈ 1.4, q75 ≈ 2.2.
-                let level = 1.4 + Double(Int(m) % 3) * 0.4
+            // The band's quartiles come from 30-MIN BIN MEANS, so the spread has to live
+            // BETWEEN bins, not just inside them: a within-bin 1.4/1.8/2.2 cycle averages to
+            // exactly 1.8 in every bin, collapsing q25 == median == q75. Each day sits at a
+            // different level (1.4 / 1.8 / 2.2 by day) → median 1.8, q25 ≈ 1.4, q75 ≈ 2.2, and
+            // the within-bin jitter is kept so bins aren't perfectly flat either.
+            let dayLevel = 1.4 + Double(i % 3) * 0.4
+            for m in stride(from: 0.0, to: 600.0, by: 1.0) {   // 600 readings/day = 20 whole bins
+                let level = dayLevel + (Double(Int(m) % 3) - 1) * 0.05
                 history.append(TremorPoint(timestamp: day.addingTimeInterval(14 * hour + m * 60),
                                            tremorScore: level))
             }
@@ -242,6 +247,28 @@ struct DayForecastTests {
         #expect(seg.phase == .below)
     }
 
+    /// Below the band's lower quartile but still at an OFF-level tremor → `.typical`, NOT
+    /// "better than usual". The recalibrated q25 (1.40 on Bhav's data) sits above the 1.0 OFF
+    /// line, so q25 alone would announce good news while the user is plainly symptomatic.
+    @Test func belowBandButOffLevelIsNotBetterThanUsual() throws {
+        let c = Self.corpusWithSubstrate(doseCount: 22)   // q25 ≈ 1.4, so 1.2 is under it
+        var measured: [TremorPoint] = []
+        for m in stride(from: 0.0, through: 120.0, by: 5.0) {
+            measured.append(TremorPoint(timestamp: Self.todayDose.addingTimeInterval(m * 60),
+                                        tremorScore: 1.2))   // < q25 but ≥ offThreshold
+        }
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: c.history, allDoses: c.doses,
+            todaysDoses: [], todaysReadings: measured,
+            dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now))
+        let band = try #require(f.band)
+        #expect(band.q25 > 1.2)                                   // the premise of the test
+        let probe = Self.todayDose.addingTimeInterval(30 * 60)
+        let seg = try #require(f.segments.first { probe >= $0.start && probe < $0.end })
+        #expect(seg.phase == .typical)
+        #expect(!f.segments.contains { $0.phase == .below })
+    }
+
     /// The SAME calm readings while ASLEEP read `.typical`, never `.below`. The band is
     /// estimated from awake readings, so scoring a sleeping one against it is a category
     /// error — and rest tremor is suppressed in sleep, so every night would otherwise render
@@ -265,6 +292,33 @@ struct DayForecastTests {
         #expect(seg.observed)
         #expect(seg.phase == .typical)
         #expect(!f.segments.contains { $0.phase == .below })
+    }
+
+    /// A bin STRADDLING a sleep edge must not enter the band. Its readings are the sliver of
+    /// clean time next to the boundary — the minutes right after waking, systematically near
+    /// zero — so pooling them with whole bins biases the lower quartile down and makes "better
+    /// than usual" far harder to earn. Measured on real history: straddling bins had q25 = 0.18
+    /// against 1.40 for whole bins. Containment, not a minimum reading count.
+    @Test func boundaryStraddlingBinsExcludedFromBand() throws {
+        let c = Self.corpusWithSubstrate(doseCount: 22)
+        var history = c.history
+        var sleep: [SleepInterval] = []
+        for i in 0..<22 {
+            let day = Self.base.addingTimeInterval(Double(i) * 24 * Self.hour)
+            // Wake at 06:10 — ten minutes INTO the 06:00 bin.
+            sleep.append(SleepInterval(start: day.addingTimeInterval(2 * Self.hour),
+                                       end: day.addingTimeInterval(6 * Self.hour + 10 * 60)))
+            for m in stride(from: 10.0, to: 30.0, by: 1.0) {   // post-wake sliver, near zero
+                history.append(TremorPoint(timestamp: day.addingTimeInterval(6 * Self.hour + m * 60),
+                                           tremorScore: 0.05))
+            }
+        }
+        let withEdge = try #require(CorrelationEngine.substrateBand(
+            history: history, allDoses: c.doses, sleep: sleep, models: [:]))
+        let without = try #require(CorrelationEngine.substrateBand(
+            history: c.history, allDoses: c.doses, sleep: sleep, models: [:]))
+        #expect(abs(withEdge.q25 - without.q25) < 0.001)   // the sliver changed nothing
+        #expect(withEdge.q25 > 1.0)                        // and the band isn't degenerate
     }
 
     /// Cold start (dosed day, no estimable band yet) keeps the pre-Phase-0.5 behaviour:

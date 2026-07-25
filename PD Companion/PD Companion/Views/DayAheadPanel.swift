@@ -27,25 +27,26 @@ struct DayAheadPanel: View {
     @Binding var selectedTime: Date?
     @AppStorage("dayReview.expanded.forecast") private var expanded = true
 
-    // THREE hues, one meaning each — direction, not vocabulary:
-    //   blue  = calm      (ON inside a dose envelope; typical outside one)
-    //   red   = elevated  (OFF inside; above-typical outside) — muted, NOT orange, which is
-    //                      dyskinesia on the chart above
+    // EXACTLY THREE hues, one meaning each — direction, never vocabulary:
+    //   blue  = calm      (ON inside a dose envelope; usual-or-better outside one)
+    //   red   = elevated  (OFF inside; worse-than-usual outside) — muted, NOT orange, which
+    //                      is dyskinesia on the chart above
     //   gray  = no reading
-    // The ON-vs-typical distinction is carried by the LABEL and headline, never by a new
-    // colour. One exception earns its own shade: `.below` (measurably below the user's own
-    // band, unmedicated, awake) is a deeper blue, because it is a stronger state than ON
-    // (below q25 vs below the 1.0 OFF line) and it is the whole point of the weaning story —
-    // it must be findable at a glance, not by scrubbing. See forecast-composition-model.md
-    // Phase 0.5 for the future option of collapsing it back into plain blue.
+    // Which QUESTION was asked is carried by the label and the headline, never by a hue.
+    //
+    // `.below` deliberately shares plain blue (Jul 24 2026). It briefly had its own deeper
+    // shade, on the theory that it was a materially stronger state than ON — below q25 vs
+    // below the 1.0 OFF line. Measured on Bhav's own 78 days that premise is false: his q25
+    // is 1.08, essentially the same line as offThreshold, so "better than usual" really is
+    // "ON without the pill" (his original framing) and a second blue bought nothing but a
+    // question from a first-time reader. The state survives in the headline, which is where
+    // its value actually is.
     private static let offColor = Color(red: 0.82, green: 0.28, blue: 0.30)
-    private static let belowColor = Color(red: 0.13, green: 0.36, blue: 0.66)
     private func color(_ phase: CorrelationEngine.DayForecast.Phase) -> Color {
         switch phase {
-        case .on, .typical:  return Insight.brandBlue
-        case .below:         return Self.belowColor
-        case .off, .above:   return Self.offColor
-        case .unknown:       return .gray
+        case .on, .typical, .below:  return Insight.brandBlue
+        case .off, .above:           return Self.offColor
+        case .unknown:               return .gray
         }
     }
 
@@ -119,14 +120,16 @@ struct DayAheadPanel: View {
     /// quartiles can round to the same word, which made the range read as one-sided
     /// ("Mild, between Slight and Mild"). State a range ONLY across names that differ FROM
     /// the median, so the copy never contradicts itself or over-claims precision.
+    /// "generally", not "usually" — "your usual level: Mild, usually Slight to Mild" says
+    /// usual twice in one breath now that "usual" is the panel's anchor word.
     private func spreadText(_ band: CorrelationEngine.SubstrateBand) -> String {
         let mid = levelName(band.median)
         let lo = levelName(band.q25)
         let hi = levelName(band.q75)
-        if lo == mid && hi == mid { return "usually staying around \(mid)" }
-        if lo == mid { return "usually \(mid) to \(hi)" }
-        if hi == mid { return "usually \(lo) to \(mid)" }
-        return "usually between \(lo) and \(hi)"
+        if lo == mid && hi == mid { return "generally staying around \(mid)" }
+        if lo == mid { return "generally \(mid) to \(hi)" }
+        if hi == mid { return "generally \(lo) to \(mid)" }
+        return "generally between \(lo) and \(hi)"
     }
 
     /// SUBSTRATE headline: a zero-dose day, OR a dosed day whose drug has cleared. The
@@ -141,11 +144,11 @@ struct DayAheadPanel: View {
         // on, so it never gets buried behind the generic expectation.
         switch phaseAtNow {
         case .below:
-            return "\(lead) - and you're running better than usual right now (usually \(mid))."
+            return "\(lead) - and you're running better than usual right now (your usual is \(mid))."
         case .above:
-            return "\(lead) - you're running above your typical range right now (usually \(mid))."
+            return "\(lead) - you're running worse than usual right now (your usual is \(mid))."
         default:
-            return "\(lead) - expect around your typical level: \(mid), \(spreadText(band))."
+            return "\(lead) - expect around your usual level: \(mid), \(spreadText(band))."
         }
     }
 
@@ -302,7 +305,7 @@ struct DayAheadPanel: View {
         Set(forecast.segments.map(\.phase))
     }
 
-    /// Joined label for one colour that covers two phases ("ON / typical").
+    /// Joined label for one colour that covers several phases ("ON / usual").
     private func sharedLabel(_ pairs: [(CorrelationEngine.DayForecast.Phase, String)]) -> String {
         let shown = present
         var parts: [String] = []
@@ -310,17 +313,26 @@ struct DayAheadPanel: View {
         return parts.joined(separator: " / ")
     }
 
+    // "usual", never "typical": one anchor word across every label, so a reader is never left
+    // wondering whether usual and typical mean two different things. And the substrate labels
+    // state DIRECTION ("better than usual" / "worse than usual") rather than position ("below"
+    // / "above") — on a symptom scale lower is better, so "below" reads as a deficit to anyone
+    // not already thinking in tremor units. (Bhav, Jul 24.)
     private var legend: some View {
-        let calm = sharedLabel([(.on, "ON"), (.typical, "typical")])
-        let hot = sharedLabel([(.off, "OFF"), (.above, "above typical")])
+        let shown = present
+        // `.below` shares plain blue, so it folds into that swatch's wording ("usual or
+        // better") rather than claiming a second, identical-looking chip.
+        var calmParts: [String] = []
+        if shown.contains(.on) { calmParts.append("ON") }
+        if shown.contains(.typical) || shown.contains(.below) {
+            calmParts.append(shown.contains(.below) ? "usual or better" : "usual")
+        }
+        let calm = calmParts.joined(separator: " / ")
+        let hot = sharedLabel([(.off, "OFF"), (.above, "worse than usual")])
         return HStack(spacing: 14) {
             if !calm.isEmpty { swatch(color: Insight.brandBlue, label: calm) }
-            // "Better than usual", NOT "below typical": on a symptom scale lower is better, so
-            // "below" reads as a deficit to anyone not already thinking in tremor units — the
-            // one label that could turn good news into a worried question. (Bhav, Jul 24.)
-            if present.contains(.below) { swatch(color: Self.belowColor, label: "Better than usual") }
             if !hot.isEmpty { swatch(color: Self.offColor, label: hot) }
-            if present.contains(.unknown) { swatch(color: .gray, label: "No watch data") }
+            if shown.contains(.unknown) { swatch(color: .gray, label: "No watch data") }
         }
     }
 
