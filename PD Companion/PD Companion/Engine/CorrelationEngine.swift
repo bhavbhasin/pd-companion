@@ -2204,7 +2204,24 @@ nonisolated extension CorrelationEngine {
                 // rather than inventing a sixth phase for "can't compare yet".
                 return mean >= offThreshold ? .off : .on
             }
-            if mean >= band.q75 { return .above }
+            // Both substrate verdicts carry a MAGNITUDE FLOOR: the relative comparison speaks
+            // only when it is also absolutely meaningful. `.above` needs the bin to be at an
+            // OFF-level tremor, `.below` needs it under one — same line, opposite directions.
+            //
+            // Without the floor, a user whose whole distribution sits below that line gets
+            // "worse than usual" painted at a level they cannot feel. Measured on Harpal's 29
+            // days: band q25 0.25 / median 0.44 / q75 0.64, entirely under the 1.0 OFF line —
+            // a quarter of his historical clean bins sit at or above that q75 by definition, and
+            // on a sampled real day (Jul 21) the floor removes 5% of his bins from red. That is
+            // the third axis of
+            // the per-user gate the circadian analysis already named (reproducibility, swing vs
+            // noise, and MINIMUM MAGNITUDE) — the band gate had the first two and not this one.
+            //
+            // Deliberately PER-BIN, not a band-level switch: a genuinely symptomatic episode
+            // must still read red even for a sub-symptomatic user. Suppressing `.above` wholesale
+            // whenever q75 < offThreshold would have hidden exactly the day that mattered.
+            // Inert for Bhav (q75 1.95) and John S (1.82) — it binds only where it should.
+            if mean >= band.q75, mean >= offThreshold { return .above }
             // "Better than usual" must clear BOTH lines: below the user's own lower quartile
             // AND below the OFF line. Bhav's recalibrated q25 is 1.40, well above the 1.0 OFF
             // line, so q25 alone would announce good news at a tremor level the medication

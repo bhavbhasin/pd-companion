@@ -321,6 +321,52 @@ struct DayForecastTests {
         #expect(withEdge.q25 > 1.0)                        // and the band isn't degenerate
     }
 
+    /// An unmedicated corpus whose whole distribution is SUB-SYMPTOMATIC — every reading under
+    /// the OFF line. Models Harpal K's real shape (band q25 0.25 / median 0.44 / q75 0.64).
+    private static func subSymptomaticCorpus(dayCount: Int) -> [TremorPoint] {
+        var history: [TremorPoint] = []
+        for i in 0..<dayCount {
+            let day = base.addingTimeInterval(Double(i) * 24 * hour)
+            let dayLevel = 0.3 + Double(i % 3) * 0.15          // 0.30 / 0.45 / 0.60
+            for m in stride(from: 0.0, to: 600.0, by: 1.0) {
+                history.append(TremorPoint(timestamp: day.addingTimeInterval(14 * hour + m * 60),
+                                           tremorScore: dayLevel))
+            }
+        }
+        return history
+    }
+
+    /// For a user whose band sits entirely below the OFF line, a bin above their own q75 but
+    /// still sub-symptomatic must NOT read "worse than usual" — a quarter of Harpal's bins would
+    /// otherwise render red at levels he cannot feel. But a genuinely symptomatic episode still
+    /// must, which is why the floor is per-bin rather than a band-level switch.
+    @Test func subSymptomaticBandSuppressesWorseThanUsualButNotRealEpisodes() throws {
+        let history = Self.subSymptomaticCorpus(dayCount: 22)
+        var measured: [TremorPoint] = []
+        for m in stride(from: 0.0, to: 60.0, by: 5.0) {        // 09:00–10:00 at 0.8
+            measured.append(TremorPoint(timestamp: Self.todayDose.addingTimeInterval(m * 60),
+                                        tremorScore: 0.8))
+        }
+        for m in stride(from: 60.0, to: 120.0, by: 5.0) {      // 10:00–11:00 at 2.5
+            measured.append(TremorPoint(timestamp: Self.todayDose.addingTimeInterval(m * 60),
+                                        tremorScore: 2.5))
+        }
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: history, allDoses: [], todaysDoses: [], todaysReadings: measured,
+            dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now))
+        let band = try #require(f.band)
+        #expect(band.q75 < CorrelationEngine.offThreshold)     // the premise: sub-symptomatic
+        #expect(0.8 >= band.q75)                               // 0.8 IS above his own q75
+
+        let quiet = try #require(f.segments.first {
+            let t = Self.todayDose.addingTimeInterval(30 * 60); return t >= $0.start && t < $0.end })
+        #expect(quiet.phase == .typical)                       // not red: below the OFF line
+
+        let episode = try #require(f.segments.first {
+            let t = Self.todayDose.addingTimeInterval(90 * 60); return t >= $0.start && t < $0.end })
+        #expect(episode.phase == .above)                       // a real episode still reads red
+    }
+
     /// Cold start (dosed day, no estimable band yet) keeps the pre-Phase-0.5 behaviour:
     /// ON/OFF across the whole day rather than a sixth "can't compare yet" phase.
     @Test func coldStartWithoutBandKeepsDoseVocabularyAllDay() throws {
