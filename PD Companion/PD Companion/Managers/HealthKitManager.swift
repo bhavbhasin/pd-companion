@@ -816,10 +816,13 @@ class HealthKitManager: ObservableObject {
     /// value, so the engine stays HealthKit-free). This is the single per-stream
     /// burden that gets workouts into the engine — every activity type (Tai Chi,
     /// boxing, pickleball, tango…) arrives through here, tagged, needing no new code.
-    func fetchWorkoutEvents(days: Int = 120) async -> [WorkoutEvent] {
+    ///
+    /// `since` spans the tremor record — see `fetchMedicationDoses` for why the window
+    /// is the caller's to state. Same failure mode here: past the window, "no workout
+    /// recorded" is indistinguishable from "didn't exercise", and the engine correlates
+    /// exercise against tremor.
+    func fetchWorkoutEvents(since start: Date) async -> [WorkoutEvent] {
         let end = Date()
-        let start = Calendar.current.date(byAdding: .day, value: -days, to: end)
-            ?? end.addingTimeInterval(-Double(days) * 86400)
         let workouts = await fetchWorkoutsInRange(from: start, to: end)
         return workouts.map {
             WorkoutEvent(start: $0.startDate,
@@ -835,10 +838,22 @@ class HealthKitManager: ObservableObject {
     /// (`CorrelationEngine.estimableFormulations`), so every logged substance is modeled and
     /// inert ones self-exclude. A dose whose medication isn't set up in Apple Health (nil
     /// name) is kept under `"Unspecified"` rather than discarded.
-    func fetchMedicationDoses(days: Int = 120) async -> [Dose] {
+    ///
+    /// `since` is the caller's to state, and should span the TREMOR record — the same
+    /// rule `fetchSleepIntervals` follows. It used to be a 120-day count, which was the
+    /// only capped stream in the engine's inputs (tremor is unbounded, sleep spans the
+    /// record). Once the tremor history outgrew 120 days, older days would carry tremor
+    /// but no doses, and the engine cannot tell "none recorded" from "none taken" — a
+    /// medicated history would have read as unmedicated. A dose older than the tremor
+    /// record has no outcome to correlate against, so the span is a fact about the data
+    /// rather than a number someone picked. It is also self-limiting: tremor starts at
+    /// install, so a user with years of medication history in Apple Health does not drag
+    /// years of doses into the engine.
+    ///
+    /// The window ENDS at now, not at the last tremor sample: a dose logged minutes ago
+    /// must reach today's forecast even when the watch's tremor sync is lagging.
+    func fetchMedicationDoses(since start: Date) async -> [Dose] {
         let end = Date()
-        let start = Calendar.current.date(byAdding: .day, value: -days, to: end)
-            ?? end.addingTimeInterval(-Double(days) * 86400)
         let raw = await fetchMedicationDosesInRange(from: start, to: end)
         return raw.map { Dose(timestamp: $0.time, name: $0.name ?? "Unspecified") }
     }

@@ -316,12 +316,17 @@ struct InsightsView: View {
             let samples = allReadings.map {
                 TremorPoint(timestamp: $0.timestamp, tremorScore: $0.tremorScore)
             }
-            let doses = await healthKit.fetchMedicationDoses()
+            // Doses and workouts span the tremor record, like sleep below: past that, the
+            // engine can't tell "none recorded" from "none taken". `.distantPast` when there
+            // are no readings at all — nothing to correlate against yet, so fetching
+            // everything costs nothing and invents no cutoff.
+            let historyStart = samples.map(\.timestamp).min() ?? .distantPast
+            let doses = await healthKit.fetchMedicationDoses(since: historyStart)
             meds = Self.medSummaries(from: doses)
             // Foreign-source exclusions are edited in the Backup/Settings screen and apply
             // app-wide; read the current set here so the gait trend honors them.
             let gait = await healthKit.fetchGaitSeries(excludedSources: HealthSourcePrefs.excluded)
-            let workouts = await healthKit.fetchWorkoutEvents()
+            let workouts = await healthKit.fetchWorkoutEvents(since: historyStart)
             // Sleep as intervals, spanning the tremor record: the engine subtracts it from
             // dose gaps (OFF is a waking quantity) and censors dose durations at sleep onset
             // (tremor flattens in sleep whatever the drug is doing). Empty is safe — the

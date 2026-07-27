@@ -344,13 +344,17 @@ private struct DayReviewContent: View {
             forecast = nil
             return
         }
-        let allDoses = await healthKit.fetchMedicationDoses()
         let ds = dayStart, de = dayEnd
+        let history = ((try? modelContext.fetch(FetchDescriptor<TremorReading>())) ?? [])
+            .map { TremorPoint(timestamp: $0.timestamp, tremorScore: $0.tremorScore) }
+        // History first, because the dose window is derived from it: doses span the tremor
+        // record, so a day with tremor always has its doses. `min()`, not `first`, for the
+        // same reason the sleep window below uses it — this fetch comes back unsorted.
+        let allDoses = await healthKit.fetchMedicationDoses(
+            since: history.map(\.timestamp).min() ?? .distantPast)
         // No early-out on a zero-dose day: the engine returns the flat-band forecast for it
         // (Phase 0, forecast-composition-model.md) — medication is an event, not a user trait.
         let todays = allDoses.filter { $0.timestamp >= ds && $0.timestamp < de }
-        let history = ((try? modelContext.fetch(FetchDescriptor<TremorReading>())) ?? [])
-            .map { TremorPoint(timestamp: $0.timestamp, tremorScore: $0.tremorScore) }
         let todaysReadings = dayReadings.map {
             TremorPoint(timestamp: $0.timestamp, tremorScore: $0.tremorScore)
         }
