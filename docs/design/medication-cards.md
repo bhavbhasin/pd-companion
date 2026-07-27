@@ -1,0 +1,305 @@
+# Medication cards: one per substance, existence decoupled from effect
+
+**Status:** DESIGNED Jul 26 2026, **not built**. 4 open questions (was 5). Supersedes the narrower "per-drug insight cards"
+scope in BACKLOG (which was: give Mucuna its own card). The scope grew during design because the
+narrow version turned out to be circular — see [The circularity](#the-circularity).
+
+**One line:** every substance a person logs regularly earns a card; the card reports what their data
+can support about that substance — including "nothing detectable" and "not enough yet" — and no card
+is ever hidden for producing an unwelcome or imprecise answer.
+
+---
+
+## The two defects this fixes
+
+### 1. The registry cannot express a per-substance question
+
+`Variable` has one flat `.levodopaDose`. There is no `.medication(key)` / `.anyMedication` pair
+mirroring `.workout(type)` / `.anyWorkout`. Nothing gated Mucuna out — **the sentence has no
+grammar.**
+
+Keep this distinction, it recurs: a **gate** makes a card dark *temporarily, pending data*
+(self-resolving); **missing expressiveness** makes it dark *permanently*, and no amount of data
+fixes it. Same family as the dormant-renderer backlog item.
+
+### 2. The circularity
+
+The obvious fix — show a per-drug card once the drug shows an effect — is circular in a way that
+matters. The card's *content* is "this substance changes your tremor by X, for Y minutes." The card's
+*existence test* would be "does this substance change your tremor?" Same numbers answering both.
+
+Two consequences:
+
+- **Not an independent check.** The gate restates the content rather than validating it.
+- **Selection bias, worst where data is thinnest.** If a card only appears when the measured effect
+  is large enough, the effects on display are biased upward — the substances that clear the bar early
+  are disproportionately those whose noise pointed the right way. The newest substance, with the
+  least data, gets the most overstated number. Exactly backwards.
+
+---
+
+## The principle
+
+**A card's existence depends on whether the person takes the substance, not on what the substance
+did.**
+
+Once existence is unconditional, the count stops being a hidden gate and becomes content: *what we
+have, and what is still missing.* There is then nothing to threshold — "is there enough evidence?"
+is only a question you must answer if the card disappears when the answer is no.
+
+This is the same resolution the confidence work reached from the other direction
+(`insights-card-confidence-redesign.md`): **facts over verdict.** Show the before/after and the
+person's own variability; let them judge. Applied here, "this substance does nothing" stops being a
+verdict the engine must be confident enough to issue, and becomes a set of numbers the reader can
+weigh.
+
+---
+
+## What a card says
+
+Up to three statements. Each appears only when its estimator is *defined* — a mathematical
+condition, not a chosen threshold:
+
+| Statement | Needs | Floor |
+|---|---|---|
+| How much tremor drops after a dose | pre-dose level + post-dose trough | ≥2 doses — one gives a number with no spread, so no uncertainty can be computed |
+| How quickly it takes effect | same windows | ≥2 doses, same reason |
+| How long the effect holds | doses **observed** ending — awake, watch worn, before the next dose | the Kaplan–Meier median must exist, i.e. the survival curve actually reaches 50%. Already tested as `kmMedian.isFinite` |
+
+Duration is the scarce one. On the reference dataset one formulation is 59% censored: more than half
+its doses never showed an ending.
+
+### Censoring is a floor, not a blank
+
+**A dose that never showed an ending is not missing data — it is a lower bound.** "It had not worn
+off by the time the next dose arrived, in 8 of 10 cases" is a measurement, and for coverage purposes
+it is the one that matters: the substance covered *at least* that gap.
+
+This matters more than it first appears, because **the substance least likely to produce a measurable
+duration is a long-acting one taken on a tight schedule** — i.e. a drug that is working. Left
+unhandled, the design would be least able to describe the drugs that help most. Read censoring as a
+floor and that inverts correctly.
+
+(Note the subtlety: doses that were never seen ending still contribute to the survival curve for as
+long as they were watched. "The median exists" is not the same as "half the doses were observed".)
+
+**When none of the three can be stated, the card still appears and says why.** Shape:
+
+> **Naltrexone** — 28 doses logged over six weeks. None have yet been followed by a clear return of
+> tremor while you were awake, so we can't say how long it lasts. What we can see: tremor is 8% lower
+> in the two hours after a dose, which is inside your ordinary day-to-day range.
+
+That tells the reader what is known, what isn't, and *why* — instead of silence, which they cannot
+distinguish from the app never having looked. For anyone running a personal experiment with an
+unproven substance, this is the point of the feature.
+
+### Fixed rules
+
+- **⛔ Each card speaks only about its own substance.** Cross-substance ranking is not established on
+  the reference data (log-rank between the two formulations p=0.52) *and* is a dosing judgment the
+  safety line forbids. This must be a property of the renderer, not of the copy.
+- **No dosing suggestion, ever.** `.clinicalReferral` safety class.
+- **Precision is shown, not used to hide.** Deferred until the `20` redesign lands — see
+  [Open](#open-questions).
+
+---
+
+## When a substance earns a card
+
+**Logged on more than one day.** A single day is a trial or a mis-entry; a second day is a pattern
+the person chose to continue. This is a screen-clutter decision, not a claim about evidence — which
+is a far more defensible home for an arbitrary line than inside "does this work."
+
+---
+
+## Classification: what the engine treats as acting on tremor
+
+This is *separate* from whether a card appears. It decides whether a substance's doses join the
+pooled levodopa analyses (coverage card, forecast, dose-confound guards). A supplement swept into
+that pool contributes doses that never produced a pulse, flattening the pooled curve.
+
+Today: include if the substance clears an estimability test **or** has fewer than 20 doses (benefit
+of the doubt); exclude if it has ≥20 doses and shows no pulse. That rule is written **twice, with the
+polarity flipped** (`CorrelationEngine.swift:244` and `:2531`) — one decision, two copies, either
+editable without the other. Both are sites in the `20` redesign; `:244` was missed in that item's
+original survey of eight and makes nine.
+
+### DECIDED — there is no classifier
+
+The engine does not need to decide whether a substance "is levodopa". It needs to decide whether a
+dose contributes coverage, and that is a question about the **estimate**, not about the drug:
+
+> **A dose counts toward coverage only if its substance has a measurable duration** (including a
+> censoring floor, per above). A substance with nothing measurable contributes nothing and never
+> splits a gap.
+
+Vitamin D is excluded by having nothing to contribute, not by being judged inert. Same sentence
+covers a substance with two doses so far and one with fifty doses and no effect. **No verdict is
+issued, so no margin is needed** — which matters, because `confidence-presence-vs-absence.md` records
+that no validated tremor MID exists, and resting a margin on the user's own variability was corrected
+there as circular. This sidesteps that dead end rather than solving it.
+
+⇒ Sites `:244` and `:2531` are largely **deleted rather than converted**, taking two of the nine `20`
+sites with them.
+
+**Trade-off, DECIDED (Bhav, Jul 26 2026): conservative-but-wrong.** A genuinely effective new drug
+contributes no coverage until its duration is estimable, so the coverage card temporarily reads worse
+than reality. The alternative — falling back to the average of the person's established drugs — is
+more useful but asserts something never measured about the new substance. Reading censoring as a
+floor keeps this window short.
+
+### Literature as a classifier — considered, rejected as a gate
+
+Sourcing drug class from published literature would break the circularity cleanly: pharmacology
+answers "is this substance plausibly dopaminergic," the person's data answers "how much, how long,
+for you." It also solves cold start — a new levodopa formulation would be known on day one.
+
+Rejected as a **gate** for three reasons:
+
+1. **A list cannot recognise what it hasn't heard of** — international brands, compounded
+   formulations, supplements. Unknown substances would need the measured route anyway, so both paths
+   get maintained.
+2. **The answer is often not binary.** Nicotine has a long-standing epidemiological association with
+   lower PD incidence and has been trialled as a patch; it is neither established nor refuted. A
+   yes/no list must file "studied, not established" as one or the other, and both are wrong. Low-dose
+   naltrexone has no PD-specific evidence at all, which is not the same as evidence against.
+3. **It answers the wrong question.** Literature says levodopa reduces tremor *on average across
+   patients*. Tremor is the least reliably levodopa-responsive cardinal sign. A literature "yes" can
+   light a card for someone whose tremor genuinely doesn't respond — the opposite failure to the one
+   being fixed.
+
+**Kept as provenance.** Every registry entry already carries a literature-motivated `rationale`; that
+layer is the right home for drug-class knowledge. A substance with no established evidence should
+carry that note explicitly, so an encouraging early number is not read as vindication.
+
+**Consequence, deliberate:** unproven and traditional treatments — Ayurvedic preparations, a tester's
+low-dose naltrexone — are first-class. They are measured on exactly the same terms as Sinemet, and
+"we cannot detect an effect" is a publishable result rather than a card that fails to appear. No
+literature can give someone that answer about themselves.
+
+---
+
+## Exclusion: the user's switch
+
+A person may turn any substance off. Off means: **no card, and the substance's doses leave the
+correlation engine entirely** — not merely hidden.
+
+- **Where:** Settings already presents a *Data sources* row with per-source toggles ("on = mine",
+  written through with no save step). Medications become a sibling row with the same pattern, so
+  turning something back on is symmetrical.
+- **Why it is not just cosmetic:** it is the user's lever against a substance being misclassified
+  into the levodopa pool.
+- **⚠️ Excluded substances must be listed in the clinical export.** The existing source exclusion
+  removes *someone else's* data — data that was wrong to include. This removes the person's *own*
+  correctly-recorded data. Same switch, different act. Listing them keeps the choice theirs and on the
+  record.
+- **⚠️ State the consequence when the substance is pharmacologically active.** Excluding a working
+  drug makes the coverage card compute dose spacing as though it were not taken, inflating the
+  uncovered-hours figure. Say so at the toggle; do not prevent it.
+- **Not a performance feature.** If per-substance model fitting proves expensive, the answer is
+  caching or lazy computation — not asking the patient to prune their list. Build this for agency and
+  classification hygiene.
+
+---
+
+## The pooled coverage card
+
+Its two-formulation branch is **deleted**. Today it prints per-formulation figures inside one
+sentence ("holds ~3.0 h … holds ~1.6 h"), which arranges two true facts so the reader concludes a
+comparison that p=0.52 says is not established, and gives a 240-dose estimate and a 22-dose estimate
+equal authority.
+
+After this change the card does one job: how many waking hours a day the dose *spacing* leaves
+uncovered. Per-substance numbers live on per-substance cards, each carrying its own dose count.
+
+**Side effect:** the deleted branch contains one of the `20` sites (`:1484`). Removing the rows
+removes the site rather than converting it.
+
+---
+
+## Three more hardcoded numbers, found in this path
+
+`90`, `360` and `190` sit in the duration path and would each misfire once any substance can earn a
+card. Same family as the `20`; fold into that item rather than treating separately.
+
+| Number | What it does | Verdict |
+|---|---|---|
+| `190` (`doseOnWindowFallback`) | substituted whenever a duration isn't estimable. Its comment says "≈ the validated median ON-duration (~192 min)" — i.e. **one person's physiology, shipped as everyone's default**. Defensible for levodopa; fiction for a supplement | **split by consumer** — see below |
+| `90` (lower rail, `:414` `:2311`) | any estimate under 90 min is discarded and replaced by the fallback | **drop on the per-substance path** — it would throw away a genuine 50-minute measurement and substitute a levodopa-shaped number |
+| `360` (upper rail, same two sites) | rejects estimates over 360 min | **delete — dead code.** Durations are measured in a window capped at `maxWindow = 300`, so no estimate can ever exceed 300 and the test can never fail |
+
+**The trap in the fallback: two consumers want opposite things.**
+
+- **Coverage / forecast** want *nothing*. Substituting 190 invents coverage nobody measured — and the
+  DECIDED rule above already says an unmeasurable dose contributes nothing.
+- **The food / exercise dose-guard** (`doseOnWindowMinutes`) wants *something protective*. It uses the
+  ON-window to avoid crediting a meal with the dose's effect; handed zero, it would treat every meal
+  as uncontaminated, which is the unsafe direction. This consumer genuinely needs a default.
+
+One constant, two questions, opposite right answers — the `20` pattern in a different number. Whether
+the guard's default stays 190 or becomes something less person-specific is left open rather than
+guessed.
+
+## Build shape
+
+1. **Vocabulary (small):** `Variable.medication(String)` + `.anyMedication`, plus the bridge
+   accessor mirroring `workoutRawValue`. Easier than workouts — the substance key is engine-side
+   (`formulationKey`), no HealthKit involved.
+2. **Stamping (existing):** `.perObservedType` already stamps one approved template per value seen in
+   the user's own data — how one person gets a Tai Chi card and another gets pickleball. Needs an
+   `instantiate` overload keyed on substance strings rather than HealthKit raw values.
+3. **Primitive (new name, existing math):** the card reads a fitted per-substance model combining
+   onset and duration. `fitPulseModel` already computes it and already drives the daily forecast; it
+   simply has no name in the registry. Declaring `.survivalDuration` would name the duration half
+   only — mislabelling the method is the same class of defect as the `20`.
+4. **Renderer (new, the real work):** a new card type, not a variant of `.wearingOff`. That card
+   answers a scheduling question pooled across everything; this one answers "what does this substance
+   do for me." Folding both into one renderer means branching internally on which question is being
+   asked — the exact pattern the `20` item exists to remove.
+5. **Chart (nearly free):** `wearingOffChart(results:km:)` already takes one dose set and draws its
+   average shape — baseline, dip, return. Handing it one substance's doses yields that substance's
+   own curve with no new drawing code.
+
+⇒ A new formulation works on day one for a person we have never met, with no code change. That is
+the point.
+
+---
+
+## Open questions
+
+1. **Cross-substance confounding — the clean window.** A substance's observation window runs to the
+   next dose of *itself*; another substance taken in between is invisible. So part of what is reported
+   as one drug's duration may be another drug's effect. This is **not** a general oversight — the
+   substrate band excludes every dose's active window regardless of substance, the food and exercise
+   cards are dose-guarded, and the pooled medication analyses truncate at the next dose of any
+   levodopa substance because they are pooled. The gap is specific to per-substance fitting, and it
+   arrived with the stratified per-formulation work. Fix would be to end a substance's window at the
+   next dose of *any* active substance. Cost: fewer usable windows, on top of 59% censoring already.
+   **Note the current asymmetry: pooled figures and per-substance figures are cleaned to different
+   standards on the same screen.**
+2. ~~How the classifier decides "no detectable effect"~~ — **CLOSED.** There is no classifier; see
+   [Classification](#classification-what-the-engine-treats-as-acting-on-tremor). The question became
+   "does this substance have a measurable duration", which needs no margin and therefore never meets
+   the missing-tremor-MID dead end.
+3. **Cost.** Fitting a model per logged substance is unmeasured. Should scale with total doses rather
+   than substance count, but that is reasoning, not a measurement. Measure before building.
+4. **Ordering rule for clutter.** "Most informative first" needs a concrete definition. Six
+   supplements each reporting "no detectable effect" is true and useless. Handle by ordering and
+   collapsing, never by hiding — hiding is what this document removes.
+5. **How precision is drawn.** Downstream of the `20` redesign: one substance's duration is confident
+   within ~5 minutes, another within ~32. Showing both as plain numbers implies an equal confidence
+   that is not there.
+
+---
+
+## Rejected
+
+| Proposal | Why not |
+|---|---|
+| Card appears once the substance shows an effect | Circular; biases displayed effects upward, worst where data is thinnest |
+| Literature list as the gate on which substances are analysed | Cannot cover the unknown; answers are frequently "studied, not established"; says nothing about *this* person |
+| Reuse the wearing-off renderer with an internal branch | One renderer answering two questions — the defect the `20` item exists to remove |
+| Raise the dose count instead of removing it | Swaps one arbitrary number for a larger one |
+| Cross-substance ranking in copy | p=0.52 on the reference data, and a dosing judgment the safety line forbids |
+| A "does this substance work" classifier | Needs a margin; no validated tremor MID exists, and the own-variability margin is circular. Replaced by "does it have a measurable duration" |
+| Blanket-deleting `doseOnWindowFallback` | Coverage wants nothing, the food/exercise guard wants a protective default. Split, don't delete |
