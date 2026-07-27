@@ -116,6 +116,16 @@ struct SleepClippingTests {
             onThreshold: CorrelationEngine.offThreshold, sleep: sleep)
 
         // Python oracle: 192.5 sleep-blind -> 177.5 sleep-censored.
+        //
+        // Where these two numbers come from, so nobody has to guess later: the Python lab,
+        // on this same 07-16-2026 backup. Regenerate with
+        //   res, _ = wearing_off.analyze(tremor, doses, sleep)   # sleep=[] for the blind figure
+        //   wearing_off.km_median(wearing_off.km_summary(res))
+        // Re-verified Jul 26 2026 after the lab was taught to censor sleep (it had been
+        // sleep-blind, so it was NOT the source of these values until then): the fixed lab
+        // reproduces both exactly, on the same 246 doses. Nothing automatically re-checks
+        // that, so if the lab and these constants ever disagree, re-run the two lines above
+        // before assuming the app is the one that drifted.
         #expect(abs(blind.kmMedian - 192.5) < 2.5, "sleep-blind KM")
         #expect(abs(clipped.kmMedian - 177.5) < 2.5, "sleep-censored KM")
         #expect(clipped.kmMedian < blind.kmMedian, "censoring must not inflate duration")
