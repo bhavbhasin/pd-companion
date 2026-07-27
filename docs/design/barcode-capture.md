@@ -25,10 +25,15 @@ OCR earns its complexity only for the misses - not as a co-equal path. Building 
 - **Fall-through:** unknown barcode → existing manual/voice entry. Never a dead end.
 - **Wire-in:** create a `FoodEvent` through the existing pipeline (reuse, don't fork).
 
-### Phase 2 — Nutrition-panel OCR (fallback for barcode misses)
+### Phase 2 — Nutrition-panel OCR (fallback for barcode misses) — DEFERRED Jul 26 2026
+**Not started, and deliberately so:** the gate below ("defer until barcode coverage proves insufficient in practice") has not been met. No barcode-sourced food event exists in any dataset yet, so the miss rate is anecdotal (n=4). Packaged/Brand text coverage is already 48% (`analysis/food-coverage-audit/`) while South Asian is 27% and SE Asian 18% - alias curation outranks OCR on measured impact. **Unblock condition:** persist the unresolved GTIN on a miss so misses become countable.
+
+Scope when it is built:
 - **OCR:** `Vision` `VNRecognizeTextRequest` - on-device, free.
 - **Parse:** standardized panel → macros → same reduction seam.
-- **"AI" parsing, done right:** for robust parsing of messy OCR, **Apple Foundation Models** (iOS 26 on-device LLM) - NOT a cloud API. Hardware-gated (A17 Pro+; floor is iPhone 11) → pair with a **deterministic regex parser as the universal fallback**. Same FM-with-fallback pattern chosen for voice narration.
+- ⚠ **Serving-size normalization is load-bearing.** The corpus stores macros **per 100 g** and `BarcodeCorpus.attributes` thresholds against that; a Nutrition Facts panel reports **per serving**. Feeding panel grams in unrescaled flips answers - a 15 g serving of chips with 1 g fat reads `1` (no fat) instead of `6.7`/100 g (fat). So the parser must read the serving size in grams and rescale, and on dual-column panels (per serving / per container) choosing the column is part of the parse, not a post-step.
+- **Shared seam:** `attributes(_:)` is currently an instance method over the corpus's own `Product`. Extract it to a free function over the five optional macros so both paths share one rule. A second consumer makes the PROVISIONAL thresholds materially load-bearing.
+- **"AI" parsing, done right:** **Apple Foundation Models** (iOS 26 on-device LLM) - NOT a cloud API - can help with messy panels, but it is hardware-gated (A17 Pro+) and the device floor is iPhone 11, so **FM never runs on the floor device**. The **deterministic regex parser over the panel's fixed label vocabulary (skipping the %DV column) is the shipping path**; FM is an optional enhancement on newer hardware. Do not build both as co-equal - that doubles the surface of a fallback's fallback.
 
 ### Phase 3 — ingredients keyword scan (optional, lowest priority)
 Only to catch caffeine and similar things the macro panel misses.
