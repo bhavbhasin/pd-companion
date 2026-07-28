@@ -400,9 +400,19 @@ nonisolated enum CorrelationEngine {
     /// The dose-confound guard's ON-window, sourced from the SAME validated KM median
     /// ON-duration the wearing-off card computes — so the guard adapts per user instead
     /// of using a magic constant (someone with a shorter ON-duration gets a tighter
-    /// shadow). Falls back when the median isn't yet estimable (too few doses) or is
-    /// physiologically implausible; the [90, 360]-min rails only catch degenerate
-    /// estimates from sparse early data (sanity bounds, not tuning).
+    /// shadow). Falls back when the median isn't yet estimable (too few doses).
+    ///
+    /// The old `<= 360` ceiling is GONE: durations are measured inside `maxWindow` (300),
+    /// so no estimate could ever exceed it and the test never fired. Unreachable, not a
+    /// judgment call. docs/design/medication-cards.md.
+    ///
+    /// The `>= 90` floor STAYS **here only**, deliberately. This consumer is protective:
+    /// it decides how wide a shadow to cast around a dose so a meal isn't credited with
+    /// the pill's effect. Given a very short window it treats every meal as uncontaminated
+    /// — the unsafe direction. The forecast path (`fitPulseModel`) has the opposite need
+    /// and dropped the floor. One constant, two consumers, opposite right answers.
+    /// Ledger: provisional (protective default, not anchored) — splitting it from the
+    /// fallback is an open item in docs/design/medication-cards.md.
     static func doseOnWindowMinutes(samples: [TremorPoint], doses: [Dose],
                                     sleep: [SleepInterval] = [],
                                     cache: SurvivalCache? = nil) -> Double {
@@ -411,7 +421,7 @@ nonisolated enum CorrelationEngine {
             signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
             events: doses.map(\.timestamp), onThreshold: offThreshold, sleep: sleep, cache: cache)
         let km = surv.kmMedian
-        guard km.isFinite, km >= 90, km <= 360 else { return doseOnWindowFallback }
+        guard km.isFinite, km >= 90 else { return doseOnWindowFallback }
         return km
     }
 
@@ -2018,6 +2028,16 @@ nonisolated extension CorrelationEngine {
     /// clock — Pacific in the parity test, the device's zone in the app), keeping only
     /// months with ≥20 samples. The month key is a UTC-anchored first-of-month so the
     /// downstream time axis is DST-free.
+    ///
+    /// **`minPerMonth: 20` — CHECKED Jul 28 2026, deliberately kept.** Measured non-binding
+    /// by ~30x on the reference data: months run 300-800 samples against a floor of 20, and
+    /// 3 of 71 months were dropped, each holding 3 samples. Unlike the duration rails, this
+    /// one does not overwrite a measurement with an invented number — it declines to average
+    /// three points into a "monthly median" that then gets equal weight to a 700-sample month
+    /// in the trend fit. Deleting it outright would be worse than keeping it.
+    /// The principled replacement is weighting each month by its sample count rather than a
+    /// cutoff; not built, because it moves nothing measurable on real data.
+    /// Ledger: provisional (measured non-binding, not anchored).
     static func monthlyMedians(_ samples: [(date: Date, value: Double)],
                                clip: (lo: Double, hi: Double), minPerMonth: Int = 20) -> [GaitMonth] {
         var buckets: [Date: [Double]] = [:]
@@ -2292,8 +2312,18 @@ nonisolated extension CorrelationEngine {
     }
 
     /// Fit a `PulseModel` over one dose set. Onset uses per-time-of-day buckets with a
-    /// pooled fallback; ON-duration is the clamped KM median (same [90,360] sanity rails +
-    /// fallback as `doseOnWindowMinutes`).
+    /// pooled fallback; ON-duration is the KM median as measured, with `doseOnWindowFallback`
+    /// only when it isn't estimable at all.
+    ///
+    /// **No sanity rails here (was `[90, 360]`).** The `360` ceiling was unreachable —
+    /// `maxWindow` caps every duration at 300. The `90` floor is dropped because this path
+    /// feeds the forecast and the per-substance cards, where a genuinely fast substance
+    /// measured at 50 min must report 50 min, not be overwritten with a levodopa-shaped
+    /// 190. Discarding a real measurement for being small is the defect, independent of
+    /// where any one person's data happens to land.
+    ///
+    /// ⚠️ `doseOnWindowMinutes` keeps its `90` floor on purpose — it is protective, not
+    /// descriptive. Do NOT "unify" these two. docs/design/medication-cards.md.
     static func fitPulseModel(
         key: String, signal: [(time: Date, value: Double)], events: [Date],
         sleep: [SleepInterval] = [], cache: SurvivalCache? = nil
@@ -2308,7 +2338,7 @@ nonisolated extension CorrelationEngine {
         }
         let pooledOnset = nanmean(dr.traces.filter { !$0.tHalf.isNaN }.map(\.tHalf))
         let km = surv.kmMedian
-        let onDuration = (km.isFinite && km >= 90 && km <= 360) ? km : doseOnWindowFallback
+        let onDuration = km.isFinite ? km : doseOnWindowFallback
         let band = iqr(surv.durations.filter { $0.observed && !$0.durationMin.isNaN }.map(\.durationMin))
         return PulseModel(key: key, surv: surv, onDuration: onDuration, iqr: band,
                           onsetByBucket: onsetByBucket, pooledOnset: pooledOnset)
