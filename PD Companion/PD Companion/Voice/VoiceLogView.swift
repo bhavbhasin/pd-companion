@@ -63,6 +63,11 @@ struct VoiceLogView: View {
                     }
                 }
             }
+            // Correcting the symptom in the confirm screen swaps which picker is showing, so
+            // the value has to move with it.
+            .onChange(of: giSymptom) { _, new in
+                giSeverity = new.validValue(giSeverity)
+            }
             .onChange(of: speech.isRecording) { _, recording in
                 // Build the draft the moment recording stops, then seed the editable
                 // fields from it so the user can correct anything before committing.
@@ -74,8 +79,11 @@ struct VoiceLogView: View {
                         editedDate = d.when
                         if d.type == .mindfulness { mindfulnessMinutes = d.durationMinutes ?? 10 }
                         if d.type == .symptom {
-                            giSymptom = d.giSymptom ?? .constipation
-                            giSeverity = d.giSeverity
+                            let s = d.giSymptom ?? .constipation
+                            giSymptom = s
+                            // A spoken grade ("mild") means nothing for a presence-only
+                            // symptom, and would leave the faces picker with no selection.
+                            giSeverity = s.validValue(d.giSeverity)
                         }
                     }
                 }
@@ -154,7 +162,7 @@ struct VoiceLogView: View {
             switch draft.type {
             case .medication:
                 Section {
-                    Text("Doses are recorded in Apple Health — Kampa will open it for you.")
+                    Text("Doses are recorded in Apple Health - Kampa will open it for you.")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
 
@@ -192,11 +200,21 @@ struct VoiceLogView: View {
                         }
                     }
                 }
-                Section("Severity") {
-                    Picker("Severity", selection: $giSeverity) {
-                        ForEach(GISeverity.loggable) { Text($0.displayName).tag($0) }
+                // Presence-only symptoms get the two faces instead of grades — see
+                // GISymptom.isSeverityGraded.
+                if giSymptom.isSeverityGraded {
+                    Section("Severity") {
+                        SymptomHeroSymbol(symptom: giSymptom, severity: giSeverity)
+                        Picker("Severity", selection: $giSeverity) {
+                            ForEach(giSymptom.valueOptions) { Text($0.displayName).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
                     }
-                    .pickerStyle(.segmented)
+                } else {
+                    Section("How is it?") {
+                        SymptomHeroSymbol(symptom: giSymptom, severity: giSeverity)
+                        ThumbPicker(symptom: giSymptom, severity: $giSeverity)
+                    }
                 }
                 Section("When") {
                     DatePicker("Date & time", selection: $editedDate, in: ...Date.now,

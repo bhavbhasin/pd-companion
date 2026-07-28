@@ -1116,7 +1116,7 @@ class HealthKitManager: ObservableObject {
     /// `writeMindfulSession`; the same close-loop pattern (Apple Health is system-of-record).
     func writeGISymptom(_ symptom: GISymptom, severity: GISeverity, at date: Date) async throws {
         let sample = HKCategorySample(type: symptom.categoryType,
-                                      value: severity.hkSeverity.rawValue,
+                                      value: symptom.hkValue(for: severity),
                                       start: date, end: date)
         try await store.save(sample)
     }
@@ -1153,6 +1153,11 @@ class HealthKitManager: ObservableObject {
             }
             for sample in samples {
                 guard let severity = GISeverity(hkValue: sample.value) else { continue }
+                // A confirmed-absent record counts as an event only for symptoms whose picker
+                // OFFERS absence (Mood). For the graded ones the app never writes it, so such a
+                // sample came from Apple Health or another app and means "I checked, it wasn't
+                // there" — not something that happened, and not a timeline event.
+                if severity == .notPresent && symptom.isSeverityGraded { continue }
                 out.append((sample.uuid, sample.startDate, symptom, severity,
                             sample.sourceRevision.source.bundleIdentifier == localBundleID))
             }

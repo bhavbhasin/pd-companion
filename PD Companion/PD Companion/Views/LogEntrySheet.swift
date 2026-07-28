@@ -34,7 +34,7 @@ struct LogEntrySheet: View {
                 ) { path.append(.mindfulness) }
                 menuRow(
                     icon: GISymptom.timelineSymbol, iconBg: GISymptom.tint.opacity(0.15), iconColor: GISymptom.tint,
-                    title: "Bowel/Urinary", subtitle: "Constipation or urinary, when present"
+                    title: "Symptoms", subtitle: "Bowel, mood, etc."
                 ) { path.append(.symptom) }
             }
             .listStyle(.insetGrouped)
@@ -241,7 +241,7 @@ struct LogFoodScreen: View {
             scannedAttributes = BarcodeCorpus.shared.attributes(product)
             scanMissMessage = nil
         } else {
-            scanMissMessage = "Barcode not recognized — describe it instead."
+            scanMissMessage = "Barcode not recognized - describe it instead."
         }
     }
 
@@ -253,7 +253,7 @@ struct LogFoodScreen: View {
         guard !attrs.isEmpty else {
             return "Scanned. No notable protein, sugar, fiber, fat, or caffeine."
         }
-        return "Scanned — recording: \(attrs.map(\.displayName).joined(separator: ", "))."
+        return "Scanned - recording: \(attrs.map(\.displayName).joined(separator: ", "))."
     }
 }
 
@@ -357,6 +357,63 @@ struct LogMindfulnessScreen: View {
     }
 }
 
+// MARK: - Symptom value controls
+//
+// Shared by the "+" screen and the voice confirm screen so the two stay identical.
+
+/// The large glyph above the value picker. It changes with the selection — colour and size for
+/// a graded symptom, thumb up/down for a presence-only one — so the screen responds as you
+/// choose. The labelled control below it stays the precise part; this is the felt part.
+struct SymptomHeroSymbol: View {
+    let symptom: GISymptom
+    let severity: GISeverity
+
+    var body: some View {
+        Image(systemName: symptom.heroSymbol(for: severity))
+            .font(.system(size: severity.symbolSize))
+            .foregroundStyle(severity.valueColor)
+            .symbolRenderingMode(.hierarchical)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .contentTransition(.symbolEffect(.replace))
+            .animation(.snappy(duration: 0.25), value: severity)
+            .accessibilityHidden(true)   // the picker below already announces the value
+    }
+}
+
+/// Two thumbs for the presence-only symptoms. Deliberately not a segmented picker: a segmented
+/// control renders its contents as template images and would strip the green/amber, and two big
+/// buttons are an easier target than two narrow segments.
+struct ThumbPicker: View {
+    let symptom: GISymptom
+    @Binding var severity: GISeverity
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(symptom.valueOptions) { option in
+                let selected = option == severity
+                Button {
+                    severity = option
+                } label: {
+                    Label(option.thumbCaption, systemImage: option.thumbSymbol)
+                        .font(.subheadline.weight(selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? option.valueColor : Color.secondary)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
+                        .background(selected ? option.valueColor.opacity(0.16)
+                                             : Color.secondary.opacity(0.12),
+                                    in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(option.thumbCaption)
+                .accessibilityAddTraits(selected ? [.isSelected] : [])
+            }
+        }
+        .padding(.vertical, 4)
+        .animation(.snappy(duration: 0.2), value: severity)
+    }
+}
+
 // MARK: - Log GI symptom screen
 //
 // Curated GI chips (not Apple Health's giant alphabetical symptom list) → severity →
@@ -386,6 +443,15 @@ struct LogSymptomScreen: View {
 
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 8)]
 
+    /// Mood is the one symptom worth logging on a good day, so its footnote can't repeat the
+    /// "a normal day needs no entry" rule the graded symptoms follow. Kept short deliberately:
+    /// this is permanent copy on a screen the user sees every time, not a place to teach.
+    private var footnote: String {
+        symptom.isSeverityGraded
+            ? "Saved to Apple Health. Log a symptom when it's present - a normal day needs no entry."
+            : "Saved to Apple Health. You can log multiple times a day."
+    }
+
     var body: some View {
         Form {
             Section("Symptom") {
@@ -394,23 +460,39 @@ struct LogSymptomScreen: View {
                 }
                 .padding(.vertical, 4)
             }
-            Section("Severity") {
-                Picker("Severity", selection: $severity) {
-                    ForEach(GISeverity.loggable) { Text($0.displayName).tag($0) }
+            // Presence-only symptoms (see GISymptom.isSeverityGraded) have no grades in Apple
+            // Health, so offering Mild/Moderate/Severe would promise a distinction the stored
+            // sample cannot carry. They get the two thumbs instead.
+            if symptom.isSeverityGraded {
+                Section("Severity") {
+                    SymptomHeroSymbol(symptom: symptom, severity: severity)
+                    Picker("Severity", selection: $severity) {
+                        ForEach(symptom.valueOptions) { Text($0.displayName).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
+            } else {
+                Section("How is it?") {
+                    SymptomHeroSymbol(symptom: symptom, severity: severity)
+                    ThumbPicker(symptom: symptom, severity: $severity)
+                }
             }
             Section("When") {
                 DatePicker("Date & time", selection: $when, in: ...Date.now,
                            displayedComponents: [.date, .hourAndMinute])
             }
             Section {
-                Text("Saved to Apple Health. Log a symptom when it's present — a normal day needs no entry.")
+                Text(footnote)
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let errorMessage {
                 Section { Text(errorMessage).foregroundStyle(.red).font(.caption) }
             }
+        }
+        // The two pickers don't share a value set, so carry the selection across a symptom
+        // switch instead of leaving a grade selected on a faces picker (or vice versa).
+        .onChange(of: symptom) { _, new in
+            severity = new.validValue(severity)
         }
         .navigationTitle("Log symptom")
         .navigationBarTitleDisplayMode(.inline)

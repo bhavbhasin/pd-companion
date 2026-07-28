@@ -175,6 +175,12 @@ enum DayEvent: Identifiable {
         case .food(_, _, let desc, _):
             return desc.isEmpty ? "Food" : String(desc.prefix(40))
         case .giSymptom(_, _, let symptom, let severity, _):
+            // Presence-only symptoms carry the thumb instead of a grade — it IS the value, and
+            // it's the only way to tell a good log from a bad one once both share the timeline
+            // glyph.
+            guard symptom.isSeverityGraded else {
+                return "\(symptom.displayName) \(severity.thumbLabel)"
+            }
             return severity == .present ? symptom.displayName
                                         : "\(symptom.displayName) · \(severity.displayName)"
         }

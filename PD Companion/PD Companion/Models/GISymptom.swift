@@ -1,25 +1,37 @@
 import HealthKit
 import SwiftUI
 
-/// The curated bowel / urinary symptom set Kampa logs. The bowel members (constipation, and
-/// the retained gastroparesis markers) are the gut-motility levers that gate levodopa
-/// absorption — that's the core thesis. `urinary` is off that thesis (bladder/autonomic, not
-/// absorption); it rides here only because it shares the exact same log shape and is bundled
-/// under one "+" entry for the user. Each case maps to a HealthKit category (severity-scaled),
-/// so a log is an `HKCategorySample` that Apple Health *and* the correlation engine both read
-/// (the close-loop pattern, like mindfulness). We log the *problem*; a normal day is the
-/// silent baseline — HealthKit has no "normal" type and it adds nothing to the correlation.
+/// The curated non-motor symptom set Kampa logs, surfaced as "Symptoms" on the "+" screen.
+/// The bowel members (constipation, and the retained gastroparesis markers) are the
+/// gut-motility levers that gate levodopa absorption — that's the core thesis. `urinary`
+/// (bladder/autonomic), `mood` and `fatigue` are off that thesis; they ride here because they
+/// share the exact same log shape and are bundled under one "+" entry for the user. Each case
+/// maps to a HealthKit category, so a log is an `HKCategorySample` that Apple Health *and* the
+/// correlation engine both read (the close-loop pattern, like mindfulness).
+///
+/// `fatigue` and `mood` overlap in what a person feels (low energy vs flat motivation) but not
+/// in what they ask, and they are the two that move within a day. If a user's logs show them
+/// always moving together, that is a signal to drop one, not to keep both.
+///
+/// For the graded symptoms we log the *problem* only; a normal day is the silent baseline.
+/// `mood` is the exception, and deliberately so: it is a recurring within-day state rather
+/// than a discrete event, so "fine at 9am, off at 3pm" is the shape worth capturing, and an
+/// absence is half of it. That is why absence is offered (and kept) for `mood` alone — see
+/// `isSeverityGraded` and the read filter in `fetchGISymptomsInRange`.
+///
+/// The type name is now a misnomer (`mood` is not GI). Renaming it touches ~40 call sites,
+/// so it stays until there's a reason to churn them.
 ///
 /// `allCases` retains the full historical set (bloating/nausea/diarrhea/cramps/heartburn) so
 /// already-logged samples still read back; `loggable` is the trimmed set the pickers OFFER.
 nonisolated enum GISymptom: String, CaseIterable, Identifiable, Sendable {
-    case constipation, bloating, nausea, diarrhea, cramps, heartburn, urinary
+    case constipation, bloating, nausea, diarrhea, cramps, heartburn, urinary, mood, fatigue
 
     var id: String { rawValue }
 
     /// The subset the `+` chips and the voice-correction picker OFFER. The others stay in
     /// `allCases` purely to DECODE existing Apple Health samples on read (non-destructive trim).
-    static let loggable: [GISymptom] = [.constipation, .urinary]
+    static let loggable: [GISymptom] = [.constipation, .fatigue, .mood, .urinary]
 
     var categoryIdentifier: HKCategoryTypeIdentifier {
         switch self {
@@ -33,7 +45,55 @@ nonisolated enum GISymptom: String, CaseIterable, Identifiable, Sendable {
         // severity-scaled bladder category. Note the semantic gap: it reads as *leakage* in
         // Apple Health, not urgency. Same `HKCategoryValueSeverity` scale (SDK-verified).
         case .urinary:      .bladderIncontinence
+        // `.moodChanges` is the only mood-adjacent category Apple Health has; there is no
+        // depression, anxiety or apathy type (SDK-verified against HKTypeIdentifiers.h).
+        // Naming the chip "Mood" rather than a specific symptom keeps the question we ask
+        // aligned with what the sample can actually say. Presence-only, not graded; see
+        // `isSeverityGraded`.
+        case .mood:         .moodChanges
+        // The one addition with no semantic gap at all: Apple Health's `.fatigue` means
+        // exactly what the chip says, on the same severity scale as the bowel symptoms.
+        case .fatigue:      .fatigue
         }
+    }
+
+    /// Most Apple Health symptoms are graded on `HKCategoryValueSeverity`. A few, including
+    /// `.moodChanges`, are `HKCategoryValuePresence` instead: present or not present, no
+    /// grades. Writing a severity raw value (mild == 2) into one of those stores a number the
+    /// type does not define, so presence-only symptoms hide the severity picker and always
+    /// record "present".
+    var isSeverityGraded: Bool {
+        switch self {
+        case .mood: false
+        default:      true
+        }
+    }
+
+    /// The raw `HKCategorySample` value for a log at `severity`. A presence-only symptom keeps
+    /// only the present/absent distinction and drops any grade. Decoding needs no equivalent
+    /// branch: the two scales agree on the values a presence type can hold
+    /// (present == unspecified == 0, notPresent == 1).
+    func hkValue(for severity: GISeverity) -> Int {
+        guard !isSeverityGraded else { return severity.hkSeverity.rawValue }
+        return severity == .notPresent ? HKCategoryValuePresence.notPresent.rawValue
+                                       : HKCategoryValuePresence.present.rawValue
+    }
+
+    /// The values this symptom's picker offers: three grades, or the two thumbs.
+    var valueOptions: [GISeverity] {
+        isSeverityGraded ? GISeverity.loggable : GISeverity.presenceOptions
+    }
+
+    /// The large symbol above the picker. Graded symptoms show their own glyph, growing and
+    /// deepening in colour with the grade; presence-only symptoms show the thumb itself.
+    func heroSymbol(for severity: GISeverity) -> String {
+        isSeverityGraded ? iconName : severity.thumbSymbol
+    }
+
+    /// Coerce a value carried over from another symptom (or parsed from speech) into one this
+    /// symptom can actually take, leaving valid selections alone.
+    func validValue(_ severity: GISeverity) -> GISeverity {
+        valueOptions.contains(severity) ? severity : (isSeverityGraded ? .mild : .present)
     }
 
     var categoryType: HKCategoryType {
@@ -49,6 +109,8 @@ nonisolated enum GISymptom: String, CaseIterable, Identifiable, Sendable {
         case .cramps:       "Abdominal Cramps"
         case .heartburn:    "Heartburn"
         case .urinary:      "Urinary"
+        case .mood:         "Mood"
+        case .fatigue:      "Fatigue"
         }
     }
 
@@ -56,13 +118,17 @@ nonisolated enum GISymptom: String, CaseIterable, Identifiable, Sendable {
     /// tremor-chart marker uses the *shared* `timelineSymbol` instead — see below.
     var iconName: String {
         switch self {
-        case .constipation: "hourglass"
+        // Slow transit is what the symptom actually is, and the tortoise reads as "slow"
+        // instantly. The plain hourglass read as a loading spinner.
+        case .constipation: "tortoise.fill"
         case .bloating:     "wind"
         case .nausea:       "face.dashed"
         case .diarrhea:     "drop.fill"
         case .cramps:       "bolt.fill"
         case .heartburn:    "flame.fill"
         case .urinary:      "drop.circle.fill"
+        case .mood:         "face.smiling"
+        case .fatigue:      "battery.25percent"
         }
     }
 
@@ -80,6 +146,10 @@ nonisolated enum GISymptom: String, CaseIterable, Identifiable, Sendable {
         case "cramps", "cramp", "cramping":            .cramps
         case "heartburn", "reflux":                    .heartburn
         case "urinary", "urgency", "bladder":          .urinary
+        // No bare "motivation" or "mood" — the parser matches single words, so "good mood"
+        // would log a mood problem. Each word here carries its own negative sense.
+        case "apathy", "apathetic", "unmotivated":     .mood
+        case "fatigue", "fatigued", "exhausted", "tired", "wiped": .fatigue
         default:                                       nil
         }
     }
@@ -93,20 +163,26 @@ nonisolated enum GISymptom: String, CaseIterable, Identifiable, Sendable {
     static var sampleTypes: Set<HKSampleType> { Set(allCases.map(\.categoryType)) }
 }
 
-/// The severity a GI symptom is logged at. We never offer "Not Present" as a log — we
-/// record problems, not confirmations of normality. Maps onto `HKCategoryValueSeverity`.
+/// The value a symptom is logged at. Graded symptoms use mild/moderate/severe; presence-only
+/// symptoms use present/notPresent. Maps onto `HKCategoryValueSeverity`, whose first two cases
+/// coincide with `HKCategoryValuePresence` (0 == present, 1 == not present).
 nonisolated enum GISeverity: String, CaseIterable, Identifiable, Sendable {
-    case present, mild, moderate, severe
+    case notPresent, present, mild, moderate, severe
 
     var id: String { rawValue }
 
-    /// What we OFFER when logging. "Present" is intentionally excluded — if a symptom is
+    /// What the GRADED symptoms offer. "Present" is intentionally excluded — if a symptom is
     /// there it's mild, moderate, or severe; "present" adds no information. It stays in the
     /// enum only to DECODE Apple Health's ungraded ("Present"/`.unspecified`) samples on read.
     static let loggable: [GISeverity] = [.mild, .moderate, .severe]
 
+    /// What a PRESENCE-ONLY symptom offers: two faces instead of three grades. Ordered better
+    /// to worse, matching the graded picker's mild → severe direction.
+    static let presenceOptions: [GISeverity] = [.notPresent, .present]
+
     var displayName: String {
         switch self {
+        case .notPresent: "Not present"
         case .present:  "Present"
         case .mild:     "Mild"
         case .moderate: "Moderate"
@@ -114,10 +190,50 @@ nonisolated enum GISeverity: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// The thumb shown for a presence-only symptom. A thumb rather than a face because the
+    /// question is "was it there", not "how bad was it" — the graded symptoms own that scale.
+    var thumbSymbol: String {
+        self == .notPresent ? "hand.thumbsup.fill" : "hand.thumbsdown.fill"
+    }
+
+    /// Emoji twin of `thumbSymbol`, for the timeline label (a plain String, so it can't carry
+    /// a tinted SF Symbol). Renders in the emoji palette, not the app's green/amber.
+    var thumbLabel: String { self == .notPresent ? "👍" : "👎" }
+
+    /// Word beside the thumb. The picture alone would leave "thumbs down for mood" ambiguous
+    /// about which direction is which, and it's what VoiceOver reads.
+    var thumbCaption: String { self == .notPresent ? "Fine" : "Off" }
+
+    /// Valence colour, following the app's language (see `SeverityValence`): green is good and
+    /// amber is a soft caution rather than an alarm. Red appears only at the top of a
+    /// self-reported severity scale, where the user has explicitly said "severe" — that's a
+    /// statement, not a comparison against a baseline, so the no-alarm rule doesn't apply.
+    var valueColor: Color {
+        switch self {
+        case .notPresent: .green
+        case .present:    .orange
+        case .mild:       Color.secondary
+        case .moderate:   .orange
+        case .severe:     .red
+        }
+    }
+
+    /// The hero symbol grows with intensity, so the screen responds as you move through the
+    /// scale. The words below stay the precise part; this is the felt part.
+    var symbolSize: CGFloat {
+        switch self {
+        case .notPresent, .present: 54
+        case .mild:     42
+        case .moderate: 50
+        case .severe:   58
+        }
+    }
+
     /// "Present" = symptom present, severity unspecified — matches what Apple Health writes
     /// when you tap "Present" without grading it.
     var hkSeverity: HKCategoryValueSeverity {
         switch self {
+        case .notPresent: .notPresent
         case .present:  .unspecified
         case .mild:     .mild
         case .moderate: .moderate
@@ -125,16 +241,17 @@ nonisolated enum GISeverity: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Map a stored `HKCategorySample.value` back to a loggable severity. Returns nil for
-    /// `notPresent` — a "confirmed absent" marker is not a symptom event and never appears
-    /// on the timeline.
+    /// Map a stored `HKCategorySample.value` back to a value. `notPresent` decodes rather than
+    /// being dropped here, because whether a confirmed-absent record is an event depends on the
+    /// symptom, not the value — `fetchGISymptomsInRange` makes that call.
     init?(hkValue: Int) {
         switch HKCategoryValueSeverity(rawValue: hkValue) {
+        case .notPresent:  self = .notPresent
         case .unspecified: self = .present
         case .mild:        self = .mild
         case .moderate:    self = .moderate
         case .severe:      self = .severe
-        default:           return nil   // .notPresent or unknown
+        default:           return nil   // unknown
         }
     }
 
