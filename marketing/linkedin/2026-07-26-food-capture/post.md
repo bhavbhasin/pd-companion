@@ -1,6 +1,7 @@
 # Working file: food capture article (this line is NOT the title, see "Title field" below)
 
-**Status:** DRAFT, not published. **Format:** LinkedIn *article* (not a feed post).
+**Status:** ✅ PUBLISHED 2026-07-28 — https://www.linkedin.com/posts/kampa-health_activity-7487933931640578048-YdaR
+**Format:** LinkedIn *article* (not a feed post).
 **Target:** Kampa Health company page (last posted Jul 8).
 **Register:** tangible first, engineering underneath, honest limit at the end.
 **Merges** the two former Next-up entries (barcode + on-device food understanding) into one story.
@@ -109,8 +110,7 @@ Your data stays yours, on your device.
 Put the hashtags here rather than in the article body. The article editor has no tag field, and tags in
 an article body do not behave like they do in a feed post. Two or three lines plus the tags:
 
-One of my favorite features launched in Kampa to date. Food plays a key role in Parkinson's symptoms management. This post describes how we
-  built frictionless food logging with wide coverage, without the need for server calls. #Kampa #Parkinsons #HealthTech #AppleHealth #Privacy
+One of my favorite features launched in Kampa to date. Food plays a key role in Parkinson's symptoms management. This post describes how we built frictionless food logging with wide coverage, without the need for server calls. #Kampa #Parkinsons #HealthTech #AppleHealth #Privacy
 
 Three ways to log food in Kampa, and the part I didn't expect to be the hard problem: fitting 439,082 products into 11.8 MB so the lookup never leaves your phone.
 

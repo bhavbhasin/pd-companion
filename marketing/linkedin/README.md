@@ -29,13 +29,13 @@ when feature traction warrants it — cadence follows the building, not a fixed 
 | 6   | 2026-07-06 | Glucose on your timeline (CGM + finger-prick) | Brand-agnostic CGM ingestion + finger-prick-via-Health, stacked/synced Tremor+Glucose panels, tap-hold crosshair | `core` (already updated `13b5e40`) | [post](https://www.linkedin.com/feed/update/urn:li:activity:7479957366814294016) |
 | 7   | 2026-07-08 | "What to expect today" — the day-ahead forecast | Tier-1 forward projection of ON/OFF cycle from today's own doses (`DayAheadPanel`); OFF band shaded by measured tremor severity | _confirm_ | [post](https://www.linkedin.com/feed/update/urn:li:activity:7480685161320173568) |
 | 8   | 2026-07-20 | Insight intelligence architecture (the design fork) | Propose → Judge → Narrate; only the deterministic Judge claimed as live. Article, **personal feed** (`bhavdeep`), per plan. Copy + cover in `2026-07-19-intelligence-architecture/` | _confirm_ | [post](https://www.linkedin.com/posts/bhavdeep_parkinsons-ai-productdesign-ugcPost-7485002622408601600-h0Ov/) |
+| 9   | 2026-07-28 | Food logging, built for Parkinson's | Three logging paths (voice · text · barcode) → attribute chips; 439,082-product corpus in 11.8 MB, on-device, no network call; measured-coverage floor stated honestly. Article, **company page** (first since #7). Copy in `2026-07-26-food-capture/` | `changelog` (pending — batch) | [post](https://www.linkedin.com/posts/kampa-health_activity-7487933931640578048-YdaR) |
 
 ---
 
 ## Scheduled
 
-- **Mon 2026-07-27 — "The five features I deleted" (validation rigor).** `2026-07-22-five-failed-levers/post.md`, status READY. Native short-form, **personal feed**; builder-rigor angle that doubles as a hiring signal. Copy humanized Jul 25.
-  ⚠ Note: #8 and this one are both personal-feed. The **Kampa Health company page** hasn't posted since #7 (Jul 8) - worth a company-page piece next.
+- **"The five features I deleted" (validation rigor).** `2026-07-22-five-failed-levers/post.md`, status READY. Native short-form, **personal feed**; builder-rigor angle that doubles as a hiring signal. Copy humanized Jul 25. Slipped past its Mon Jul 27 slot — ⚠ _confirm whether it posted; if not, reschedule_.
 
 ---
 
@@ -46,7 +46,6 @@ when feature traction warrants it — cadence follows the building, not a fixed 
 - [ ] **A clinical report for your neurologist** — the in-app PDF export: charts + observed-medications block + Geist branding, neurologist-ready. Tangible payoff of the "bring to your appointment" line; strong for the clinical/research audience + Parkinson's Foundation contact. — `ready` (feature shipped Jun 19; **post NOT yet published**)
 - [ ] **GI symptoms on your timeline** — log digestive/GI symptoms via "+" or voice; charts alongside tremor/meds. Shipped `c7c54d1`, in **build 10** (`5531de9`). Minor feature — likely a fold-in for the passive/closed-loop or timeline story rather than a standalone post. — `ready` (low priority)
 - [ ] **Ambient voice insight ("the magic")** — plain-language daily summary, hands-free. — `needs-feature`
-- [x] **Food capture, end to end (voice · text · barcode → attribute chips)** — **DRAFTED Jul 26, `2026-07-26-food-capture/`** (`post.md` + `SHOTLIST.md`), company page, not published. **Supersedes and merges** the old *Barcode + label OCR* and *On-device food understanding* entries — one feature, one post, per the don't-write-two-posts warning that was on both. ⚠ The Jul 25 "HOLD until OCR ships" call is **released**: OCR is deferred indefinitely on measured evidence (BACKLOG → Barcode Phase 2), so the hold could never clear. The coverage objection it was protecting against is now answered *in the copy* by the measured-floor beat (33% resolve / NorthAfrican 6% / the discarded alias number) instead of by a feature. — `ready to shoot` (needs the video + 4 stills)
 - [ ] **The un-posted build cluster** — sleep score, per-tile trend drill-downs, HRV drill-down, GI logging, forecast vocabulary rework. All shipped since Jul 8, no story attached to any of it. **Bhav Jul 25: keep in the running, but decide first whether more symptoms (apathy, other non-motor) get added** — that would change what the post is about, so don't write it early. Ties to BACKLOG → *Tremor-centric indexing*. — `ready` but deliberately parked pending that call
 
 > **Bhav's Jun 26 near-term set (post over the next few days, ~alternate days).** A natural 3-part series: what Kampa *believes* → how it *works* → what it *feels like*. Ordering relative to the TestFlight + clinical-report entries above is Bhav's call (these don't depend on a new build).
