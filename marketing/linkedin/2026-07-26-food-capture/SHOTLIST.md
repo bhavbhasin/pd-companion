@@ -27,13 +27,13 @@ Silent + burned-in captions (most feed views are muted). Use a real logged meal,
 
 ## Stills
 
-| # | Shot | Where | Why it's in the post |
-|---|---|---|---|
-| 1 | **Entry + Detected chips** | `EventDetailSheet`, tap any food event | The decomposition claim, proven. Non-negotiable — this is the hero still if the video slips. |
-| 2 | **Barcode scanner live** | Log Food → "Scan a package barcode" | Tangible. Shoot mid-scan with the code in frame, real product, hand visible (auto-capture, no shutter tap = the tremor-friendly design, though don't say why publicly). |
-| 3 | **Resolved scan** | `LogEntrySheet` right after a hit | Shows the product name auto-filled + the "Scanned — recording: …" note. Pick a product that resolves cleanly — verify before shooting. |
-| 4 | **Mic entry point** | `+` screen bottom, "Tap to log by voice" | Establishes there are three doors in. |
-| 5 | *(optional)* **Food events on the timeline** | Day in Review | Context: food sitting alongside tremor + meds. Only if the post runs as a carousel. |
+| #   | Shot                                         | Where                                    | Why it's in the post                                                                                                                                                    |
+| --- | -------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Entry + Detected chips**                   | `EventDetailSheet`, tap any food event   | The decomposition claim, proven. Non-negotiable — this is the hero still if the video slips.                                                                            |
+| 2   | **Barcode scanner live**                     | Log Food → "Scan a package barcode"      | Tangible. Shoot mid-scan with the code in frame, real product, hand visible (auto-capture, no shutter tap = the tremor-friendly design, though don't say why publicly). |
+| 3   | **Resolved scan**                            | `LogEntrySheet` right after a hit        | Shows the product name auto-filled + the "Scanned - recording: …" note. Pick a product that resolves cleanly — verify before shooting.                                  |
+| 4   | **Mic entry point**                          | `+` screen bottom, "Tap to log by voice" | Establishes there are three doors in.                                                                                                                                   |
+| 5   | *(optional)* **Food events on the timeline** | Day in Review                            | Context: food sitting alongside tremor + meds. Only if the post runs as a carousel.                                                                                     |
 
 ## Explainer card (optional, carousel slide 2)
 
