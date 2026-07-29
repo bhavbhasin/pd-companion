@@ -2190,7 +2190,10 @@ nonisolated extension CorrelationEngine {
         let curve = DoseCurve(label: "Typical dose", bucket: nil, doseCount: isolated.count, points: points)
         return .wearingOff(WearingOffChart(
             curve: curve, threshold: offThreshold, baseline: baseline,
-            bestOnMinute: bestOnMinute, medianDurationMin: km
+            bestOnMinute: bestOnMinute, medianDurationMin: km,
+            // The same thin-tail problem that makes the isolation filter wrong here makes the
+            // deepest-ON claim unsupportable, so the two travel together.
+            marksDeepestOn: isolatedOnly
         ))
     }
 
@@ -2242,6 +2245,21 @@ nonisolated extension CorrelationEngine {
         let baseline: Double           // pre-dose mean tremor
         let bestOnMinute: Double       // deepest-ON point on the mean curve
         let medianDurationMin: Double  // KM median ON-duration (vertical marker)
+        /// Whether to MARK the deepest-ON minute on the drawing.
+        ///
+        /// ⚠️ False for per-substance cards. The doses still being watched late in the window
+        /// are, by construction, the ones that had not worn off yet — every dose that ended
+        /// early has already dropped out of the average — so the tail of the curve is a
+        /// self-selected subset and its lowest point is not a later peak, it is a smaller
+        /// sample. Measured on the 07-24 export: Mucuna's marker rested on **3 of 8 doses**
+        /// (the curve thins 8 → 6 → 5 → 3 by 90 min), and landed at 88 min against a measured
+        /// duration of 48 — reading as though the dose wore off before it did its best work.
+        /// Sinemet's rests on 137 of 175 and is stable, which is why the pooled card keeps it.
+        ///
+        /// The curve itself is still drawn; only the point-claim is withheld. Fading the line
+        /// where the dose count thins is the general fix — that is the precision-drawing work
+        /// (medication-cards.md open question 5), and this is a concrete instance of it.
+        var marksDeepestOn: Bool = true
     }
 
     /// One point on a multi-year gait trajectory (a monthly median at a date). Unlike

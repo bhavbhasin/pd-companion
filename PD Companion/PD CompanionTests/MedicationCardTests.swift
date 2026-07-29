@@ -279,14 +279,36 @@ struct MedicationCardTests {
                 the curve rests on \(ch.curve.doseCount) dose(s) — a per-substance card must \
                 not plot a single dose as the typical shape
                 """)
-        // And the two markers must be readable together: a dose cannot wear off before it
-        // reaches its deepest effect.
-        if !ch.medianDurationMin.isNaN && !ch.bestOnMinute.isNaN {
-            #expect(ch.medianDurationMin >= ch.bestOnMinute, """
-                    worn-off marker (\(ch.medianDurationMin)) sits before deepest-ON \
-                    (\(ch.bestOnMinute)) — the two are being computed from different doses
-                    """)
+        // ⭐ And the deepest-ON claim is WITHHELD here. The doses still watched late in the
+        // window are the ones that had not worn off yet, so the tail of the curve is a
+        // self-selected subset — measured on the real record, Mucuna's marker rested on 3 of
+        // 8 doses and landed AFTER the worn-off line, reading as though the dose wore off
+        // before it did its best work. The curve is still drawn; only the point-claim is not.
+        #expect(!ch.marksDeepestOn,
+                "a per-substance curve must not assert a deepest-ON minute from its thin tail")
+    }
+
+    /// …while the pooled card keeps it: its trough rests on 137 of 175 doses and is stable.
+    @Test func thePooledCardStillMarksDeepestOn() throws {
+        pinCalendar()
+        let days = 1..<25
+        var doses: [Dose] = []
+        var on: [(Date, Double)] = []
+        for d in days {
+            doses.append(Dose(timestamp: Self.at(d, 8), name: "Sinemet"))
+            on.append((Self.at(d, 8), 120))
         }
+        let sleep = Self.nights(1..<26, from: 23, to: 7)
+        let samples = Self.series(days: days, on: on, sleep: sleep)
+        let surv = CorrelationEngine.survivalDuration(
+            signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
+            events: doses.map(\.timestamp), onThreshold: CorrelationEngine.offThreshold,
+            sleep: sleep)
+        guard case .wearingOff(let pooled) = CorrelationEngine.wearingOffChart(
+                results: surv.durations, km: surv.kmMedian) else {
+            Issue.record("expected a wearing-off chart"); return
+        }
+        #expect(pooled.marksDeepestOn, "the pooled curve keeps its deepest-ON marker")
     }
 
     /// The pooled wearing-off card must keep isolation. Its curve is an average across

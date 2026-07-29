@@ -339,8 +339,25 @@ subtracts, gets 8, and finds 2 unaccounted for (the two primitives have differen
 Same lesson the wearing-off card already carries: print ONE number, never two that invite a
 difference. Exact counts live in the clinician bullets, where arithmetic is the point.
 
-⬜ **Still open:** ordering/clutter rule (open question 4) · precision drawing (open question 5) ·
-the Settings exclusion toggle · re-measure the ~6 ms/substance now that cards exist.
+**Chart fixes Jul 29, all found on device — the curve must describe the same doses as the card:**
+- *Drawn from ONE dose.* `wearingOffChart` keeps only doses isolated by 240 min, which the
+  cross-substance window disqualifies nearly everything from: Mucuna had 8 readable doses and 1
+  isolated. Per-substance cards pass `isolatedOnly: false`; the pooled card still filters.
+- *Plotting the next substance.* The curve ran a fixed 300 min past every dose regardless of when
+  watching stopped, putting Mucuna's deepest point at **242 min** — four hours out, and it was
+  Sinemet. Bins are now blanked after each dose's own observation ends (trough moved 242 → 88,
+  curve ends 168 min). Off by default, so the parity-pinned pooled curve is byte-identical.
+- *The deepest-ON marker is withheld per-substance.* ⭐ Not a cosmetic call: the doses still watched
+  late are BY CONSTRUCTION the ones that had not worn off, so the tail is a self-selected subset.
+  Mucuna's marker rested on **3 of 8 doses** (curve thins 8 → 6 → 5 → 3 by 90 min) and sat at 88 min
+  against a 48-min duration, reading as though the dose wore off before doing its best work.
+  Sinemet's rests on 137 of 175 and is stable, so the pooled card keeps it. The curve is still
+  drawn; only the point-claim is withheld.
+- The chart now states how many doses it averages (the count was carried and never shown).
+
+⬜ **Still open:** ordering/clutter rule (open question 4) · precision drawing (open question 5 — the
+thinning tail above is a concrete instance: fading the line where the dose count drops is the
+general fix) · the Settings exclusion toggle · re-measure the ~6 ms/substance now that cards exist.
 
 1. **Vocabulary (small):** `Variable.medication(String)` + `.anyMedication`, plus the bridge
    accessor mirroring `workoutRawValue`. Easier than workouts — the substance key is engine-side

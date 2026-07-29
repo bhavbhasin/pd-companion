@@ -1015,7 +1015,7 @@ private struct WearingOffChartView: View {
                 }
 
                 // Deepest ON — the best the dose achieves.
-                if let trough = troughPoint {
+                if chart.marksDeepestOn, let trough = troughPoint {
                     PointMark(
                         x: .value("Minutes since dose", trough.minute),
                         y: .value("Tremor", trough.value)
