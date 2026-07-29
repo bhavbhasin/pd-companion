@@ -1487,6 +1487,60 @@ nonisolated extension CorrelationEngine {
         return (cc[cc.count - 1], false)
     }
 
+    /// How precisely the KM median is known, as a ± in MINUTES. This is the number the
+    /// precision-driven design uses to decide how sharply a window is drawn, replacing the
+    /// dose-COUNT gates: ±2.5 draws a crisp edge, ±32 an edge fading across the interval.
+    /// Nothing is hidden for being imprecise — imprecision changes the drawing, not the
+    /// existence. docs/design/medication-cards.md, BACKLOG "Dose-sufficiency floor".
+    ///
+    /// Brookmeyer–Crowley: the set of times whose log–log confidence band for S(t) still
+    /// contains 0.5. Chosen over a bootstrap after measuring both — they agree exactly on the
+    /// thin substance (±32.5 vs ±32.5) and within one bin on the dense one, and this is
+    /// **~350x cheaper** (0.05 ms vs 18 ms per substance), which is what makes it affordable
+    /// to compute for every substance on every run.
+    ///
+    /// ⚠️ FLOORED AT HALF A BIN. On a tightly estimated curve the interval collapses to a
+    /// single grid point and the raw answer is ±0.0 — "known perfectly", which is false: a
+    /// duration measured on `binMin` bins cannot be resolved finer than the grid it was
+    /// measured on. Measured on the 18-06 fixture the raw width is 0 and the honest answer is
+    /// ±2.5, which is also what the dense substance reports independently.
+    /// Returns `.nan` when the median itself does not exist.
+    static func kmMedianPrecisionMin(durations: [Double], observed: [Bool]) -> Double {
+        var time: [Double] = [], event: [Bool] = []
+        for (d, o) in zip(durations, observed) where !d.isNaN && d > 0 { time.append(d); event.append(o) }
+        guard !time.isEmpty, kmMedian(durations: durations, observed: observed).isFinite else { return .nan }
+
+        // Greenwood's variance accumulated alongside the survival product.
+        let eventTimes = Set(zip(time, event).filter { $0.1 }.map { $0.0 }).sorted()
+        var surv = 1.0, greenwood = 0.0
+        var lo = Double.nan, hi = Double.nan
+        for t in eventTimes {
+            let atRisk = time.filter { $0 >= t }.count
+            if atRisk == 0 { break }
+            var d = 0
+            for (tt, ev) in zip(time, event) where ev && tt == t { d += 1 }
+            let n = Double(atRisk), dd = Double(d)
+            surv *= 1 - dd / n
+            if n > dd { greenwood += dd / (n * (n - dd)) }
+            guard surv > 0, surv < 1 else { continue }
+
+            // log–log band, z = 1.645 (90%), matching the Python reference.
+            let se = surv * (greenwood).squareRoot()
+            let logS = Foundation.log(surv)
+            let sd = se / (surv * abs(logS))
+            guard sd.isFinite, sd > 0 else { continue }
+            let ll = Foundation.log(-logS)
+            let bandLo = Foundation.exp(-Foundation.exp(ll + 1.645 * sd))
+            let bandHi = Foundation.exp(-Foundation.exp(ll - 1.645 * sd))
+            if bandLo <= 0.5, bandHi >= 0.5 {
+                if lo.isNaN { lo = t }
+                hi = t
+            }
+        }
+        guard !lo.isNaN, !hi.isNaN else { return binMin / 2 }
+        return max((hi - lo) / 2, binMin / 2)
+    }
+
     /// Kaplan–Meier median survival with right-censoring (hand-rolled; the Python
     /// lab uses statsmodels SurvfuncRight). Returns the first event time where the
     /// survival estimate drops to <= 0.5.
@@ -1561,7 +1615,11 @@ nonisolated extension CorrelationEngine {
         let pooled = survivalDuration(signal: sig, events: doses.map(\.timestamp),
                                       onThreshold: onThreshold, sleep: censorSleep, cache: cache)
         let pooledResults = pooled.durations
-        guard pooledResults.count >= 20, pooled.kmMedian.isFinite else { return nil }
+        // The `>= 20` dose count is GONE (group 3). Existence is now the mathematical
+        // condition alone — the survival curve actually reached 50% — and how well it is
+        // known travels as `precisionMin` for the drawing to use. Nothing is hidden for
+        // being imprecise; that was the whole point of the redesign.
+        guard pooled.kmMedian.isFinite else { return nil }
         // Daily OFF attributable to dose SPACING: sum every gap's shortfall against how long a
         // dose actually holds, SUBTRACT the part the patient slept through, then average over
         // dosed days. NOT median gap minus median duration — two medians can't see one
@@ -2429,11 +2487,18 @@ nonisolated extension CorrelationEngine {
         /// Onset latency (min) for a dose in `bucket`, pooled-fallback for a thin bucket.
         func onset(_ bucket: Bucket) -> Double { onsetByBucket[bucket] ?? pooledOnset }
         var durationsCount: Int { surv.durations.count }
+        /// How precisely this substance's ON-duration is known, ± minutes. Content for the
+        /// card and input to the drawing — never a gate. See `kmMedianPrecisionMin`.
+        var precisionMin: Double {
+            CorrelationEngine.kmMedianPrecisionMin(
+                durations: surv.durations.map(\.durationMin),
+                observed: surv.durations.map(\.observed))
+        }
         /// Estimable = enough doses + a real KM median + a real onset. Exactly the floor the
         /// forecast has always used, now applied per formulation: an inert / non-pulsatile
         /// substance can't clear it and self-excludes.
         var isEstimable: Bool {
-            surv.durations.count >= 20 && surv.kmMedian.isFinite && pooledOnset.isFinite
+            surv.kmMedian.isFinite && pooledOnset.isFinite
         }
     }
 

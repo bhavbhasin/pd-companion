@@ -88,13 +88,42 @@ struct DayForecastTests {
         #expect(off < Self.dayEnd)
     }
 
-    /// Too little history to estimate the curve → nil (panel hidden), the correct cold-start.
-    @Test func hiddenWhenModelNotEstimable() {
-        let c = Self.corpus(doseCount: 5)   // < 20 durations → below the gate floor
-        #expect(CorrelationEngine.dayForecast(
-            history: c.history, allDoses: c.doses,
+    /// ⭐ A THIN history still gets a forecast — it is drawn less confidently, never hidden.
+    ///
+    /// This inverts the old `hiddenWhenModelNotEstimable`, whose premise was literally
+    /// "< 20 durations → below the gate floor". That count is gone (group 3): existence is
+    /// the mathematical condition alone — did the survival curve actually reach 50% — and how
+    /// well it is known travels as `precisionMin` for the drawing to use.
+    ///
+    /// It also closes the estimability cliff: the panel used to appear on a ZERO-dose day
+    /// (flat band) and vanish at 1-19 doses, so logging your first dose made you worse off
+    /// than logging none. It cost Bhav six days. A dosing user must never be worse off than a
+    /// non-dosing one — that is the guardrail this test now holds.
+    @Test func thinHistoryStillForecastsButLessPrecisely() throws {
+        let thin = Self.corpus(doseCount: 5)
+        let dense = Self.corpus(doseCount: 22)
+
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: thin.history, allDoses: thin.doses,
             todaysDoses: [Dose(timestamp: Self.todayDose, name: "Sinemet")],
-            todaysReadings: [], dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now) == nil)
+            todaysReadings: [], dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: Self.now),
+            "a thin history must still forecast — hiding it is the cold-start cliff")
+
+        #expect(f.nextOffStart != nil, "a projected dose must still produce a next-OFF")
+
+        // The honesty half: the same curve from a fifth of the data must be known LESS well.
+        func precision(_ c: (history: [TremorPoint], doses: [Dose])) -> Double {
+            let s = CorrelationEngine.survivalDuration(
+                signal: c.history.map { (time: $0.timestamp, value: $0.tremorScore) },
+                events: c.doses.map(\.timestamp), onThreshold: CorrelationEngine.offThreshold)
+            return CorrelationEngine.kmMedianPrecisionMin(
+                durations: s.durations.map(\.durationMin), observed: s.durations.map(\.observed))
+        }
+        let thinPrecision = precision(thin), densePrecision = precision(dense)
+        #expect(thinPrecision >= densePrecision,
+                "5 doses (±\(thinPrecision)) cannot be known better than 22 (±\(densePrecision))")
+        #expect(densePrecision >= CorrelationEngine.binMin / 2,
+                "precision may never claim to beat the bin grid it was measured on")
     }
 
     /// No dose logged today AND the substrate is too thin (the corpus only has ~16 clean
