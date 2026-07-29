@@ -1868,7 +1868,9 @@ nonisolated extension CorrelationEngine {
         // ── Statement 2: how long it holds.
         let headline: String
         if km.isFinite {
-            let pm = precision.isFinite ? ", give or take \(Int(precision.rounded()))" : ""
+            // The unit is not optional: the headline renders as "1h 33m", so a bare "give or
+            // take 43" leaves the reader to guess what 43 counts.
+            let pm = precision.isFinite ? ", give or take \(Int(precision.rounded())) min" : ""
             headline = "\(name): holds \(hm(km))"
             lines.append("Holds \(hm(km))\(pm). Measured from \(endings.count) "
                          + "\(endings.count == 1 ? "dose" : "doses") where we saw your tremor return.")
@@ -1890,7 +1892,11 @@ nonisolated extension CorrelationEngine {
                 why.append("\(nextDoseFloors.count) at your next dose (up to \(hm(m)))")
             }
             if let m = lostSightFloors.map(\.durationMin).max() {
-                let because = sleepExplainsLostSight ? ", usually because you fell asleep" : ""
+                // "usually" claims a majority, so it cannot narrate a single dose. The test
+                // behind it is a majority test, which one-of-one passes.
+                let because = !sleepExplainsLostSight ? ""
+                    : lostSightFloors.count == 1 ? ", because you fell asleep"
+                    : ", usually because you fell asleep"
                 why.append("\(lostSightFloors.count) when we lost a clear reading\(because) "
                            + "(up to \(hm(m)))")
             }
