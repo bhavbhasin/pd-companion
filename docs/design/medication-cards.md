@@ -353,8 +353,17 @@ difference. Exact counts live in the clinician bullets, where arithmetic is the 
   against a 48-min duration, reading as though the dose wore off before doing its best work.
   Sinemet's rests on 137 of 175 and is stable, so the pooled card keeps it. The curve is still
   drawn; only the point-claim is withheld.
-- *The line now fades where the dose count thins,* and the caption states the RANGE behind each
-  point ("1–9 doses per point"), not one figure. The first version said "avg of 9 doses", which
+- *The line fades on the ABSOLUTE dose count behind each point* (`0.10 + 0.90 × min(1, n/30)`),
+  not on a share of that substance's own peak. Fading on share was the first attempt and it is
+  wrong twice over: it grades every chart against itself, implying a 9-dose peak is as trustworthy
+  as a 175-dose one, and it punishes density — Sinemet's mean at 4h rests on 90 real doses and
+  would have been ghosted to 34% for having "lost" half its starting sample. On absolute count a
+  thin substance reads faint ALL THE WAY ACROSS (Mucuna 0.13-0.37), which is the honest signal:
+  its whole curve is thin, not merely its tail. Sinemet draws solid throughout. The saturation
+  point is a labelled DISPLAY constant — it changes ink, never a number, a gate, or a claim.
+- *The caption moved to the bottom-left,* and it states the RANGE behind each point
+  ("1–9 doses per point"), not one figure — the top-left corner already carries the `dose` rule
+  annotation and the two collided on a dense substance ("66–175 doses per point"). The first version said "avg of 9 doses", which
   implied all 9 stood behind every point — on Mucuna the truth ran 9 down to 1, making that label
   the most confidently wrong thing on the chart. Fading needs no cutoff: solid where every dose
   contributes, ghosted where one does. Drawn as per-pair segments because Swift Charts styles a

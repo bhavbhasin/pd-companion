@@ -1040,7 +1040,7 @@ private struct WearingOffChartView: View {
             }
             .chartXScale(domain: -30...300)
             .chartYScale(domain: 0...yMax)   // tremor can't be negative; anchor at 0
-            .overlay(alignment: .topLeading) {
+            .overlay(alignment: .bottomLeading) {
                 // How many doses this curve is an average of. Without it a line drawn from one
                 // dose is indistinguishable from one drawn from 130 — and the reader has no way
                 // to discount a noisy shape. Threshold-free: state the n, let them judge.
@@ -1048,10 +1048,14 @@ private struct WearingOffChartView: View {
                 // implied all N were behind every point; on a thin substance the true figure
                 // ranged from N down to 1, which made the label the most confidently wrong
                 // thing on the chart.
+                // Bottom-left, not top-left: the top-left corner already carries the "dose"
+                // rule annotation at t=0, and on a dense substance ("66–175 doses per point")
+                // the two collided.
                 Text(doseCountCaption)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 2)
+                    .padding(.bottom, 2)
             }
             .chartXAxis {
                 AxisMarks(values: [0, 60, 120, 180, 240, 300]) { value in
@@ -1093,16 +1097,32 @@ private struct WearingOffChartView: View {
     private var segments: [CurveSegment] {
         let pts = plottable
         guard pts.count > 1 else { return [] }
-        let peak = max(1, pts.map(\.n).max() ?? 1)
         return (0..<(pts.count - 1)).map { i in
             let pair = [pts[i], pts[i + 1]]
             // The weaker end governs: a segment is only as trustworthy as its thinner side.
-            let share = Double(min(pair[0].n, pair[1].n)) / Double(peak)
-            // Floored so a one-dose stretch stays faintly visible rather than vanishing —
-            // the reader should see that something was measured there, and how little.
-            return CurveSegment(id: i, points: pair, opacity: 0.12 + 0.88 * share)
+            let n = Double(min(pair[0].n, pair[1].n))
+            // ABSOLUTE dose count, not a share of this substance's own best moment.
+            //
+            // Fading on share was the obvious first try and it is wrong: it grades every chart
+            // against itself, which says a 9-dose peak is as trustworthy as a 175-dose one.
+            // It also punished density — Sinemet's mean at 4h rests on 90 real doses and would
+            // have been ghosted to 34% for having "lost" half its starting sample. What makes
+            // an averaged point shaky is how few doses are behind it, full stop.
+            //
+            // ⚠️ `inkSaturationDoses` is a DISPLAY constant, chosen by eye. It changes only how
+            // much ink a stretch gets — never a number, a gate, or a claim. That is the whole
+            // reason it is allowed to be picked rather than derived.
+            let weight = min(1.0, n / Self.inkSaturationDoses)
+            // Floored so a one-dose stretch stays faintly visible rather than vanishing: the
+            // reader should see that something was measured there, and how little.
+            return CurveSegment(id: i, points: pair, opacity: 0.10 + 0.90 * weight)
         }
     }
+
+    /// Doses behind a point at which the curve is drawn at full strength. Below it the line
+    /// thins in proportion. A thin substance therefore reads as faint ALL THE WAY ACROSS,
+    /// which is the honest signal — its whole curve is thin, not merely its tail.
+    private static let inkSaturationDoses = 30.0
 
     private var doseCountCaption: String {
         let ns = plottable.map(\.n).filter { $0 > 0 }
