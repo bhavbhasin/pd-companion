@@ -308,6 +308,15 @@ struct MedicationCardTests {
             key: "cbd oil", samples: samples, allDoses: doses, sleep: sleep))
         #expect(card.title.contains("CBD Oil"), "got: \(card.title)")
         #expect(!card.title.contains("Cbd"), "acronyms must survive: \(card.title)")
+        // Logged names carry trailing whitespace in the real record; using the typed spelling
+        // must not drag it onto the card ("Mucuna Pruriens : holds ...").
+        let padded = [Dose(timestamp: Self.at(3, 9), name: "CBD Oil "),
+                      Dose(timestamp: Self.at(8, 9), name: " CBD Oil")]
+        let trimmed = try #require(CorrelationEngine.medicationInsight(
+            key: "cbd oil", samples: samples, allDoses: padded, sleep: sleep))
+        #expect(trimmed.title.hasPrefix("CBD Oil:"),
+                "no stray space before the colon: \(trimmed.title)")
+        #expect(!trimmed.finding.contains("  "), "no double spaces in the body")
     }
 
     // MARK: - The chart must describe the same doses as the number above it

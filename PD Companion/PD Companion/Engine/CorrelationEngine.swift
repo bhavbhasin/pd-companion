@@ -1732,8 +1732,13 @@ nonisolated extension CorrelationEngine {
         // "cbd oil" into "Cbd Oil" and would do the same to LDN, MAO-B, and every other
         // acronym a person might log. Most frequently logged form wins; ties break
         // alphabetically so the title cannot flicker between runs.
-        let name = Dictionary(grouping: own, by: \.name)
+        // ⚠️ TRIMMED. Logged names arrive with trailing whitespace, which the canonical key
+        // used to absorb — using the typed spelling reintroduced it and rendered
+        // "Mucuna Pruriens : holds about 1h 33m", space before the colon, on every card.
+        let name = Dictionary(grouping: own, by: {
+                $0.name.trimmingCharacters(in: .whitespacesAndNewlines) })
             .map { (label: $0.key, n: $0.value.count) }
+            .filter { !$0.label.isEmpty }
             .sorted { ($0.n, $1.label) > ($1.n, $0.label) }
             .first?.label ?? substanceDisplayName(key)
         let dosedDays = Set(own.map { calendar.startOfDay(for: $0.timestamp) }).count
