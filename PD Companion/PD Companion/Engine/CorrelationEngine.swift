@@ -675,14 +675,39 @@ nonisolated extension CorrelationEngine {
         moderate: GateBar(minN: 1),
         floor:    GateBar(minN: 1))
 
-    /// The wearing-off CARD: n (doses) + daily OFF minutes attributable to spacing.
-    /// Separate from `wearingOffGate` because the card asks a different question — not
-    /// "can we estimate this?" but "does the spacing cost enough OFF to matter?" Without
-    /// the effect axis the card fired Strong on any shortfall above zero.
-    static let wearingOffCardGate = GateSpec(
-        strong:   GateBar(minN: 40, minEffect: wearingOffMCIDMinPerDay),
-        moderate: GateBar(minN: 20, minEffect: wearingOffMCIDMinPerDay),
-        floor:    GateBar(minN: 1,  minEffect: wearingOffMCIDMinPerDay))
+    /// The wearing-off CARD's tier, from how well the card's own claim is known — NOT from
+    /// how many doses produced it. Replaces `wearingOffCardGate`, whose `40 / 20 / 1` dose
+    /// counts were the same class of unsourced number the group-3 work exists to remove, one
+    /// shelf higher. docs/design/wearing-off-card-confidence.md.
+    ///
+    /// Two separate questions, deliberately not merged:
+    ///   - **whether to speak at all** — the POINT estimate against the MCID. That is a
+    ///     PERCEPTIBILITY question ("could the patient feel this?"), and no amount of
+    ///     confidence rescues a shortfall below what anyone can notice. Unchanged from the
+    ///     old `minEffect`, which is why this is not a `GateSpec`: the shared `gate` applies
+    ///     one effect value to all three bars and cannot score two different quantities.
+    ///   - **how firmly to say it** — where the MCID falls inside the claim's interval.
+    ///
+    /// ⛔ No ratio (`uncertainty < half the MCID` and friends). BACKLOG records why `±30 min`
+    /// was rejected: "width ≤ MCID (rather than half, or twice) was a choice dressed as a
+    /// derivation." Comparing the interval to the threshold directly introduces no new number.
+    ///
+    /// - Parameters:
+    ///   - dailyUncovered: the claim — waking OFF min/day attributable to dose spacing.
+    ///   - lowerBound: the same sum re-evaluated with the dose duration at the OPTIMISTIC end
+    ///     of its precision interval. Uncovered time is monotonically non-increasing in
+    ///     duration, so that evaluation IS the pessimistic end of the claim; no symmetry is
+    ///     assumed (`max(0, ·)` kinks, so the interval is genuinely lopsided).
+    ///     `.nan` = the duration's precision could not be established at all.
+    static func wearingOffCardConfidence(dailyUncovered: Double,
+                                         lowerBound: Double) -> Insight.Confidence? {
+        guard dailyUncovered >= wearingOffMCIDMinPerDay else { return nil }
+        // Precision unavailable ⇒ the claim clears the bar but nothing can be said about how
+        // firmly. Emerging is the honest tier, and it must be checked BEFORE the comparison
+        // below: any `<` against .nan is false and would silently read as Moderate.
+        guard lowerBound.isFinite else { return .emerging }
+        return lowerBound >= wearingOffMCIDMinPerDay ? .strong : .moderate
+    }
 
     /// Gait trend: n (months of medians) + a p-value whose MEANING depends on the card's
     /// verdict — slope significance when it claims a decline, `nonInferiorityP` when it
@@ -1504,7 +1529,24 @@ nonisolated extension CorrelationEngine {
     /// duration measured on `binMin` bins cannot be resolved finer than the grid it was
     /// measured on. Measured on the 18-06 fixture the raw width is 0 and the honest answer is
     /// ±2.5, which is also what the dense substance reports independently.
-    /// Returns `.nan` when the median itself does not exist.
+    ///
+    /// ⚠️ Returns `.nan` in TWO different "we cannot say" cases, and the distinction is load-
+    /// bearing now that `wearingOffCardConfidence` gates on it:
+    ///   1. the median itself does not exist, or
+    ///   2. **the estimator never engaged** — not one event time produced a confidence band,
+    ///      because S(t) never took a value strictly between 0 and 1.
+    ///
+    /// Case 2 is what every duration being IDENTICAL looks like: the curve jumps 1 → 0 in a
+    /// single step, so there is no intermediate survival to measure spread from. It used to
+    /// fall through to the `binMin / 2` floor and report ±2.5 — the floor's meaning is "finer
+    /// than the grid we measured on", which is a claim about resolution and it was being made
+    /// on no measurement at all. Measured: this is driven by TIES, not by sample size — 144
+    /// identical durations produced the same fabricated ±2.5 as 3 did.
+    ///
+    /// The floor still applies where it is honest: bands WERE computed and simply none of them
+    /// straddled 0.5, which means the interval really is finer than the grid (measured: 40
+    /// tightly-clustered doses, 2 bands, neither straddling). Both statsmodels-pinned cases in
+    /// `SleepClippingTests` compute real bands (11 and 5), so neither reaches this path.
     static func kmMedianPrecisionMin(durations: [Double], observed: [Bool]) -> Double {
         var time: [Double] = [], event: [Bool] = []
         for (d, o) in zip(durations, observed) where !d.isNaN && d > 0 { time.append(d); event.append(o) }
@@ -1514,6 +1556,7 @@ nonisolated extension CorrelationEngine {
         let eventTimes = Set(zip(time, event).filter { $0.1 }.map { $0.0 }).sorted()
         var surv = 1.0, greenwood = 0.0
         var lo = Double.nan, hi = Double.nan
+        var bandsComputed = 0
         for t in eventTimes {
             let atRisk = time.filter { $0 >= t }.count
             if atRisk == 0 { break }
@@ -1529,6 +1572,7 @@ nonisolated extension CorrelationEngine {
             let logS = Foundation.log(surv)
             let sd = se / (surv * abs(logS))
             guard sd.isFinite, sd > 0 else { continue }
+            bandsComputed += 1
             let ll = Foundation.log(-logS)
             let bandLo = Foundation.exp(-Foundation.exp(ll + 1.645 * sd))
             let bandHi = Foundation.exp(-Foundation.exp(ll - 1.645 * sd))
@@ -1537,6 +1581,8 @@ nonisolated extension CorrelationEngine {
                 hi = t
             }
         }
+        // No band anywhere ⇒ nothing was measured ⇒ say so, rather than floor it (case 2).
+        guard bandsComputed > 0 else { return .nan }
         guard !lo.isNaN, !hi.isNaN else { return binMin / 2 }
         return max((hi - lo) / 2, binMin / 2)
     }
@@ -1637,7 +1683,6 @@ nonisolated extension CorrelationEngine {
         // with the worst wearing-off). docs/design/wearing-off-margin.md.
         var pooledDayIntervals: [Double] = []
         var allIntervals: [Double] = []
-        var uncoveredByDay: [Date: Double] = [:]
         var dosedDays: Set<Date> = []
         for r in pooledResults {
             dosedDays.insert(calendar.startOfDay(for: r.t0))
@@ -1647,17 +1692,36 @@ nonisolated extension CorrelationEngine {
             // daytime subset: it describes the rhythm a reader recognises, while the headline
             // number below counts every waking uncovered minute.
             if r.hour >= 6, r.hour < 20, r.intervalMin < 600 { pooledDayIntervals.append(r.intervalMin) }
-
-            let coverageEnd = r.t0.addingTimeInterval(pooled.kmMedian * 60)
-            let nextDose = r.t0.addingTimeInterval(r.intervalMin * 60)
-            let uncovered = nextDose.timeIntervalSince(coverageEnd) / 60
-            guard uncovered > 0 else { continue }
-            let waking = uncovered - asleepMinutes(from: coverageEnd, to: nextDose,
-                                                   sleep: effectiveSleepIntervals)
-            uncoveredByDay[calendar.startOfDay(for: r.t0), default: 0] += max(0, waking)
         }
         guard !dosedDays.isEmpty else { return nil }
-        let dailyUncovered = uncoveredByDay.values.reduce(0, +) / Double(dosedDays.count)
+
+        /// The sum above, as a function of how long a dose is assumed to hold. Parameterised
+        /// ONLY so the same arithmetic can be re-run at the ends of the duration's precision
+        /// interval (below) — evaluating the real function twice more rather than propagating
+        /// error through it analytically. Two extra passes over ~n durations, no new statistics.
+        func uncoveredPerDay(holdingFor durationMin: Double) -> Double {
+            var uncoveredByDay: [Date: Double] = [:]
+            for r in pooledResults where !r.intervalMin.isNaN {
+                let coverageEnd = r.t0.addingTimeInterval(durationMin * 60)
+                let nextDose = r.t0.addingTimeInterval(r.intervalMin * 60)
+                let uncovered = nextDose.timeIntervalSince(coverageEnd) / 60
+                guard uncovered > 0 else { continue }
+                let waking = uncovered - asleepMinutes(from: coverageEnd, to: nextDose,
+                                                       sleep: effectiveSleepIntervals)
+                uncoveredByDay[calendar.startOfDay(for: r.t0), default: 0] += max(0, waking)
+            }
+            return uncoveredByDay.values.reduce(0, +) / Double(dosedDays.count)
+        }
+        let dailyUncovered = uncoveredPerDay(holdingFor: pooled.kmMedian)
+        // How well the claim itself is known. `precisionMin` is the ± on the pooled duration;
+        // re-running the sum at both ends of it gives the ± on the CARD'S OWN NUMBER, which is
+        // what the tier is scored against. A LONGER dose covers more, so uncovered time is
+        // monotonically non-increasing in duration ⇒ the `+ precision` evaluation is the
+        // pessimistic end. `.nan` propagates deliberately: it means the precision could not be
+        // established, and `wearingOffCardConfidence` reads that as Emerging.
+        let pooledPrecision = kmMedianPrecisionMin(durations: pooledResults.map(\.durationMin),
+                                                   observed: pooledResults.map(\.observed))
+        let uncoveredLowerBound = uncoveredPerDay(holdingFor: pooled.kmMedian + pooledPrecision)
         // Fall back to ALL gaps when there's no daytime-to-daytime gap at all — a once-daily
         // regimen has exactly one 24h gap, so the daytime subset is empty. Bailing on a NaN
         // median here would silence the card for precisely the patient this change exists to
@@ -1688,11 +1752,13 @@ nonisolated extension CorrelationEngine {
         rows.sort { $0.count > $1.count }
 
         let days = dosedDays.count
-        // The MCID is now the firing condition — no card when spacing costs less OFF than a
+        // The MCID is the firing condition — no card when spacing costs less OFF than a
         // patient could perceive. Replaces the old `medianGap > medianDuration` test, and the
         // `?? .moderate` fallback that quietly handed out a tier the gate had refused.
-        guard let confidence = gate(Self.wearingOffCardGate, n: pooledResults.count,
-                                    effect: dailyUncovered) else { return nil }
+        // The TIER is now the precision of this card's own claim, not `pooledResults.count`.
+        guard let confidence = wearingOffCardConfidence(dailyUncovered: dailyUncovered,
+                                                        lowerBound: uncoveredLowerBound)
+        else { return nil }
 
         func name(_ key: String) -> String { key.split(separator: " ").map { $0.capitalized }.joined(separator: " ") }
         // ONE formatter for both halves of the comparison: `%.0f` on the gap alone printed a
@@ -2483,17 +2549,19 @@ nonisolated extension CorrelationEngine {
         let iqr: Double                     // spread of observed ON-durations (uncertainty band)
         let onsetByBucket: [Bucket: Double]
         let pooledOnset: Double             // fallback onset when a bucket has no clean estimate
+        /// How precisely this substance's ON-duration is known, ± minutes. `.nan` when it
+        /// cannot be said at all — see `kmMedianPrecisionMin` for the two such cases.
+        ///
+        /// STORED, computed once in `fitPulseModel`. It was a computed property re-walking
+        /// every duration on each access, and `kmMedianPrecisionMin` is O(n²) in the number of
+        /// durations (an at-risk count scanned per event time). Nothing read it while it was
+        /// free to be lazy; the per-substance cards read it once per card, so it is paid for
+        /// once per fit instead.
+        let precisionMin: Double
 
         /// Onset latency (min) for a dose in `bucket`, pooled-fallback for a thin bucket.
         func onset(_ bucket: Bucket) -> Double { onsetByBucket[bucket] ?? pooledOnset }
         var durationsCount: Int { surv.durations.count }
-        /// How precisely this substance's ON-duration is known, ± minutes. Content for the
-        /// card and input to the drawing — never a gate. See `kmMedianPrecisionMin`.
-        var precisionMin: Double {
-            CorrelationEngine.kmMedianPrecisionMin(
-                durations: surv.durations.map(\.durationMin),
-                observed: surv.durations.map(\.observed))
-        }
         /// Estimable = enough doses + a real KM median + a real onset. Exactly the floor the
         /// forecast has always used, now applied per formulation: an inert / non-pulsatile
         /// substance can't clear it and self-excludes.
@@ -2531,8 +2599,11 @@ nonisolated extension CorrelationEngine {
         let km = surv.kmMedian
         let onDuration = km.isFinite ? km : doseOnWindowFallback
         let band = iqr(surv.durations.filter { $0.observed && !$0.durationMin.isNaN }.map(\.durationMin))
+        let precision = kmMedianPrecisionMin(durations: surv.durations.map(\.durationMin),
+                                             observed: surv.durations.map(\.observed))
         return PulseModel(key: key, surv: surv, onDuration: onDuration, iqr: band,
-                          onsetByBucket: onsetByBucket, pooledOnset: pooledOnset)
+                          onsetByBucket: onsetByBucket, pooledOnset: pooledOnset,
+                          precisionMin: precision)
     }
 
     /// Group doses by formulation, fit a model per group, and keep ONLY the strata that

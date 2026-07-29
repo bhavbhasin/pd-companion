@@ -93,6 +93,15 @@ struct SleepClippingTests {
 
         // And the pre-change number must be gone: 234 was the sleep-blind figure.
         #expect(n > 400, "sleep clipping should roughly double the old 234 min/day")
+
+        // The precision-based tier must be a NO-OP on the real record. Replacing an arbitrary
+        // gate is not licence to move anyone's badge: the claim is ~500 min/day against a
+        // 60 min/day bar, and the pooled duration is known to ±2.5, so even the pessimistic
+        // end of the interval clears the bar by an order of magnitude. Measured Jul 28 on the
+        // 07-24 export: 513.6 point, 508.4 lower, ±5.2 on the claim.
+        // docs/design/wearing-off-card-confidence.md.
+        #expect(insight.confidence == .strong,
+                "the real record must stay Strong, got \(String(describing: insight.confidence))")
     }
 
     /// The duration side, independently: censoring at sleep onset must LOWER the KM

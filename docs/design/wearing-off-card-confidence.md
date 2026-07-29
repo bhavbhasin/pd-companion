@@ -1,8 +1,8 @@
 # Wearing-off card: confidence from precision, not dose count
 
-**Status:** DESIGNED Jul 28 2026, **not built**. The last of the three group 3 sites; the other two
-shipped in `817ff95`. Sibling: `insights-card-confidence-redesign.md` (the general "facts over
-verdict" rule), `medication-cards.md` (per-substance cards), BACKLOG → *Dose-sufficiency floor*.
+**Status:** ✅ **BUILT Jul 29 2026.** The last of the three group 3 sites; the other two shipped in
+`817ff95`. Sibling: `insights-card-confidence-redesign.md` (the general "facts over verdict" rule),
+`medication-cards.md` (per-substance cards), BACKLOG → *Dose-sufficiency floor*.
 
 **One line:** the card's confidence tier should come from how well its own claim is known, compared
 against the published threshold it is already measured against — not from how many doses produced it.
@@ -31,7 +31,28 @@ were doing 'is the estimate real yet' duty".
 - **Strong** — the LOWER bound of the daily-OFF interval still exceeds the MCID. We are confident the
   shortfall is clinically meaningful, not merely that our point estimate is.
 - **Moderate** — the point estimate clears the MCID but the lower bound does not.
-- **No card** — the point estimate does not clear it. Unchanged; `minEffect` already does this.
+- **Emerging** — the point estimate clears the MCID but the duration's precision **cannot be
+  established at all**, so there is no interval to read. Added Jul 29; see below.
+- **No card** — the point estimate does not clear it. Unchanged; `minEffect` already did this.
+
+Two questions, deliberately kept apart: **whether to speak** is the point estimate against the MCID
+(a PERCEPTIBILITY question — confidence cannot rescue a shortfall nobody can feel), and **how firmly**
+is where the MCID falls inside the interval. That split is why this is a plain function rather than a
+`GateSpec`: the shared `gate` applies one effect value to every bar and cannot score two quantities.
+
+### Keeping Emerging (Bhav, Jul 29)
+
+The first cut of this design dropped Emerging, because the only thing producing it was the `minN: 1`
+floor bar. That was an accident, not a decision — the tier is a legitimate idea and only the
+hardcoded `20` behind it was arbitrary. Rejected alternative: *Emerging = the interval reaches the
+MCID but the point estimate doesn't*. It is the tidier ladder (four positions of one threshold
+against one interval) but it would show a card whose headline number is **below** the bar, which
+quietly repurposes a perceptibility floor as a significance test. Firing stays where it was.
+
+The rule adopted instead needs no constant: **`kmMedianPrecisionMin` returns `.nan` when the
+estimator never engaged**, and that reads as Emerging. Rare in steady state, correct at cold start —
+2 or 3 doses of a new substance that all measured the same length is exactly "we see it, we can't
+vouch for it yet", and it resolves itself into Moderate or Strong as real variation appears.
 
 ### Getting the uncertainty without inventing a method
 
@@ -63,13 +84,42 @@ the threshold directly reuses a number that is already sourced and introduces no
    anyone's tier. ⚠️ The 513.6 comes from a scratch reimplementation of the sum that does not handle
    the first/last dose of a day as the engine does (the app reads ~495) — the RATIO is what the
    design turns on, and ±5.2 against a 60-min bar is ~9%, robust to the base value.
-2. Build the interval, then the gate. Fail-first test verified against the old gate.
-3. Parity + device check before anything builds on it.
+2. ✅ **BUILT Jul 29.** Interval, then the gate. `WearingOffCardConfidenceTests`, both directions
+   verified to FAIL against the old count tiers before they passed:
+
+   | test | fixture | old gate | new rule |
+   |---|---|---|---|
+   | `countNoLongerCapsTheTier` | 30 doses, ±2.5 | Moderate (n < 40) | **Strong** |
+   | `wideUncertaintyDemotesTheTier` | 48 doses, ±20, claim 69 min/day | Strong (n ≥ 40) | **Moderate** |
+   | `precisionIsUnmeasurable…` | 3/5/16/144 identical durations | ±2.5 | **`.nan`** |
+
+   No-op on the real record confirmed inside `matchesPythonOracleOnRealBackup`: still **Strong**.
+   Full suite 82 tests green, `engineMatchesPythonLab` unchanged.
+3. ⬜ Device check before anything builds on it.
+
+## What the build found (Jul 29, measured — none of this was in the design)
+
+1. **The precision floor was fabricating precision.** `kmMedianPrecisionMin` fell back to ±half a bin
+   whenever no confidence band straddled 0.5, and that fallback was covering two different
+   situations. Bands computed but none straddling = the interval really is finer than the 5-min grid
+   (measured: 40 tightly-clustered doses, 2 bands) — the floor is honest. **Zero** bands computed =
+   S(t) never took a value strictly between 0 and 1, so nothing was measured at all — the floor was a
+   resolution claim made on no measurement, and it now returns `.nan`.
+   ⚠️ **Driven by TIES, not sample size**: 144 identical durations were as uninformative as 3, and
+   both reported ±2.5. The "this only bites at tiny n" reading was wrong.
+   Harmless until now (nothing read precision); load-bearing the moment a tier depends on it.
+2. **Both statsmodels-pinned cases take the band path** (11 and 5 bands), so `d9eca94`'s oracle is
+   untouched by the change. That was the thing worth checking before touching a pinned function.
+3. **The card is not a `PulseModel` consumer.** It holds a `SurvivalDuration` from a direct
+   `survivalDuration` call, so storing `PulseModel.precisionMin` (step 1) does NOT feed this gate —
+   it is the group-4 prerequisite. The card computes its own pooled precision in one call.
 
 ## Open
 
-- **`precisionMin` is `.nan` when the median does not exist.** The card cannot fire then anyway
-  (`kmMedian.isFinite` guards it), but the interval code must not propagate NaN into a tier.
+- **The one case the `.nan` rule misses.** 5 identical durations plus one late censored observation
+  computes exactly ONE band, which doesn't straddle 0.5 ⇒ keeps ±2.5 ⇒ can still read Strong. The
+  estimator did engage on real data there, and separating "one thin band" from "enough bands" needs a
+  count threshold — precisely the kind of number this work exists to remove. Left flagged, not fixed.
 - **Per-substance vs pooled.** The card is pooled across formulations by design; its duration is the
   pooled KM median, so its precision is the pooled precision. Per-substance precision belongs to the
   per-substance cards (group 4), not here.
