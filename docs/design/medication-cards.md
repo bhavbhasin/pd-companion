@@ -242,7 +242,7 @@ guessed.
 
 ## Build shape
 
-**Steps 1-3 ✅ BUILT Jul 29 2026 (`a66809e`)** — config + plumbing only, nothing on screen. The
+**Steps 1-3 ✅ BUILT Jul 29 2026 (`4855a75`)** — config + plumbing only, nothing on screen. The
 template ships `renderer: nil`, so its stamped entries are registered and dormant; `run()` returns
 nil for each, verified. `MedicationCardVocabularyTests` pins the two properties the feature rests
 on: **no substance is skipped for being unrecognised** (the contrast with the workout template,
