@@ -470,6 +470,49 @@ struct SleepClippingTests {
         #expect(longest < 12 * 60, "a missing night opened a \(longest / 60)h window")
     }
 
+    // MARK: - KM median precision (parity with the Python reference)
+    //
+    // `kmMedianPrecisionMin` is hand-rolled Brookmeyer–Crowley and had NO numeric oracle when
+    // it was written — the only tests were an ordering property (thin is less precise than
+    // dense) and the floor, both of which would pass with wrong arithmetic. These two cases
+    // fix that. Values produced by statsmodels `SurvfuncRight` on the SAME fixed inputs:
+    //
+    //   case A  dur/obs below      KM median 195.0   90% CI [135.0, 210.0]   half-width 37.5
+    //   case B  tight, uncensored  KM median 110.0   90% CI [105.0, 110.0]   half-width  2.5
+    //
+    // Deliberately fixed lists rather than a backup, so the arithmetic itself is exercised and
+    // the test can't drift with the data.
+
+    /// A spread sample with censoring — a genuinely wide interval, so the band arithmetic is
+    /// doing real work rather than landing on the floor.
+    @Test func precisionMatchesPythonOnASpreadSample() {
+        let dur: [Double] = [60,75,90,105,120,135,150,165,180,195,210,225,240,255,270,285]
+        let obs: [Bool] = [true,true,false,true,true,true,false,true,true,true,true,false,true,true,false,true]
+        #expect(abs(CorrelationEngine.kmMedian(durations: dur, observed: obs) - 195.0) < 0.001,
+                "KM median must match the reference before its precision can mean anything")
+        let p = CorrelationEngine.kmMedianPrecisionMin(durations: dur, observed: obs)
+        #expect(abs(p - 37.5) < 0.001, "Brookmeyer–Crowley half-width, got \(p) want 37.5")
+    }
+
+    /// A tight, fully observed sample: the reference half-width is exactly the bin floor, so
+    /// this pins that the floor and the arithmetic agree rather than the floor hiding a bug.
+    @Test func precisionMatchesPythonOnATightSample() {
+        let dur: [Double] = [100,100,105,105,105,110,110,110,110,115,115,115,120,120,125,125]
+        let obs = [Bool](repeating: true, count: 16)
+        #expect(abs(CorrelationEngine.kmMedian(durations: dur, observed: obs) - 110.0) < 0.001)
+        let p = CorrelationEngine.kmMedianPrecisionMin(durations: dur, observed: obs)
+        #expect(abs(p - 2.5) < 0.001, "tight sample half-width, got \(p) want 2.5")
+    }
+
+    /// No median → no precision. Silence, not a fabricated ±.
+    @Test func precisionIsAbsentWhenTheMedianIs() {
+        // Mostly censored early: the curve never reaches 50%.
+        let dur: [Double] = [100,110,120,130,140]
+        let obs: [Bool] = [false,false,false,false,false]
+        #expect(CorrelationEngine.kmMedian(durations: dur, observed: obs).isNaN)
+        #expect(CorrelationEngine.kmMedianPrecisionMin(durations: dur, observed: obs).isNaN)
+    }
+
     // MARK: - Loaders
 
     private static let iso: ISO8601DateFormatter = {
