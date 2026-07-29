@@ -244,6 +244,72 @@ struct MedicationCardTests {
         #expect(card.confidence == .emerging)
     }
 
+    // MARK: - Does the copy hold up for someone who is not Bhav?
+
+    /// ⭐ The failure medication-cards.md predicts by name: "least able to describe the drugs
+    /// that help most." Six doses a day, drug working so well tremor never returns — every dose
+    /// is taken while still covered by the one before. Excluding those (they have nothing to
+    /// FALL from) also deleted the coverage floor, leaving a card that said only "180 couldn't
+    /// be measured". The floor is the ONLY measurement such a patient has.
+    @Test func aWellControlledPatientStillGetsTheCoverageFloor() throws {
+        pinCalendar()
+        let days = 1..<31
+        var doses: [Dose] = []
+        var on: [(Date, Double)] = []
+        for d in days {
+            for h in [6, 9, 12, 15, 18, 21] {
+                doses.append(Dose(timestamp: Self.at(d, h), name: "Rytary"))
+                on.append((Self.at(d, h), 200))   // outlasts the 3h gap: never seen wearing off
+            }
+        }
+        let sleep = Self.nights(1..<32, from: 23, to: 7)
+        let samples = Self.series(days: days, on: on, sleep: sleep)
+        let card = try #require(CorrelationEngine.medicationInsight(
+            key: "rytary", samples: samples, allDoses: doses, sleep: sleep))
+        #expect(card.finding.contains("at least that long"),
+                "the floor is this patient's only measurement: \(card.finding)")
+        #expect(card.finding.contains("at your next dose"),
+                "and it must say the watching ended at the next dose: \(card.finding)")
+        #expect(card.finding.contains("still covered from the one before"),
+                "…and explain why the fall is unmeasurable, rather than going silent")
+    }
+
+    /// A substance that does nothing must not be described as though it did. "Falls from 1.90
+    /// to 1.90" is not a fall — and the guard has to compare what is PRINTED, since a drop of
+    /// 0.000002 is still arithmetically a drop.
+    @Test func aSubstanceWithNoEffectDoesNotReportAFall() throws {
+        pinCalendar()
+        let days = 1..<31
+        var doses: [Dose] = []
+        var on: [(Date, Double)] = []
+        for d in days {
+            doses.append(Dose(timestamp: Self.at(d, 9), name: "Sinemet"))
+            on.append((Self.at(d, 9), 180))
+            doses.append(Dose(timestamp: Self.at(d, 20), name: "Placebo Herb"))  // nothing
+        }
+        let sleep = Self.nights(1..<32, from: 23, to: 7)
+        let samples = Self.series(days: days, on: on, sleep: sleep)
+        let card = try #require(CorrelationEngine.medicationInsight(
+            key: "placebo herb", samples: samples, allDoses: doses, sleep: sleep))
+        #expect(!card.finding.contains("falls from 1.60 to 1.60"))
+        #expect(card.finding.contains("doesn't measurably change"),
+                "expected an honest no-change statement: \(card.finding)")
+    }
+
+    /// The person's own spelling, not the canonical key re-cased. Title-casing turned "cbd oil"
+    /// into "Cbd Oil", and would do the same to LDN, MAO-B and every other acronym.
+    @Test func theCardUsesTheNameTheyTyped() throws {
+        pinCalendar()
+        let doses = [Dose(timestamp: Self.at(3, 9), name: "CBD Oil"),
+                     Dose(timestamp: Self.at(8, 9), name: "CBD Oil")]
+        let sleep = Self.nights(1..<13, from: 23, to: 7)
+        let samples = Self.series(days: 1..<12, on: [(Self.at(3, 9), 90)], sleep: sleep)
+        let card = try #require(CorrelationEngine.medicationInsight(
+            key: "cbd oil", samples: samples, allDoses: doses, sleep: sleep))
+        #expect(card.title.contains("CBD Oil"), "got: \(card.title)")
+        #expect(!card.title.contains("Cbd"), "acronyms must survive: \(card.title)")
+    }
+
     // MARK: - The chart must describe the same doses as the number above it
 
     /// ⭐ Found on device: Mucuna's card drew a curve from ONE dose while its duration came from

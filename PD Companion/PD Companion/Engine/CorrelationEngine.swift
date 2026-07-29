@@ -1728,7 +1728,14 @@ nonisolated extension CorrelationEngine {
         let own = allDoses.filter { formulationKey($0.name) == key }.sorted { $0.timestamp < $1.timestamp }
         guard !own.isEmpty, !samples.isEmpty else { return nil }
         let sig = samples.map { (time: $0.timestamp, value: $0.tremorScore) }
-        let name = substanceDisplayName(key)
+        // Their OWN spelling, not the canonical key re-cased. Title-casing the key turned
+        // "cbd oil" into "Cbd Oil" and would do the same to LDN, MAO-B, and every other
+        // acronym a person might log. Most frequently logged form wins; ties break
+        // alphabetically so the title cannot flicker between runs.
+        let name = Dictionary(grouping: own, by: \.name)
+            .map { (label: $0.key, n: $0.value.count) }
+            .sorted { ($0.n, $1.label) > ($1.n, $0.label) }
+            .first?.label ?? substanceDisplayName(key)
         let dosedDays = Set(own.map { calendar.startOfDay(for: $0.timestamp) }).count
         let spanDays = max(1, Int(
             (own.last!.timestamp.timeIntervalSince(own.first!.timestamp) / 86400).rounded()))
@@ -1747,15 +1754,49 @@ nonisolated extension CorrelationEngine {
         let surv = survivalDuration(signal: sig, events: allDoses.map(\.timestamp).sorted(),
                                     onThreshold: onThreshold, sleep: censorSleep, cache: cache)
         let mine = surv.durations.filter { ownTimes.contains($0.t0) }
-        // Rule 2: keep only doses taken while there was something to observe.
-        let readable = mine.filter { $0.baseline.isFinite && $0.baseline >= onThreshold }
+        // Rule 2, and it asks TWO questions, so it cannot be one filter. A dose whose
+        // pre-dose tremor is already low is unobservable for opposite reasons:
+        //
+        //   · ASLEEP around it — tremor sits near zero whatever the medication is doing, so
+        //     nothing about the dose is measurable. (Bhav's 01:00-05:00 Mucuna doses.)
+        //   · STILL COVERED by the previous dose, awake — tremor is low BECAUSE a drug is
+        //     working. Useless for "how far does this dose drop it", but exactly the coverage
+        //     evidence that matters: "you were still ON when the next one came".
+        //
+        // Applying one exclusion to both questions deleted the second case, which produced a
+        // card reading "180 couldn't be measured" and nothing else for a six-doses-a-day
+        // patient whose drug never lets them go OFF — the failure medication-cards.md predicts
+        // by name ("least able to describe the drugs that help most").
+        //
+        // It takes BOTH facts to disqualify a dose, and neither alone:
+        //
+        //   low baseline + watching cut short by SLEEP  ⇒ nothing was learned. The low reading
+        //     is circumstance (lying still at 4am), and the dose was never observed either.
+        //   low baseline + watching ran to the NEXT DOSE ⇒ a genuine coverage floor. Keep it.
+        //
+        // ⚠️ Sleep BEFORE the dose is the wrong test, which I tried first: Bhav wakes at 03:59
+        // and doses at 04:45, so his pre-dose window is awake and the night doses sailed through,
+        // putting the duration back to 93 min. What disqualifies them is sleep arriving AFTER,
+        // ending the watching within minutes.
+        func learnedNothing(_ r: DoseDuration) -> Bool {
+            guard r.baseline.isFinite, r.baseline < onThreshold, !r.observed else { return false }
+            guard let onset = sleepOnset(after: r.t0, sleep: censorSleep) else { return false }
+            return abs(onset.timeIntervalSince(r.t0) / 60 - r.durationMin) <= binMin
+        }
+        // Duration + floors: everything we learned anything from.
+        let readable = mine.filter { !learnedNothing($0) }
+        // How far tremor falls, and how fast: only doses with somewhere to fall FROM.
+        let fellFrom = readable.filter { $0.baseline.isFinite && $0.baseline >= onThreshold }
+        let alreadyCovered = readable.count - fellFrom.count
         // Counted against what the READER was told in statement 1 — the doses they logged —
         // not against the rows the primitive happened to return. `survivalDuration` silently
         // drops a dose with no usable window at all (no readings, or none before the horizon
         // closed), so counting `mine.count - readable.count` would leave those doses unexplained.
         // That is the "24 logged, 22 measured" gap on the real Mucuna record: two doses that
         // never reached the analysis and, until this line, were never accounted for anywhere.
-        let unreadable = own.count - readable.count
+        // Now means SLEEP-BLIND specifically: doses we could learn nothing from because tremor
+        // could not reflect them. Counted against doses LOGGED so statement 1 reconciles.
+        let sleepBlind = own.count - readable.count
 
         let km = kmMedian(durations: readable.map(\.durationMin), observed: readable.map(\.observed))
         let precision = kmMedianPrecisionMin(durations: readable.map(\.durationMin),
@@ -1778,11 +1819,23 @@ nonisolated extension CorrelationEngine {
         let lostSightFloors = censoredRows.filter {
             !($0.intervalMin.isFinite && $0.durationMin >= $0.intervalMin - binMin)
         }
+        // WHY we lost sight is measured, not assumed. Observation ends at sleep onset when the
+        // recorded duration lands on it; anything else is the watch off the wrist or the record
+        // simply ending, and saying "asleep" there would invent an explanation. (The same
+        // mistake as claiming these ended because the next dose arrived — 11 of 14 were sleep,
+        // which was only knowable by checking.)
+        let sleepExplainsLostSight = lostSightFloors.filter { r in
+            guard let onset = sleepOnset(after: r.t0, sleep: censorSleep) else { return false }
+            return abs(onset.timeIntervalSince(r.t0) / 60 - r.durationMin) <= binMin
+        }.count * 2 >= lostSightFloors.count
 
         // Fall + onset come from the same readable doses, over their own trajectories.
         let dr = doseResponseByTimeOfDay(signal: sig, events: own.map(\.timestamp),
                                          preMin: preMin, postMin: postMin)
-        let readableTraces = dr.traces.filter { $0.baseline.isFinite && $0.baseline >= onThreshold }
+        let fellFromTimes = Set(fellFrom.map(\.t0))
+        let readableTraces = dr.traces.filter {
+            fellFromTimes.contains($0.t0) && $0.baseline.isFinite && $0.baseline >= onThreshold
+        }
         let falls = readableTraces.filter { !$0.drop.isNaN }
         let onsets = readableTraces.filter { !$0.tHalf.isNaN }.map(\.tHalf)
 
@@ -1830,7 +1883,8 @@ nonisolated extension CorrelationEngine {
                 why.append("\(nextDoseFloors.count) at your next dose (up to \(hm(m)))")
             }
             if let m = lostSightFloors.map(\.durationMin).max() {
-                why.append("\(lostSightFloors.count) when we lost sight of you, usually asleep "
+                let because = sleepExplainsLostSight ? ", usually because you fell asleep" : ""
+                why.append("\(lostSightFloors.count) when we lost a clear reading\(because) "
                            + "(up to \(hm(m)))")
             }
             let n = censoredRows.count
@@ -1841,11 +1895,11 @@ nonisolated extension CorrelationEngine {
 
         // ── Statement 4: what could not be measured, and why. Names the INSTRUMENT, never the
         // drug: the substance may well be doing something tremor is not equipped to see.
-        if unreadable > 0 {
-            lines.append("\(unreadable) couldn't be measured. Your tremor was already settled "
-                         + "when you took \(unreadable == 1 ? "it" : "them"), so there was nothing "
-                         + "to watch change. We read this through tremor, so this isn't the way "
-                         + "to find out.")
+        if sleepBlind > 0 {
+            lines.append("\(sleepBlind) couldn't be measured. Your tremor was already quiet and "
+                         + "you fell asleep soon after, so we never saw what "
+                         + "\(sleepBlind == 1 ? "it" : "they") did. We read this through tremor, "
+                         + "so this isn't the way to find out.")
         }
 
         // ── Statements 5 + 6: how far tremor falls, and how fast. Two doses is the floor for
@@ -1854,12 +1908,28 @@ nonisolated extension CorrelationEngine {
         // from different primitives with different windows). The exact n is in the bullets.
         if falls.count >= 2 {
             let base = median(falls.map(\.baseline)), trough = median(falls.map(\.trough))
-            // `hm` already says "about", so this reads ", starting about 40 min in".
-            let onsetPhrase = onsets.count >= 2 ? ", starting \(hm(median(onsets))) in" : ""
-            lines.append(String(format: "Tremor typically falls from %.2f to %.2f", base, trough)
-                         + onsetPhrase
-                         + String(format: ". We treat %.1f as OFF.", onThreshold))
-        } else if !readableTraces.isEmpty || unreadable > 0 {
+            // Compare what will be PRINTED, not the raw doubles. A drop of 0.000002 is `trough
+            // < base` and still renders "falls from 1.90 to 1.90", which is the sentence this
+            // branch exists to prevent. Round to the two places the copy shows.
+            let shown = { (v: Double) in (v * 100).rounded() / 100 }
+            if shown(trough) < shown(base) {
+                // `hm` already says "about", so this reads ", starting about 40 min in".
+                let onsetPhrase = onsets.count >= 2 ? ", starting \(hm(median(onsets))) in" : ""
+                lines.append(String(format: "Tremor typically falls from %.2f to %.2f", base, trough)
+                             + onsetPhrase
+                             + String(format: ". We treat %.1f as OFF.", onThreshold))
+            } else {
+                // "falls from 1.90 to 1.90" is not a fall. Say what happened.
+                lines.append(String(format: "Tremor doesn't measurably change after a dose. "
+                                    + "It sits around %.2f before and after, where %.1f is the "
+                                    + "level we treat as OFF.", base, onThreshold))
+            }
+        } else if alreadyCovered > 0 {
+            // The well-controlled case: nothing to fall FROM, which is itself worth knowing.
+            lines.append("We can't say how far it brings your tremor down. On \(alreadyCovered) "
+                         + "\(alreadyCovered == 1 ? "dose" : "doses") you were still covered from "
+                         + "the one before, so there was nothing to fall from.")
+        } else if !readableTraces.isEmpty || sleepBlind > 0 {
             lines.append("We can't yet say how far it brings your tremor down. That needs at "
                          + "least two doses taken while your tremor was up.")
         }
@@ -1911,9 +1981,12 @@ nonisolated extension CorrelationEngine {
                         ? "Every readable dose was seen wearing off"
                         : "Still active at the next dose: \(nextDoseFloors.count); "
                           + "still active when observation stopped: \(lostSightFloors.count)",
-                    unreadable > 0
-                        ? "\(unreadable) doses excluded: tremor already below the OFF threshold when taken"
-                        : "All doses were taken with tremor above the OFF threshold",
+                    sleepBlind > 0
+                        ? "\(sleepBlind) doses excluded: tremor already quiet and asleep soon after"
+                        : "No doses excluded for being unobservable",
+                    alreadyCovered > 0
+                        ? "\(alreadyCovered) further doses taken while still covered by the previous one"
+                        : "Every measurable dose was taken with tremor above the OFF threshold",
                     falls.count >= 2
                         ? "Tremor fall measured on \(falls.count) doses, onset on \(onsets.count)"
                         : "Tremor fall not measurable (\(falls.count) usable doses)",

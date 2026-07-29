@@ -157,6 +157,41 @@ mostly-brief stirrings. No retrospective slice separates the indication from the
 prospective label — qualifying awakenings treated and comparable ones not. The card must claim
 nothing about sleep in the meantime.
 
+### ⚠️ Observability asks TWO questions, not one — CORRECTED Jul 29 2026
+
+The rule as first written ("exclude any dose whose pre-dose tremor is already below the OFF
+threshold, from every statement") is **wrong for the duration**, and rendering the card for six
+different user shapes is what exposed it. A low pre-dose tremor means two opposite things:
+
+| | what the low reading means | duration | fall / onset |
+|---|---|---|---|
+| asleep soon after the dose | circumstance; nothing was observed either | ⛔ exclude | ⛔ exclude |
+| still covered by the previous dose, awake | **a drug is working** | ✅ keep | ⛔ exclude |
+
+One exclusion for both deleted the second case, and produced this card for a six-doses-a-day
+patient whose drug never lets them go OFF: *"180 doses of Rytary on 30 different days. We can't yet
+say how long a dose lasts. 180 couldn't be measured."* Nothing else. That is **precisely the failure
+this document names** — "least able to describe the drugs that help most" — reintroduced by the fix
+for the opposite problem.
+
+**Corrected rule — it takes BOTH facts to disqualify a dose:** low baseline **and** the watching cut
+short by sleep. Low baseline with the watching running to the next dose is a coverage floor, kept.
+
+⚠️ **Sleep BEFORE the dose is the wrong test** (tried first): Bhav wakes at 03:59 and doses at 04:45,
+so his night doses have *awake* pre-windows and sailed straight through, putting Mucuna back to
+93 min. What disqualifies them is sleep arriving AFTER, ending the watching within minutes.
+
+### Three more copy defects the six-profile render caught
+
+- *"Tremor typically falls from 1.90 to 1.90."* A drop of 0.000002 is arithmetically a drop, so the
+  guard must compare what is **printed**, not the raw doubles. Now says it doesn't measurably change.
+- *"usually asleep" was asserted, never measured* — the same error as claiming observations ended
+  because the next dose arrived. Now checked per dose against sleep onset, and the clause only
+  appears when sleep actually explains the majority.
+- *"Cbd Oil".* Names were the canonical key re-cased, which breaks every acronym (LDN, MAO-B). The
+  card now shows the spelling the person typed, most-frequent form winning, ties broken
+  alphabetically so a title cannot flicker between runs.
+
 ### Fixed rules
 
 - **⛔ Each card speaks only about its own substance.** Cross-substance ranking is not established on
