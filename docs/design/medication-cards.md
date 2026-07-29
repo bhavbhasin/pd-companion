@@ -242,6 +242,19 @@ guessed.
 
 ## Build shape
 
+**Steps 1-3 ✅ BUILT Jul 29 2026 (`a66809e`)** — config + plumbing only, nothing on screen. The
+template ships `renderer: nil`, so its stamped entries are registered and dormant; `run()` returns
+nil for each, verified. `MedicationCardVocabularyTests` pins the two properties the feature rests
+on: **no substance is skipped for being unrecognised** (the contrast with the workout template,
+which still drops unnameable types, is pinned in the same test), and **an inert substance is
+stamped exactly like an effective one** while still contributing no coverage to the pooled
+analyses. `.levodopaDose` survives untouched — the pooled coverage question is not replaced by
+per-substance cards. 95 tests green, parity + both Python oracles unchanged.
+
+⬜ Steps 4-5 (renderer, chart) remain. ⚠️ `run()` currently receives `levodopaDoses` (the
+estimable-only subset); the medication renderer needs the RAW dose log, or an inert substance's
+card will have no doses to describe. Thread that through when the renderer lands.
+
 1. **Vocabulary (small):** `Variable.medication(String)` + `.anyMedication`, plus the bridge
    accessor mirroring `workoutRawValue`. Easier than workouts — the substance key is engine-side
    (`formulationKey`), no HealthKit involved.

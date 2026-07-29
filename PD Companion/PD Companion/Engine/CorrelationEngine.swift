@@ -276,12 +276,26 @@ nonisolated enum CorrelationEngine {
         // HealthKit knowledge (which raw value is which activity) stays in InsightRegistry;
         // the engine only hands over the observed raw values.
         let observedWorkoutTypes = Set(workouts.map(\.activityRawValue))
+        // Substances come from the RAW dose log, not `levodopaDoses`: a medication card exists
+        // because the person takes the substance, not because it cleared an estimability test.
+        let observedSubstances = observedSubstanceKeys(doses: doses)
         return InsightRegistry.starter
             .filter { $0.status == .active }
             .flatMap { entry -> [RegistryEntry] in
                 switch entry.instantiation {
-                case .singular:        return [entry]
-                case .perObservedType: return InsightRegistry.instantiate(entry, observedRawValues: observedWorkoutTypes)
+                case .singular:
+                    return [entry]
+                case .perObservedType:
+                    // Two templates now share `.perObservedType`, so the observed SET a template
+                    // is stamped over is chosen by its exposure, not by the instantiation mode.
+                    switch entry.exposure {
+                    case .anyWorkout:
+                        return InsightRegistry.instantiate(entry, observedRawValues: observedWorkoutTypes)
+                    case .anyMedication:
+                        return InsightRegistry.instantiate(entry, observedSubstances: observedSubstances)
+                    default:
+                        return []   // a template with no observed-set to stamp over
+                    }
                 }
             }
             .compactMap { run($0, samples: samples, doses: levodopaDoses,
@@ -2646,6 +2660,29 @@ nonisolated extension CorrelationEngine {
         return PulseModel(key: key, surv: surv, onDuration: onDuration, iqr: band,
                           onsetByBucket: onsetByBucket, pooledOnset: pooledOnset,
                           precisionMin: precision)
+    }
+
+    /// Which substances earn a card: those logged on **more than one day**.
+    ///
+    /// Read from the RAW dose log, never the levodopa-candidate subset — that filter asks "does
+    /// this contribute coverage", and a medication card exists whether or not anything is
+    /// detectable. Vitamin D earns a card by being taken; what its card *says* may be "we can't
+    /// detect an effect", which is a result, not a reason to hide it.
+    ///
+    /// Ledger: **arbitrary**, and deliberately relocated rather than removed. One day is a trial
+    /// or a mis-entry; a second day is a pattern the person chose to continue. This is a
+    /// SCREEN-CLUTTER line, not a claim about evidence — which is a far more defensible home for
+    /// an unsourced number than inside "does this work", where the `20` sat. Nothing about the
+    /// card's content or confidence depends on it. docs/design/medication-cards.md → "When a
+    /// substance earns a card"; docs/intelligence-architecture.md → constants ledger.
+    static let medicationCardMinDays = 2
+
+    static func observedSubstanceKeys(doses: [Dose]) -> Set<String> {
+        var daysByKey: [String: Set<Date>] = [:]
+        for d in doses {
+            daysByKey[formulationKey(d.name), default: []].insert(calendar.startOfDay(for: d.timestamp))
+        }
+        return Set(daysByKey.filter { $0.value.count >= medicationCardMinDays }.keys)
     }
 
     /// Group doses by formulation, fit a model per group, and keep ONLY the strata that

@@ -36,7 +36,16 @@ nonisolated enum Variable: Hashable {
     case gaitDoubleSupport
 
     // — Discrete events (a thing at a timestamp) —
-    case levodopaDose
+    case levodopaDose                   // POOLED across every substance with a measurable
+                                        // duration — the coverage/spacing questions, which are
+                                        // deliberately cross-formulation. NOT superseded by
+                                        // `.medication`: "how long is my day uncovered" is a
+                                        // different question from "what does THIS substance do".
+    case medication(String)             // ONE substance, keyed by `formulationKey` (the user's
+                                        // own logged name, canonicalized). Mirrors
+                                        // `.workout(type)` / `.foodAttribute(a)`.
+    case anyMedication                  // the medication TEMPLATE's exposure: instantiated per
+                                        // substance the user actually logs (see Instantiation)
     case workout(HKWorkoutActivityType)
     case anyWorkout                     // the exercise TEMPLATE's exposure: instantiated
                                         // per workout type observed in the user's own data
@@ -78,6 +87,15 @@ nonisolated extension Variable {
         if case .foodAttribute(let a) = self { return a }
         return nil
     }
+    /// The substance key if this is a per-substance medication exposure, else nil.
+    /// Mirrors `workoutRawValue` / `foodAttribute` — the bridge a renderer uses to
+    /// resolve which dose stream an entry draws from. Plain `String` on purpose: the
+    /// key is engine-side (`CorrelationEngine.formulationKey`), no HealthKit involved,
+    /// so unlike the workout bridge this one carries no framework knowledge at all.
+    var medicationKey: String? {
+        if case .medication(let key) = self { return key }
+        return nil
+    }
     /// True when this is the tremor signal — the only outcome wired into the
     /// windowed-effect path today.
     var isTremor: Bool {
@@ -97,6 +115,15 @@ nonisolated enum Primitive: Hashable {
     case doseResponseByTimeOfDay(preMin: Double, postMin: Double)
     /// Kaplan–Meier ON-duration / wearing-off with right-censoring.
     case survivalDuration(onThreshold: Double)
+    /// Onset latency AND ON-duration fitted together for ONE substance
+    /// (`CorrelationEngine.fitPulseModel`), plus how precisely that duration is known.
+    ///
+    /// Deliberately NOT `.survivalDuration`: this method is the survival fit *and* the
+    /// time-of-day onset fit, and naming it after the duration half alone would mislabel
+    /// what the entry runs — the same class of defect as one constant answering three
+    /// questions. The math is already built and already drives the day-ahead forecast;
+    /// only its registry name is new. docs/design/medication-cards.md → Build shape 3.
+    case pulseModel(onThreshold: Double)
     /// Periodic within-day baseline of a signal across hour-of-day.
     case circadianBaseline
     /// Regression of a signal over monthly medians (long-term direction).
@@ -244,6 +271,36 @@ nonisolated enum InsightRegistry {
             rationale: "Peak-dose dyskinesia: involuntary movement can RISE 30–120 min post-dose (inverse of the tremor benefit).",
             source: .curated, safety: .clinicalReferral),
 
+        // ───────────── Medication cluster (ONE template, many substances) ─────────────
+        // ONE template, stamped per substance the user actually logs — the medication sibling
+        // of the exercise cluster below. Until this line existed the registry had a single flat
+        // `.levodopaDose` and literally no grammar for a per-substance question: nothing gated
+        // Mucuna out, the sentence could not be said. That is *missing expressiveness*, not a
+        // gate — a gate goes dark pending data and resolves itself; missing grammar stays dark
+        // forever no matter how much data arrives.
+        //
+        // ⚠️ Existence is decoupled from effect ON PURPOSE. A card appears because the person
+        // TAKES the substance, never because it worked. Gating on a measured effect would make
+        // the card's existence test a restatement of its own content, and would bias the
+        // effects on display upward exactly where data is thinnest — the newest substance, with
+        // the least data, would get the most overstated number. docs/design/medication-cards.md.
+        //
+        // renderer: nil = registered but DORMANT, as designed. Steps 1-3 (vocabulary, stamping,
+        // this primitive) are config + plumbing only; nothing reaches the screen until the
+        // bespoke renderer lands. It must NOT reuse `.wearingOff`: that card answers a pooled
+        // scheduling question ("how much of my day is uncovered"), this one answers "what does
+        // this substance do for me", and folding both into one renderer means branching
+        // internally on which question is being asked.
+        RegistryEntry(
+            id: "medication-tremor", category: .medication,
+            exposure: .anyMedication, outcome: .tremor,
+            // onThreshold matches the engine's offThreshold (tremor ≥ this = OFF).
+            primitive: .pulseModel(onThreshold: 1.0),
+            renderer: nil,
+            rationale: "Medication cluster template: for each substance the person actually logs, report what their own data can support about it — how much tremor drops, how fast, how long it holds, including 'nothing detectable' and 'not enough yet'. No drug list decides which substances qualify.",
+            source: .curated, safety: .clinicalReferral,
+            instantiation: .perObservedType),
+
         // ───────────── Diet ↔ medication (your 3 PM question) ─────────────
         RegistryEntry(
             id: "protein-meal-dose-onset", category: .food,
@@ -373,6 +430,40 @@ nonisolated enum InsightRegistry {
                 primitive: template.primitive,
                 renderer: template.renderer,
                 rationale: workoutRationales[raw] ?? genericWorkoutRationale,
+                source: template.source,
+                safety: template.safety)
+        }
+    }
+
+    /// Expand a `.perObservedType` template into one concrete question per SUBSTANCE the user
+    /// logs. The medication sibling of the workout overload above, and it differs from it in
+    /// one way that is the entire point of the feature:
+    ///
+    /// **Nothing is skipped for being unrecognised.** The workout version drops types it cannot
+    /// name, because a card titled "Workout and your tremor" says nothing. There is no such
+    /// list here and there must not be — an Ayurvedic preparation, a compounded formulation, a
+    /// tester's low-dose naltrexone are measured on exactly the same terms as Sinemet, and
+    /// "we cannot detect an effect" is a result rather than a card that fails to appear. The
+    /// substance's name is whatever the user typed, so it always labels its own card.
+    /// docs/design/medication-cards.md → "Literature as a classifier — rejected as a gate".
+    ///
+    /// The rationale is the template's, unchanged: there is deliberately no curated
+    /// per-substance note table (the workout equivalent of `workoutRationales`). Pharmacological
+    /// provenance would have to come from a drug list, and a list that cannot recognise what it
+    /// has not heard of would quietly split substances into first- and second-class.
+    ///
+    /// Deterministic order (sorted keys) so the surfaced set is stable across runs. Each
+    /// instance is `.singular`, so it never re-expands.
+    static func instantiate(_ template: RegistryEntry, observedSubstances: Set<String>) -> [RegistryEntry] {
+        observedSubstances.sorted().map { key in
+            RegistryEntry(
+                id: "\(template.id)-\(key)",
+                category: template.category,
+                exposure: .medication(key),
+                outcome: template.outcome,
+                primitive: template.primitive,
+                renderer: template.renderer,
+                rationale: template.rationale,
                 source: template.source,
                 safety: template.safety)
         }
