@@ -315,7 +315,7 @@ stamped exactly like an effective one** while still contributing no coverage to 
 analyses. `.levodopaDose` survives untouched — the pooled coverage question is not replaced by
 per-substance cards. 95 tests green, parity + both Python oracles unchanged.
 
-**Steps 4-5 ✅ BUILT Jul 29 2026 (`MEDCARD`)** — `Renderer.medication` + `medicationInsight`, and
+**Steps 4-5 ✅ BUILT Jul 29 2026 (`9a00939`)** — `Renderer.medication` + `medicationInsight`, and
 the chart came free (`wearingOffChart` over the substance's own readable rows). `run()` now takes
 `allDoses` (the RAW log) alongside the levodopa-candidate set, so an inert substance's card has
 doses to describe. Real record: **Mucuna 48 min ±38 from 6 observed returns** — the prediction
