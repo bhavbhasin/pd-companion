@@ -142,7 +142,7 @@ a new arbitrary number.
 
 ### The night-dose question belongs to the experiment loop, not to a card
 
-Bhav reports the 01:00–05:00 Mucuna doses help him get back to sleep. Tremor cannot see that, and
+The reference user reports the 01:00–05:00 Mucuna doses help him get back to sleep. Tremor cannot see that, and
 the observational sleep comparison **cannot settle it either** — measured on matched dates:
 
 | | n | median time awake |
@@ -177,7 +177,7 @@ for the opposite problem.
 **Corrected rule — it takes BOTH facts to disqualify a dose:** low baseline **and** the watching cut
 short by sleep. Low baseline with the watching running to the next dose is a coverage floor, kept.
 
-⚠️ **Sleep BEFORE the dose is the wrong test** (tried first): Bhav wakes at 03:59 and doses at 04:45,
+⚠️ **Sleep BEFORE the dose is the wrong test** (tried first): the reference user wakes at 03:59 and doses at 04:45,
 so his night doses have *awake* pre-windows and sailed straight through, putting Mucuna back to
 93 min. What disqualifies them is sleep arriving AFTER, ending the watching within minutes.
 
@@ -241,7 +241,7 @@ there as circular. This sidesteps that dead end rather than solving it.
 ⇒ Sites `:244` and `:2531` are largely **deleted rather than converted**, taking two of the nine `20`
 sites with them.
 
-**Trade-off, DECIDED (Bhav, Jul 26 2026): conservative-but-wrong.** A genuinely effective new drug
+**Trade-off, DECIDED (the reference user, Jul 26 2026): conservative-but-wrong.** A genuinely effective new drug
 contributes no coverage until its duration is estimable, so the coverage card temporarily reads worse
 than reality. The alternative — falling back to the average of the person's established drugs — is
 more useful but asserts something never measured about the new substance. Reading censoring as a
@@ -295,7 +295,7 @@ correlation engine entirely** — not merely hidden.
 - **⚠️ State the consequence when the substance is pharmacologically active.** Excluding a working
   drug makes the coverage card compute dose spacing as though it were not taken, inflating the
   uncovered-hours figure. Say so at the toggle; do not prevent it.
-⬜ **NOT BUILT. Logged Jul 29 2026, and Bhav ranks it above the ordering rule.** ⭐ His reason names
+⬜ **NOT BUILT. Logged Jul 29 2026, and the reference user ranks it above the ordering rule.** ⭐ Their reason names
 the trigger the substance count misses: **clutter arrives when a user starts confirming doses on a
 schedule they already have, not when they add substances.** Verified — the fetch gates on
 `logStatus == .taken` (`HealthKitManager.swift:1058`), so a scheduled-but-unconfirmed medication
@@ -455,7 +455,7 @@ the point.
    per-substance duration, and do NOT apply it to `estimableFormulations`.**
 
    Measured on all three testers, and the first finding is that **only one record can answer it** —
-   Harpal has **zero** dose rows, John has **1 taken of 28** (the rest `notInteracted`). On Bhav's:
+   Tester B has **zero** dose rows, Tester A has **1 taken of 28** (the rest `notInteracted`). On the reference user's:
 
    | | today (window ends at the next dose of ITSELF) | cross-substance |
    |---|---|---|
@@ -536,7 +536,7 @@ the point.
    two full `map` allocations over 104,256 tremor timestamps for the record's min/max) — identical
    inputs, identical output, recomputed per card. Fix = hoist out of `medicationInsight`, compute
    once per run, pass in; output-identical, same shape as `b6e6f69`.
-   ⛔ **DEFERRED by Bhav Jul 29** — no felt problem at his 2 substances (~155 ms). Logged in
+   ⛔ **DEFERRED by the reference user Jul 29** — no felt problem at his 2 substances (~155 ms). Logged in
    BACKLOG under Insights tab performance, item 4.
 
    ⚠️ Simulator timings, median of 5, and run-to-run spread is ~10-40% — the SHAPE is the finding,
@@ -546,13 +546,13 @@ the point.
    collapsing, never by hiding — hiding is what this document removes.
 
    ⛔ **PARKED Jul 29 2026 — measured, no target.** No record has more than **2** distinct
-   substances (Bhav 2, John 1, Harpal 0), and the shipped sort already ranks confidence then stage,
+   substances (reference user 2, Tester A 1, Tester B 0), and the shipped sort already ranks confidence then stage,
    so `.emerging` nulls sink on their own. Revisit when a record has a tail.
 
    ⚠️ **Separable and REAL today:** two `.moderate` + `.clinicalDiscussion` cards tie and fall
    through to registry order, so **Mucuna's 28 doses render above Sinemet's 251**. The fix is a
    tie-break on evidence, but it lives in `InsightsView.orderedInsights` and applies to every card,
-   so it reorders unrelated equal-confidence pairs. Logged in BACKLOG, Bhav's call.
+   so it reorders unrelated equal-confidence pairs. Logged in BACKLOG, the reference user's call.
 5. **How precision is drawn.** Downstream of the `20` redesign: one substance's duration is confident
    within ~5 minutes, another within ~32. Showing both as plain numbers implies an equal confidence
    that is not there.

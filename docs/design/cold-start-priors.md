@@ -1,4 +1,4 @@
-# Cold-Start Prior Table — Plan (drafted Jul 16 2026, ~3am; Bhav to review)
+# Cold-Start Prior Table — Plan (drafted Jul 16 2026, ~3am; the reference user to review)
 
 **Status: PLAN ONLY — not approved, no code.** Gate B blocker. Chosen over newsletter-first (Jul 16).
 Strategy + licensing context: memory `project_kampa_cold_start_priors` + the Jul 16 cold-start artifact.
@@ -26,7 +26,7 @@ the estimate toward *their* number continuously. **No silent blending**: every c
 5. **Surface + copy (1d)** — DayAheadPanel / morning briefing first. Copy: "Most people on IR
    levodopa get ~2.7h per dose — as your data comes in, Kampa finds your number." Distinct visual
    tier + tappable citation. Silence discipline: labeled prior, engine-judged personal, or nothing.
-6. **Validation (0.5-1d)** — truncate Bhav's 69d to simulate day-1/7/21 user. Accept: day-1
+6. **Validation (0.5-1d)** — truncate the reference user's 69d to simulate day-1/7/21 user. Accept: day-1
    prior-seeded forecast useful (his 3.2h vs 2.69h published ⇒ conservative, right direction) +
    monotone convergence. Adversarial 5: Mucuna-only (PRN), CR/Rytary, mixed regimen, no levodopa
    (table stays silent), uncovered regimen.
@@ -56,7 +56,7 @@ It consumes exactly, per formulation (`PulseModel`):
   "onDurationIqrMin": { "value": null, "cohort": "", "citation": "" } } } }
 ```
 
-## Scope decisions — ⬜ PENDING BHAV (recommendations)
+## Scope decisions — ⬜ PENDING OWNER REVIEW (recommendations)
 1. **v1 = IR levodopa only**; honest "no baseline for your regimen yet" path for others.
 2. **Single adult stratum, wide uncertainty** — no years-on-levodopa stratification in v1.
 3. **Forecast surface first**, wearing-off card later (card still carries the open

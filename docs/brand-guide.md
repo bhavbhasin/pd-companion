@@ -56,7 +56,7 @@ white wave stroke + white endpoint dot.
 ## Voice & claims
 
 Calibrated, never overstated - lead with capability, show confidence tiers, always carry
-"your data, not medical advice." **Never disclose Bhav's own PD** in any public artifact.
+"your data, not medical advice." **Never disclose the owner's own health status** in any public artifact.
 
 ## How to render a PDF artifact
 

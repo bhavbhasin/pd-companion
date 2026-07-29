@@ -11,7 +11,7 @@ span; make a comparative claim only when one time genuinely differs beyond noise
 
 ## Why the old card was retired
 
-Bhav asked the fundamental question — do we need a card comparing "afternoon" with "morning" when
+The reference user asked the fundamental question — do we need a card comparing "afternoon" with "morning" when
 doses are taken at any hour — and measuring it produced five defects, **none of which was the
 unsourced `20` we were about to spend the session fixing.**
 
@@ -24,7 +24,7 @@ unsourced `20` we were about to spend the session fixing.**
    (39% overall, 46% of the last 30 days, 54% of the last 14).
 3. **`.afternoon` spans 12:30–17:00.** Actual afternoon doses run 12:30 to 16:56, median 15:05,
    quartiles 14:08 and 16:00 — averaging doses ~3 h apart into one number, which blurs the very
-   time-of-day effect being claimed. This was Bhav's original objection and it was understated.
+   time-of-day effect being claimed. This was the reference user's original objection and it was understated.
 4. **The `.morning` comparator is disappearing.** 39 doses over the full record, **8** in the last
    30 days, **zero in two of the last three weeks**.
 5. **It pools ~120 days with no recency**, so it keeps badging Strong about a regimen the person has
@@ -58,7 +58,7 @@ only when one slot differs beyond noise. A neutral card is a real answer: *timin
 you.* Silence would be indistinguishable from the app never looking — the same argument
 `medication-cards.md` makes.
 
-⭐ **Keep the chart.** Bhav specifically values the existing dose-curve visual; the retired
+⭐ **Keep the chart.** The reference user specifically values the existing dose-curve visual; the retired
 renderer's chart is the natural per-slot version (one curve per dose time) and is why the entry is
 `.disabled` rather than deleted.
 
@@ -73,7 +73,7 @@ renderer's chart is the natural per-slot version (one curve per dose time) and i
 2. **Coverage must be sleep-gated.** Slot 4 above is the worked example. The medication-card work
    already splits censoring by reason; reuse it or repeat the artifact.
 3. **Recency.** Defect 5 above applies equally to a slot card. Cheap honest fix = print the span and
-   day count (Bhav asked for exactly this). Weighting recent doses is the expensive version and is
+   day count (the reference user asked for exactly this). Weighting recent doses is the expensive version and is
    not proposed yet.
 
 ## The confound to state, not hide

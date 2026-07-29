@@ -153,7 +153,7 @@ One coherent work package; items 2-5 are small and ride along with 1:
 
 ## Open / parked
 - **Dyskinesia noise floor (0.5):** a **data** block, not design — needs a dyskinetic user's
-  stream (Bhav ~0 can't calibrate). Method when data lands: off-dose-window baseline or
+  stream (the reference user ~0 can't calibrate). Method when data lands: off-dose-window baseline or
   felt-state anchor. See `confidence-presence-vs-absence.md` + BACKLOG.
 - **Onset card is too naive about a real regimen (3 coupled gaps, one axis rebuild).** The
   afternoon-dose card feeds on dose *timestamps only* — no meal context, no spacing awareness, no

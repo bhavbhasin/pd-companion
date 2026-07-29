@@ -4,7 +4,7 @@
 
 ## As built
 
-**Chart (`DayInReviewView`, tremor + dyskinesia):** **10-min buckets** (was 30) + **MEAN**, plotted at slot **center**, **monotone** (dropped Catmull-Rom overshoot). Path we walked: 30-min P90 → too high at rising edges (back-dates a later peak); 10-min median → artifact-robust but steppier; **10-min mean** → the short window does the peak-localization, and the mean keeps brief-but-real breakthroughs visible (Bhav's call: show spikes, don't hide them; accepts a lone artifact nudging a slot ~0.3). Callout reads the same slot mean, so callout = curve.
+**Chart (`DayInReviewView`, tremor + dyskinesia):** **10-min buckets** (was 30) + **MEAN**, plotted at slot **center**, **monotone** (dropped Catmull-Rom overshoot). Path we walked: 30-min P90 → too high at rising edges (back-dates a later peak); 10-min median → artifact-robust but steppier; **10-min mean** → the short window does the peak-localization, and the mean keeps brief-but-real breakthroughs visible (the reference user's call: show spikes, don't hide them; accepts a lone artifact nudging a slot ~0.3). Callout reads the same slot mean, so callout = curve.
 
 **Live-edge headline (`liveEdgeState` → `DayForecast.nowState`):** **median** of the last 15 min + a trend guard (OFF only if level ≥ threshold and not clearly falling). Median *here* on purpose — a state flip is a decision, and a single walk/eating artifact minute must not flash "you're OFF." Deliberately a different statistic from the chart (severity display vs state decision).
 
@@ -15,8 +15,8 @@
 **Untouched by design:** the glance-card daily average (separate daily mean; unaffected by buckets — but note it reads low vs a bimodal signal). Insights/correlation engine (chart buckets are display-only, private).
 
 **OPEN / NEXT:**
-- **10-min forecast bins** (Bhav wants band binning to match the chart). Needs `minRun` 2→3 to keep a ~30-min stability floor, then re-verify the parity suite. Robustness caveat: fine for Bhav's bimodal data, may strobe on noisier users. Scoped as its own change, not folded into this commit.
-- **Felt-vs-measured calibration** (upstream): Bhav feels "slight-mild" at a measured ~2.0. Confirmed real Jul 6 (4:23 slot was genuinely sustained ~1.8). Not a statistic bug — needs a debug readout to calibrate, or is left as honest measurement. [[project_kampa_engine_xray]]
+- **10-min forecast bins** (the reference user wants band binning to match the chart). Needs `minRun` 2→3 to keep a ~30-min stability floor, then re-verify the parity suite. Robustness caveat: fine for the reference user's bimodal data, may strobe on noisier users. Scoped as its own change, not folded into this commit.
+- **Felt-vs-measured calibration** (upstream): the reference user feels "slight-mild" at a measured ~2.0. Confirmed real Jul 6 (4:23 slot was genuinely sustained ~1.8). Not a statistic bug — needs a debug readout to calibrate, or is left as honest measurement. [[project_kampa_engine_xray]]
 
 **Tests:** despeckle gate (`despeckleSparesDecisiveShortEpisode`, `despeckleAbsorbsAmbiguousShortFlip`), live-edge overlay (`liveEdgeOverlaysBandTail`, `liveEdgeNoOpWhenNil`); parity green.
 
@@ -44,13 +44,13 @@ Short, strong spikes — exactly what a PD patient feels — get smoothed below 
 **Fix (decided):**
 1. Bucket value = **robust P90** of the slot's raw tremor samples, **not mean, not raw max**. P90 over ~30 samples/slot means the top ~3 samples clear it — one jitter sample can't set it, but a real 5-minute spike does. Same statistic for **curve and callout** (they must never disagree again).
 2. Plot at slot **center** (+15 min), not start — kills the ~15-min left-skew that made the spline chase the next slot.
-3. **Drop Catmull-Rom** → monotone/linear. With a peak curve the spline overshoot double-counts. *(Bhav decision — see below.)*
+3. **Drop Catmull-Rom** → monotone/linear. With a peak curve the spline overshoot double-counts. *(the reference user decision — see below.)*
 
 **Implementation note:** `HourBucket` currently overloads `hour` for x-plot, containment, gap-break, and sort. Splitting peak + center means: collect **raw values per slot** (not `sum/count`), keep `slotStart` for containment/gap/sort, add a separate **plotted x = center**. The dayEnd anchor bucket (L944) plots at `dayEnd` exactly, no +15.
 
 **⛔ Rejected:** peak + avg both in the callout. Too crowded — dyskinesia shares the box. **One value = the peak.**
 
-**Reframe:** the panel is no longer "average tremor" — it's "how strong tremor got each half-hour." Needs one honest label so it isn't misread. *(Bhav decision — see below.)*
+**Reframe:** the panel is no longer "average tremor" — it's "how strong tremor got each half-hour." Needs one honest label so it isn't misread. *(the reference user decision — see below.)*
 
 ---
 
@@ -65,7 +65,7 @@ Short, strong spikes — exactly what a PD patient feels — get smoothed below 
 - **Historical band** (everything older than the live edge): keep binned + despeckled. After the fact, smoothing is honest.
 - **"Right now" state** (last bin only): compute from a **faster, less-smoothed read** — last **~15 min raw** tremor + trend (rising/falling), bypassing the despeckle floor. This feeds `phaseAtNow` / the headline, not the historical shading.
 
-**Trade-off:** responsiveness vs. an occasional brief false-OFF flicker at the edge. Bhav leans **responsive**. Default: last 15 min, OFF if that window's P90 ≥ threshold (peak, consistent with Symptom 1) AND trend not falling. Flagged below.
+**Trade-off:** responsiveness vs. an occasional brief false-OFF flicker at the edge. The reference user leans **responsive**. Default: last 15 min, OFF if that window's P90 ≥ threshold (peak, consistent with Symptom 1) AND trend not falling. Flagged below.
 
 **Not caused by Phase A** — observed reconstruction was untouched by the formulation change.
 
@@ -86,11 +86,11 @@ Short, strong spikes — exactly what a PD patient feels — get smoothed below 
 1. **No chart label.** Don't clutter the panel; a "peak tremor" label is also incomplete since the chart carries dyskinesia too. The P90 reframe is explained in the **FAQ** instead — and that FAQ entry is **part of this change's definition-of-done**, riding the pending website batch (blocked on the 3-panel video). Ship the code and the FAQ together.
 2. **Dyskinesia switches to P90 too.** `dyskinesiaBuckets` (L953/966) is currently the same 30-min mean. Leaving it as mean while tremor becomes peak would put two *different statistics* on one 0–4 axis — silently dishonest. Both lines become "how strong it got per half-hour"; one FAQ entry covers both.
 3. **Drop Catmull-Rom** → monotone/linear.
-4. **Live-edge window** (Symptom 2) = last 15 min + P90 + trend. Bhav confirmed responsive.
+4. **Live-edge window** (Symptom 2) = last 15 min + P90 + trend. The reference user confirmed responsive.
 
 ## Upstream — felt-vs-measured calibration (OUT of scope for this build)
 
-Deeper than all three: Bhav *feels* real tremor at a measured **0.5**, below the OFF line (**1.0**). Either the Watch under-reads or 1.0 is too high for him. Every ON/OFF label sits on this. **Dependency, not a decision** — needs his real readings (DEBUG readout / engine X-ray). Can't fetch HealthKit from the dev box. Revisit after the 3 fixes. Tie: [[feedback_no_arbitrary_thresholds]], [[feedback_preserve_raw_sensor_data]].
+Deeper than all three: the reference user *feels* real tremor at a measured **0.5**, below the OFF line (**1.0**). Either the Watch under-reads or 1.0 is too high for him. Every ON/OFF label sits on this. **Dependency, not a decision** — needs his real readings (DEBUG readout / engine X-ray). Can't fetch HealthKit from the dev box. Revisit after the 3 fixes. Tie: [[feedback_no_arbitrary_thresholds]], [[feedback_preserve_raw_sensor_data]].
 
 ## Build order
 

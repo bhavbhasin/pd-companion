@@ -1,6 +1,6 @@
 # Kampa - Design & Architecture Review (Jul 19 2026)
 
-**Status: review only - no code changed.** Requested by Bhav: are the design decisions sound and future-proof, and is the architecture robust, secure, scalable? Named examples: hard-coded Insights gating; hand-picked workout types.
+**Status: review only - no code changed.** Requested by the reference user: are the design decisions sound and future-proof, and is the architecture robust, secure, scalable? Named examples: hard-coded Insights gating; hand-picked workout types.
 
 **⚠ Do NOT commit this file while the repo is public** - §6 is a map of where personal health data sits in tracked files. Add to .gitignore first, or keep untracked (like BACKLOG.md).
 
@@ -112,7 +112,7 @@ Anyone connecting the public repo to the founder - trivial, it's under github.co
 |---|---|---|
 | **A. Make the repo private** | loses public build-in-the-open value; the hiring-signal story survives (the app, site, LinkedIn all remain public) | none going forward; history exposure ends when visibility flips |
 | B. Scrub tracked files + rewrite history | heavy (force-push rewrite, like the June privacy-policy scrub); comments lose real explanatory value | forks/clones/caches may retain history |
-| C. Move personal-data docs to gitignored paths + de-personalize code comments ("the reference dataset" not "Bhav") going forward | moderate | history still contains everything to date |
+| C. Move personal-data docs to gitignored paths + de-personalize code comments ("the reference dataset" not "the reference user") going forward | moderate | history still contains everything to date |
 
 Recommendation: **A now** (one click, reversible, stops the bleeding), then decide between staying private vs B/C at leisure. Note this review file itself belongs behind the same line - hence the header warning. Separately: `docs/ask-kampa/Kampa-FAQ.md` and `faq-knowledge.md` mention you by name and feed a public chatbot - verify they carry only founder-of-Kampa facts, no health facts.
 

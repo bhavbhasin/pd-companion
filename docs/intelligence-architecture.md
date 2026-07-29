@@ -159,7 +159,7 @@ Every gate/threshold constant is one of four kinds. **Rule: a constant may not s
 |---|---|---|
 | **sourced** | A published clinical threshold, cited at the constant. | wearing-off MCID = **60 min/day** OFF (pramipexole pivotal trials); gait MCID = **0.06 m/s** (Hass 2014). |
 | **structural** | Derived from the data or a mathematical minimum — not a free knob. | windowed-effect & dose-window floors = **n ≥ 3** (minimum for a mean + a spread); dose-confound `onWindow` = the user's own KM median ON-duration; the significance bars **p ≤ 0.01 / 0.05** (conventional); the ported dose-window params (preMin 30 / postMin 180 / keyWindow 90 / minCoverage 0.5), parity-pinned to the validated Python lab; the wearing-off CARD's tiers — **no constant at all**, the sourced MCID read against the claim's own precision interval (`wearingOffCardConfidence`); the precision floor = **half a bin**, the grid a duration was measured on. |
-| **provisional** | A placeholder awaiting data to calibrate; flagged as such. | dyskinesia noise floor = **0.5** (needs a dyskinetic user's stream — Bhav ≈ 0 can't calibrate); `offThreshold` = **1.0** tremor = OFF (tested, only ~6% swing, but not clinically anchored). |
+| **provisional** | A placeholder awaiting data to calibrate; flagged as such. | dyskinesia noise floor = **0.5** (needs a dyskinetic user's stream — the reference user ≈ 0 can't calibrate); `offThreshold` = **1.0** tremor = OFF (tested, only ~6% swing, but not clinically anchored). |
 | **arbitrary** | Named tech debt — works, but has no principled basis yet. | time-of-day `bucketOf` cliffs (6 / 9.5 / 12.5 / 17); the Strong/Moderate **n-tiers** (dose 20/10, gait 24/12/6); `doseOnWindowFallback` = **190 min**; `medicationCardMinDays` = **2** — unsourced, but deliberately RELOCATED out of "does this work" into "is this screen clutter", where nothing about a card's content or confidence depends on it. ~~wearing-off card 40/20/1~~ — **retired Jul 29 2026**, the first n-tier set to go; the remaining two are the same debt. |
 
 No tremor MCID and no dose-onset MCID exist (literature-searched Jul 2026), which is *why* the tremor and dose-window cards moved to facts-over-verdict — there was nothing to source an effect gate to. The unwired `GateBar.minStability` axis (a reserved hook) is not a constant and not in this table.
@@ -230,7 +230,7 @@ The architecture is **fully migrated and on-device**, all parity-green: the conf
 
 ## Scaling past solo: demand-sensing & deployment for many users
 
-The human-in-the-loop seam above ("LLM proposes → Bhav approves a PR") is described at **solo scale**. Once Kampa ships to TestFlight and the App Store, a new question appears: *if a hypothesis only matters for someone else's data, how does the builder ever learn it's worth wiring?* The privacy design makes this genuinely hard **on purpose** — and the resolution is one of the more important decisions in this document.
+The human-in-the-loop seam above ("LLM proposes → the reference user approves a PR") is described at **solo scale**. Once Kampa ships to TestFlight and the App Store, a new question appears: *if a hypothesis only matters for someone else's data, how does the builder ever learn it's worth wiring?* The privacy design makes this genuinely hard **on purpose** — and the resolution is one of the more important decisions in this document.
 
 ### The cost we accepted
 
@@ -279,7 +279,7 @@ What never changes: **no device ever self-approves an LLM-proposed analysis.** P
 
 ## The builder's review surface — how approval actually happens
 
-The seam above says "Bhav approves a PR." This section defines what that *experience* concretely is for the solo builder, because the mechanics are the part most easily misunderstood.
+The seam above says "the reference user approves a PR." This section defines what that *experience* concretely is for the solo builder, because the mechanics are the part most easily misunderstood.
 
 ### The one distinction that makes it click: you approve *questions*, not *answers*
 
@@ -290,7 +290,7 @@ There are two separate approvals, and the human only ever performs the first:
 | **Question → registry** | "Is this hypothesis sane and *safe* to let the engine test?" | **Human (you)** | At review time |
 | **Answer is real** | "Does this pattern clear significance + n, and effect size where an MCID is sourced?" | **Engine, deterministically** | Per-user, automatic |
 
-Approving the registry entry is **never** "Bhav blessed the conclusion that Tai Chi helps." It is "Bhav agreed Tai Chi-vs-tremor is a sound, safe *question*." The engine then judges the answer against each user's own data and may surface nothing. This is the entire safety story: a human admits hypotheses to the test set; only deterministic statistics promote one to a visible insight.
+Approving the registry entry is **never** "the reference user blessed the conclusion that Tai Chi helps." It is "the reference user agreed Tai Chi-vs-tremor is a sound, safe *question*." The engine then judges the answer against each user's own data and may surface nothing. This is the entire safety story: a human admits hypotheses to the test set; only deterministic statistics promote one to a visible insight.
 
 ### What a proposal looks like when it reaches you — a hypothesis *card*, not raw code
 

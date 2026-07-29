@@ -40,7 +40,7 @@ Two questions, deliberately kept apart: **whether to speak** is the point estima
 is where the MCID falls inside the interval. That split is why this is a plain function rather than a
 `GateSpec`: the shared `gate` applies one effect value to every bar and cannot score two quantities.
 
-### Keeping Emerging (Bhav, Jul 29)
+### Keeping Emerging (the reference user, Jul 29)
 
 The first cut of this design dropped Emerging, because the only thing producing it was the `minN: 1`
 floor bar. That was an accident, not a decision — the tier is a legitimate idea and only the
@@ -80,7 +80,7 @@ the threshold directly reuses a number that is already sourced and introduces no
    | **uncertainty on the claim** | **±5.2 min/day** (predicted ~±6) |
    | lower bound vs MCID | 508.4 vs 60 ⇒ **Strong** |
 
-   A no-op for Bhav, which is the right outcome: this replaces an arbitrary gate, it should not move
+   A no-op for the reference user, which is the right outcome: this replaces an arbitrary gate, it should not move
    anyone's tier. ⚠️ The 513.6 comes from a scratch reimplementation of the sum that does not handle
    the first/last dose of a day as the engine does (the app reads ~495) — the RATIO is what the
    design turns on, and ±5.2 against a 60-min bar is ~9%, robust to the base value.
