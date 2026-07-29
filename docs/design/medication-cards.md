@@ -314,7 +314,7 @@ uncovered. Per-substance numbers live on per-substance cards, each carrying its 
 **Side effect:** the deleted branch contains one of the `20` sites. Removing the rows removes the
 site rather than converting it.
 
-✅ **DONE Jul 29 2026** (`COVROWS`), once the per-substance cards shipped — deferred until then so
+✅ **DONE Jul 29 2026** (`eb7c6ab`), once the per-substance cards shipped — deferred until then so
 the app was never thinner than before. Pinned by `theCoverageCardNamesNoSubstance`, which builds a
 two-formulation regimen of exactly the shape that used to trigger the rows and asserts the coverage
 copy names neither substance. **That leaves ONE `20` in the engine**: `doseResponseGate`, which waits
