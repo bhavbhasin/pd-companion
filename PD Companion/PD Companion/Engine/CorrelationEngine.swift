@@ -214,14 +214,30 @@ nonisolated enum CorrelationEngine {
         // "ship the question, light up when the data earns it" model.
         //
         // Every levodopa-specific analysis (wearing-off card, afternoon-onset card, the
-        // dose-confound guard) runs on the LEVODOPA-CANDIDATE doses, not the raw medication log:
-        // estimable formulations PLUS data-thin ones (< 20 doses — too few to judge, so benefit
-        // of the doubt: probably real levodopa like an occasional Mucuna), EXCLUDING only
-        // CONFIRMED non-pulsatile substances (≥ 20 doses that show no dose→ON→OFF pulse — a
-        // supplement like CDP-Choline, or an agonist). This is the SAME thin-vs-inert rule the
-        // forecast uses: a supplement can't pollute the pooled wearing-off curve or over-shadow a
-        // food/exercise window, while a rarely-taken real levodopa still counts. The gate is the
-        // classifier (measured per-user), not a drug dictionary; 20+ doses are needed to judge.
+        // dose-confound guard) runs on the LEVODOPA-CANDIDATE doses, not the raw medication log.
+        //
+        // ONE QUESTION, no dose count: **does this substance have a measurable duration?**
+        // If it does, its doses contribute; if it doesn't, they don't. There is no classifier
+        // and no drug dictionary — the engine never decides whether something "is levodopa",
+        // only whether there is something to measure. A supplement is excluded by having
+        // nothing to contribute, not by being judged inert, so no verdict is issued and no
+        // margin is needed — which matters, because no validated tremor MID exists to build
+        // one from (docs/design/confidence-presence-vs-absence.md). Sidesteps that dead end
+        // rather than solving it.
+        //
+        // Replaces the old two-part rule (estimable OR fewer than 20 doses ⇒ benefit of the
+        // doubt), which stated the same decision as the forecast's `model(for:)` with the
+        // polarity flipped — one decision, two copies, either editable without the other.
+        //
+        // ⚠️ TRADE-OFF, decided Jul 26 2026: **conservative but wrong.** A genuinely effective
+        // new substance now contributes no coverage until its own duration is measurable, where
+        // it used to borrow the combined levodopa timing. The coverage card therefore reads
+        // worse than reality for a while. The alternative — keeping the fallback — is more
+        // useful but asserts something never measured about that substance.
+        // ⬜ The window this opens is bounded by `PulseModel.isEstimable`'s own `>= 20`, which is
+        // group 3's work; until that lands, "measurable" still carries a dose count internally.
+        // Censoring-as-floor (a dose that never showed an ending is a LOWER BOUND, not a blank)
+        // is what shortens the window properly — see docs/design/medication-cards.md.
         // Computed here in the wiring — the pinned parity functions are called directly with full
         // doses, so this filtering never touches them.
         //
@@ -238,11 +254,7 @@ nonisolated enum CorrelationEngine {
         let sig = samples.map { (time: $0.timestamp, value: $0.tremorScore) }
         let effSleep = mergeSleep(sleep)
         let estimableKeys = Set(estimableFormulations(signal: sig, doses: doses, sleep: effSleep, cache: survivalCache).keys)
-        let groupSizes = Dictionary(grouping: doses, by: { formulationKey($0.name) }).mapValues(\.count)
-        let levodopaDoses = doses.filter { d in
-            let k = formulationKey(d.name)
-            return estimableKeys.contains(k) || (groupSizes[k] ?? 0) < 20
-        }
+        let levodopaDoses = doses.filter { estimableKeys.contains(formulationKey($0.name)) }
 
         // Per-user dose-confound ON-window, from the SAME validated KM median the wearing-off
         // card uses. Computed once here (not per entry); skip the extra survival pass when
@@ -2550,16 +2562,19 @@ nonisolated extension CorrelationEngine {
         let combined = fitPulseModel(key: "__combined__", signal: sig, events: estimableDoses.map(\.timestamp))
         guard let confidence = gate(wearingOffGate, n: combined.durationsCount) else { return nil }
 
-        // Which model times a given dose? Group sizes tell a data-THIN formulation (too few
-        // doses to time on its own → benefit of the doubt, fall back to combined levodopa
-        // timing so a real dose still paints its band) from a CONFIRMED non-pulsatile one
-        // (enough doses but no estimable pulse → nil: never invent an ON band for a vitamin).
-        let groupSizes = Dictionary(grouping: allDoses, by: { formulationKey($0.name) }).mapValues(\.count)
+        // Which model times a given dose? The SAME question `run()` asks: does this substance
+        // have a measurable duration? If it does, its own model times it. If it doesn't, the
+        // dose paints no band — we never invent an ON window from another substance's timing.
+        //
+        // Was: own model, else nil at ≥20 doses ("judged, no pulse"), else the combined
+        // fallback ("data-thin, benefit of the doubt"). That stated the same rule as `:244`
+        // with the polarity flipped, and one dose count meant two different things — a drug
+        // that merely LOST its model was labelled the same as one shown to do nothing.
+        //
+        // ⚠️ `combined` is still built above: it remains the confidence + IQR source for the
+        // day's band. It is no longer borrowed as timing for a substance that hasn't earned one.
         func model(for dose: Dose) -> PulseModel? {
-            let key = formulationKey(dose.name)
-            if let m = models[key] { return m }                 // own estimable model
-            if (groupSizes[key] ?? 0) >= 20 { return nil }      // judged, no pulse → omit
-            return combined                                     // data-thin → combined fallback
+            models[formulationKey(dose.name)]
         }
 
         let onsetAdj = adjustments.reduce(0) { $0 + $1.onsetDelta }

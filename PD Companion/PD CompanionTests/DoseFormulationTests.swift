@@ -140,4 +140,39 @@ struct DoseFormulationTests {
         // No projected ON band anywhere — the vitamin is judged non-pulsatile, not fallen back.
         #expect(f.segments.filter { !$0.observed && $0.phase == .on }.isEmpty)
     }
+
+    /// A DATA-THIN substance — too few doses for a duration to be measurable — paints no ON
+    /// band either. It used to borrow the combined levodopa timing ("benefit of the doubt"),
+    /// which asserted an ON-window nobody had measured for that substance.
+    ///
+    /// This pins the Jul 28 2026 collapse: one question, "does this substance have a measurable
+    /// duration", replacing two copies of a `< 20` / `>= 20` dose count that stated the same rule
+    /// with the polarity flipped. The old thin branch was NEVER covered by a test, which is why
+    /// deleting it broke nothing — the suite could not see it.
+    ///
+    /// ⚠️ This is the **conservative-but-wrong** trade-off decided Jul 26 2026
+    /// (docs/design/medication-cards.md): a genuinely effective new drug contributes nothing
+    /// until its own duration is estimable. If that is ever revisited, this test is the thing
+    /// that will fail, and it is meant to — read the doc before changing the expectation.
+    @Test func forecastOmitsDataThinSubstance() throws {
+        var history: [TremorPoint] = []; var doses: [Dose] = []
+        Self.addDoses(name: "Sinemet", atHour: 8, count: 22, history: &history, doses: &doses)
+        // Real pulse, real levodopa — simply not enough of it to measure a duration yet.
+        Self.addDoses(name: "Rytary", atHour: 12, count: 4,
+                      onsetEnd: 30, basePlateau: 120, plateauStep: 8, history: &history, doses: &doses)
+
+        // Sanity: the thin substance genuinely has no model, while the established one does.
+        let models = CorrelationEngine.estimableFormulations(
+            signal: Self.signal(history), doses: doses)
+        #expect(models[CorrelationEngine.formulationKey("Sinemet")] != nil)
+        #expect(models[CorrelationEngine.formulationKey("Rytary")] == nil)
+
+        let today = { (h: Double) in Self.dayStart.addingTimeInterval(h * Self.hour) }
+        let f = try #require(CorrelationEngine.dayForecast(
+            history: history, allDoses: doses,
+            todaysDoses: [Dose(timestamp: today(12), name: "Rytary")],   // only the thin one today
+            todaysReadings: [], dayStart: Self.dayStart, dayEnd: Self.dayEnd, now: today(9)))
+
+        #expect(f.segments.filter { !$0.observed && $0.phase == .on }.isEmpty)
+    }
 }
