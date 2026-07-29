@@ -1040,23 +1040,6 @@ private struct WearingOffChartView: View {
             }
             .chartXScale(domain: -30...300)
             .chartYScale(domain: 0...yMax)   // tremor can't be negative; anchor at 0
-            .overlay(alignment: .bottomLeading) {
-                // How many doses this curve is an average of. Without it a line drawn from one
-                // dose is indistinguishable from one drawn from 130 — and the reader has no way
-                // to discount a noisy shape. Threshold-free: state the n, let them judge.
-                // How many doses stand behind each point. Stating a single "avg of N doses"
-                // implied all N were behind every point; on a thin substance the true figure
-                // ranged from N down to 1, which made the label the most confidently wrong
-                // thing on the chart.
-                // Bottom-left, not top-left: the top-left corner already carries the "dose"
-                // rule annotation at t=0, and on a dense substance ("66–175 doses per point")
-                // the two collided.
-                Text(doseCountCaption)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .padding(.leading, 2)
-                    .padding(.bottom, 2)
-            }
             .chartXAxis {
                 AxisMarks(values: [0, 60, 120, 180, 240, 300]) { value in
                     AxisGridLine()
@@ -1072,9 +1055,11 @@ private struct WearingOffChartView: View {
             .frame(height: 180)
             .accessibilityLabel("One dose over time: tremor falls after the dose, then rises as it wears off")
 
-            Text(chart.marksDeepestOn
-                 ? "One typical dose, averaged. It pulls tremor into the controlled zone, then wears off — the marked point is when the average dose has faded."
-                 : "One typical dose, averaged. The line fades where fewer doses were still being watched — doses that wore off early drop out of the average, so a pale stretch rests on only a few.")
+            // The dose count lives HERE, not as a corner overlay. Every corner of the chart is
+            // already spoken for — `dose` at top-left, the axis labels along the bottom, y-values
+            // and `before dose` / `OFF` down the right — so an overlay can only ever collide with
+            // something. It did, twice: first with `dose`, then with the axis labels.
+            Text(captionText)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
@@ -1124,6 +1109,18 @@ private struct WearingOffChartView: View {
     /// which is the honest signal — its whole curve is thin, not merely its tail.
     private static let inkSaturationDoses = 30.0
 
+    /// The full caption: how many doses stand behind each point, then how to read the drawing.
+    private var captionText: String {
+        let count = doseCountCaption
+        let body = chart.marksDeepestOn
+            ? "One typical dose, averaged. It pulls tremor into the controlled zone, then wears off — the marked point is when the average dose has faded."
+            : "One typical dose, averaged. The line fades where fewer doses were still being watched — doses that wore off early drop out of the average, so a pale stretch rests on only a few."
+        return count.isEmpty ? body : "\(count). \(body)"
+    }
+
+    /// How many doses stand behind each point. A single "avg of N" implied all N were behind
+    /// every point; on a thin substance the truth ran N down to 1, which made that label the
+    /// most confidently wrong thing on the chart.
     private var doseCountCaption: String {
         let ns = plottable.map(\.n).filter { $0 > 0 }
         guard let lo = ns.min(), let hi = ns.max() else { return "" }
