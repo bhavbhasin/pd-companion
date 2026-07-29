@@ -244,6 +244,82 @@ struct MedicationCardTests {
         #expect(card.confidence == .emerging)
     }
 
+    // MARK: - The chart must describe the same doses as the number above it
+
+    /// ⭐ Found on device: Mucuna's card drew a curve from ONE dose while its duration came from
+    /// eight, because `wearingOffChart` keeps only doses with no other dose for 240 min after —
+    /// a filter written for the POOLED curve, which the cross-substance window disqualifies
+    /// almost everything from. The visible symptom was the "worn off" marker (48 min, from 8
+    /// doses) landing BEFORE the "deepest ON" dot (78 min, from that 1), reading as though the
+    /// dose wore off before it started working.
+    @Test func theChartRestsOnTheSameDosesAsTheDuration() throws {
+        pinCalendar()
+        let days = 1..<25
+        var doses: [Dose] = []
+        var on: [(Date, Double)] = []
+        for d in days {
+            // Dosed every 3h — so NO dose is ever 240 min clear of the next, and the
+            // isolated-only filter would keep nothing at all.
+            for (i, h) in [8, 11, 14, 17].enumerated() {
+                doses.append(Dose(timestamp: Self.at(d, h), name: "Adjunct"))
+                on.append((Self.at(d, h), i == 3 ? 60 : 90))
+            }
+        }
+        let sleep = Self.nights(1..<26, from: 23, to: 7)
+        let samples = Self.series(days: days, on: on, sleep: sleep)
+
+        let card = try #require(CorrelationEngine.medicationInsight(
+            key: "adjunct", samples: samples, allDoses: doses, sleep: sleep))
+        guard case .wearingOff(let ch)? = card.chart else {
+            Issue.record("expected a wearing-off curve, got \(String(describing: card.chart))")
+            return
+        }
+        // Under the old isolated-only rule this fixture yields ZERO usable doses.
+        #expect(ch.curve.doseCount > 1, """
+                the curve rests on \(ch.curve.doseCount) dose(s) — a per-substance card must \
+                not plot a single dose as the typical shape
+                """)
+        // And the two markers must be readable together: a dose cannot wear off before it
+        // reaches its deepest effect.
+        if !ch.medianDurationMin.isNaN && !ch.bestOnMinute.isNaN {
+            #expect(ch.medianDurationMin >= ch.bestOnMinute, """
+                    worn-off marker (\(ch.medianDurationMin)) sits before deepest-ON \
+                    (\(ch.bestOnMinute)) — the two are being computed from different doses
+                    """)
+        }
+    }
+
+    /// The pooled wearing-off card must keep isolation. Its curve is an average across
+    /// formulations, where an overlapping dose genuinely does contaminate the shape.
+    @Test func thePooledCardStillFiltersToIsolatedDoses() throws {
+        pinCalendar()
+        let days = 1..<25
+        var doses: [Dose] = []
+        var on: [(Date, Double)] = []
+        for d in days {
+            for h in [8, 11, 14, 17] {
+                doses.append(Dose(timestamp: Self.at(d, h), name: "Sinemet"))
+                on.append((Self.at(d, h), 90))
+            }
+        }
+        let sleep = Self.nights(1..<26, from: 23, to: 7)
+        let samples = Self.series(days: days, on: on, sleep: sleep)
+        let surv = CorrelationEngine.survivalDuration(
+            signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
+            events: doses.map(\.timestamp), onThreshold: CorrelationEngine.offThreshold,
+            sleep: sleep)
+        guard case .wearingOff(let strict) = CorrelationEngine.wearingOffChart(
+                results: surv.durations, km: surv.kmMedian),
+              case .wearingOff(let loose) = CorrelationEngine.wearingOffChart(
+                results: surv.durations, km: surv.kmMedian, isolatedOnly: false) else {
+            Issue.record("expected wearing-off charts"); return
+        }
+        #expect(strict.curve.doseCount < loose.curve.doseCount, """
+                the default must still drop non-isolated doses \
+                (\(strict.curve.doseCount) vs \(loose.curve.doseCount))
+                """)
+    }
+
     // MARK: - The prediction the design doc made before this was built
 
     static let backupDir =

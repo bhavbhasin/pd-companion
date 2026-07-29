@@ -991,7 +991,12 @@ private struct WearingOffChartView: View {
                     RuleMark(x: .value("Worn off", chart.medianDurationMin))
                         .lineStyle(StrokeStyle(lineWidth: 1.5))
                         .foregroundStyle(Insight.brandBlue.opacity(0.6))
-                        .annotation(position: .top, alignment: .center, spacing: 2) {
+                        // A short-acting substance puts this line close to t=0, where the label
+                        // collided with "dose" (seen on a 48-min Mucuna card). Anchor it to the
+                        // right of its own line when it sits near the start.
+                        .annotation(position: .top,
+                                    alignment: chart.medianDurationMin < 90 ? .leading : .center,
+                                    spacing: 2) {
                             Text("worn off ~\(hours(chart.medianDurationMin))")
                                 .font(.caption2.weight(.medium))
                                 .foregroundStyle(Insight.brandBlue)
@@ -1024,6 +1029,16 @@ private struct WearingOffChartView: View {
             }
             .chartXScale(domain: -30...300)
             .chartYScale(domain: 0...yMax)   // tremor can't be negative; anchor at 0
+            .overlay(alignment: .topLeading) {
+                // How many doses this curve is an average of. Without it a line drawn from one
+                // dose is indistinguishable from one drawn from 130 — and the reader has no way
+                // to discount a noisy shape. Threshold-free: state the n, let them judge.
+                Text("avg of \(chart.curve.doseCount) "
+                     + (chart.curve.doseCount == 1 ? "dose" : "doses"))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 2)
+            }
             .chartXAxis {
                 AxisMarks(values: [0, 60, 120, 180, 240, 300]) { value in
                     AxisGridLine()

@@ -1886,7 +1886,11 @@ nonisolated extension CorrelationEngine {
                      + "describes what was measured; it is not advice about your regimen.",
             confidence: confidence,
             evidenceDays: dosedDays,
-            chart: km.isFinite ? wearingOffChart(results: readable, km: km) : nil,
+            // isolatedOnly: false — the curve must rest on the same doses the duration above
+            // it was measured from. See wearingOffChart.
+            chart: km.isFinite ? wearingOffChart(results: readable, km: km,
+                                                 isolatedOnly: false,
+                                                 clipToObservation: true) : nil,
             clinical: ClinicalDiscussion(
                 whatTheyMightConsider: "Your neurologist can weigh what this substance is doing for "
                                      + "you against what they expect from it. Bring the numbers, not "
@@ -2137,10 +2141,44 @@ nonisolated extension CorrelationEngine {
     /// averaged across *isolated* doses, plus the reference levels the card annotates:
     /// the pre-dose baseline, the OFF threshold, the deepest-ON minute, and the KM
     /// median ON-duration (where tremor is expected to have crossed back into OFF).
-    static func wearingOffChart(results: [DoseDuration], km: Double) -> InsightChart {
-        let isolated = results.filter { $0.isolated }
+    /// - Parameter isolatedOnly: keep only doses with no other dose for `gapIso` (240 min)
+    ///   afterwards, so overlapping doses can't contaminate the average shape. Right for the
+    ///   POOLED levodopa curve, which is what this was written for.
+    ///
+    ///   ⚠️ **Per-substance cards must pass `false`.** Their observation windows end at the
+    ///   next dose of ANY substance, so a 240-min isolation demand disqualifies almost
+    ///   everything: measured on the 07-24 export, Mucuna had **8 readable doses and exactly 1
+    ///   isolated one**, so the card drew a single dose as the substance's typical curve — and
+    ///   its "worn off" marker (48 min, from all 8) landed BEFORE its "deepest ON" dot (78 min,
+    ///   from that 1), reading as if the dose wore off before it started working. Sinemet, with
+    ///   130 of 175, was fine and hid the problem. The curve and the number above it have to
+    ///   describe the same doses.
+    /// - Parameter clipToObservation: blank each dose's bins after the point observation of
+    ///   THAT dose stopped — the next dose for a dose seen wearing off, the censor time for one
+    ///   that wasn't. Without it the curve plots a fixed 300 min past every dose no matter when
+    ///   watching actually ended, so a later substance's ON-effect is drawn on this substance's
+    ///   card. Measured on the 07-24 export: Mucuna's curve put its deepest point at **242 min**
+    ///   against a measured duration of 48 — four hours out, and it was Sinemet.
+    ///   Default `false` keeps the pooled curve byte-identical (it is parity-pinned).
+    static func wearingOffChart(results: [DoseDuration], km: Double,
+                                isolatedOnly: Bool = true,
+                                clipToObservation: Bool = false) -> InsightChart {
+        let isolated = isolatedOnly ? results.filter { $0.isolated } : results
         let centers = binCenters(lo: -preMin, hi: maxWindow)
-        let points = aggregateCurve(series: isolated.map(\.binValues), centers: centers)
+        let series: [[Double]] = clipToObservation
+            ? isolated.map { row in
+                // Watching stopped at the next dose if this one was seen wearing off; at the
+                // censor time if it wasn't. NaN reads as "no data" to `aggregateCurve`, so a
+                // clipped bin simply drops out of that bin's mean rather than biasing it.
+                let limit = row.observed
+                    ? (row.intervalMin.isFinite ? row.intervalMin : maxWindow)
+                    : (row.durationMin.isFinite ? row.durationMin : maxWindow)
+                return row.binValues.enumerated().map { i, v in
+                    i < centers.count && centers[i] > limit ? Double.nan : v
+                }
+              }
+            : isolated.map(\.binValues)
+        let points = aggregateCurve(series: series, centers: centers)
 
         let preVals = points.filter { $0.minute < 0 && !$0.value.isNaN }.map(\.value)
         let baseline = nanmean(preVals)
