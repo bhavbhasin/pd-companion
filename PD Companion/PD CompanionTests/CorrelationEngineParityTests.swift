@@ -216,16 +216,22 @@ struct CorrelationEngineParityTests {
         // The blocks above call each renderer directly. This exercises the seam they
         // skip: the registry-driven path, where `generateInsights` iterates the entries
         // and dispatches each on its `renderer` (no id-switch). With no workouts passed,
-        // the exercise/diet/sleep/HRV entries stay dormant. What fires is the three built
-        // pooled cards (dose-response, wearing-off, gait) PLUS one per-substance medication
-        // card for each substance the fixture logs — the `.medication` renderer landed in
-        // group 4 step 4, and the count is derived rather than hardcoded so adding a substance
-        // to the fixture cannot silently break it.
+        // the exercise/diet/sleep/HRV entries stay dormant. What fires is the two built
+        // pooled cards (wearing-off, gait) PLUS one per-substance medication card for each
+        // substance the fixture logs — the `.medication` renderer landed in group 4 step 4,
+        // and the count is derived rather than hardcoded so adding a substance to the fixture
+        // cannot silently break it.
+        //
+        // ⛔ Was THREE pooled cards. `dose-tremor-by-tod` (the afternoon-dose card) is
+        // `.disabled` as of Jul 29 2026 — its headline was a tail artifact of reporting means,
+        // among four other defects; see the retirement note in InsightRegistry.swift.
         let surfaced = CorrelationEngine.generateInsights(
             samples: samples, doses: doses, gait: Self.loadGait(), workouts: [])
         let substances = CorrelationEngine.observedSubstanceKeys(doses: doses)
-        #expect(surfaced.count == 3 + substances.count,
-                "expected 3 pooled cards + \(substances.count) medication cards, got \(surfaced.count)")
+        #expect(surfaced.count == 2 + substances.count,
+                "expected 2 pooled cards + \(substances.count) medication cards, got \(surfaced.count)")
+        #expect(!surfaced.contains { $0.title.localizedCaseInsensitiveContains("afternoon dose") },
+                "the afternoon-dose card is retired and must not surface: \(surfaced.map(\.title))")
         // Every substance the person takes has a card, whether or not it did anything.
         for key in substances {
             let name = CorrelationEngine.substanceDisplayName(key)
@@ -233,16 +239,18 @@ struct CorrelationEngineParityTests {
                     "no medication card for \(name); titles: \(surfaced.map(\.title))")
         }
 
-        // Both medication cards are .clinicalReferral, so the safety-derived stage
-        // (CorrelationEngine.stage(for:)) routes them to .clinicalDiscussion — neither
-        // offers an experiment. This is the fix: the .doseResponse renderer previously
-        // hard-stamped .hypothesis, so the afternoon-dose card wrongly showed a
-        // "Try an experiment" button despite being a medication-regimen finding.
-        let doseCard = try #require(
-            surfaced.first { $0.title.localizedCaseInsensitiveContains("afternoon dose") },
-            "afternoon-dose card should surface via the .doseResponse renderer")
-        #expect(doseCard.confidence == .strong)
-        #expect(doseCard.stage == .clinicalDiscussion, "dose entry is .clinicalReferral → no experiment")
+        // Medication cards are .clinicalReferral, so the safety-derived stage
+        // (CorrelationEngine.stage(for:)) routes them to .clinicalDiscussion — none offers an
+        // experiment. This is the property the retired afternoon-dose assertion was really
+        // protecting: a renderer must NOT hard-stamp a stage. That renderer used to stamp
+        // .hypothesis, which put a "Try an experiment" button on a medication-regimen finding.
+        // Re-pointed at the medication cards rather than deleted, so the seam stays covered.
+        for key in substances {
+            let name = CorrelationEngine.substanceDisplayName(key)
+            let card = try #require(surfaced.first { $0.title.hasPrefix(name) })
+            #expect(card.stage == .clinicalDiscussion,
+                    "\(name) is .clinicalReferral → .clinicalDiscussion, no experiment button")
+        }
 
         // Keyed on title, not stage: dose AND wearing-off now both carry
         // .clinicalDiscussion (both .clinicalReferral), so stage no longer uniquely

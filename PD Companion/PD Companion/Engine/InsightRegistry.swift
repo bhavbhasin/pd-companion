@@ -251,13 +251,38 @@ nonisolated enum InsightRegistry {
     static let starter: [RegistryEntry] = [
 
         // ───────────── Medication (strongest, already-validated methods) ─────────────
+        // ⛔ RETIRED Jul 29 2026 — `.disabled`, so the engine skips it. The renderer, chart and
+        // mechanism copy are deliberately LEFT IN PLACE: the question is worth asking and a
+        // replacement is designed (docs/design/dose-timing-card.md). What was wrong was the
+        // answer, five ways, none of them the gate we were about to fix:
+        //
+        // 1. The headline is a TAIL ARTIFACT. The card reports MEANS. On the reference record
+        //    afternoon onset is mean 60.4 / median 42.5 (SD 41.4) against morning mean 37.5 /
+        //    median 37.5 (SD 15.5) — so a 22-minute claim is really a 5-minute difference,
+        //    one bin of the 5-minute resolution, plus a handful of very slow doses.
+        // 2. It compares 2 of 4 buckets and never looks at the other two, which on that record
+        //    hold 64% of the doses (evening/night alone is the largest bucket).
+        // 3. `.afternoon` spans 12:30–17:00, averaging doses ~3 h apart into one number, which
+        //    blurs the very time-of-day effect being claimed.
+        // 4. The `.morning` comparator is disappearing: 39 doses over the full record but 8 in
+        //    the last 30 days and zero in two of the last three weeks.
+        // 5. It pools ~120 days with no recency, so it keeps badging Strong about a regimen the
+        //    person has already left, and it will not self-correct.
+        //
+        // Grouping the same doses by which dose OF THE DAY they are (threshold-free, drift-proof)
+        // shows onset 42/42/48 min and coverage 182/178/162 min across the three well-populated
+        // slots — flat. The fourth slot's 95 min is the sleep-censoring artifact (8 of 28
+        // observed), not a short-acting dose. There is no "9am beats 4pm" finding on that record.
+        //
+        // ⇒ `doseResponseGate` (the last unsourced `20`) has no live consumer while this is off.
         RegistryEntry(
             id: "dose-tremor-by-tod", category: .medication,
             exposure: .levodopaDose, outcome: .tremor,
             primitive: .doseResponseByTimeOfDay(preMin: 30, postMin: 180),
             renderer: .doseResponse,
             rationale: "Levodopa onset latency and completeness vary by time of day; afternoon doses observed slower and less complete.",
-            source: .curated, safety: .clinicalReferral),
+            source: .curated, safety: .clinicalReferral,
+            status: .disabled),
 
         RegistryEntry(
             id: "dose-tremor-wearing-off", category: .medication,
