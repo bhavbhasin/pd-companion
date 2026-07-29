@@ -419,7 +419,7 @@ nonisolated enum CorrelationEngine {
             let name = entry.exposure.workoutDisplayName ?? "this activity"
             return WindowedExposure(
                 events: events, displayName: name, unitWord: "sessions",
-                mechanism: "Exercise can shift PD motor symptoms for a while afterward, but daily tremor has many drivers — sleep, stress, and medication timing among them. Treat this as a lead to test, not a conclusion.")
+                mechanism: "Exercise can shift PD motor symptoms for a while afterward, but daily tremor has many drivers - sleep, stress, and medication timing among them. Treat this as a lead to test, not a conclusion.")
         }
         if let attr = entry.exposure.foodAttribute {
             let events = food
@@ -438,11 +438,11 @@ nonisolated enum CorrelationEngine {
     static func foodMechanism(_ attr: FoodAttribute) -> String {
         switch attr {
         case .caffeine:
-            return "Caffeine's effect on Parkinson's tremor is genuinely mixed. It blocks adenosine A2A receptors — the same target as some PD medications — and higher caffeine intake is linked to lower PD risk, which leans toward benefit; but as a stimulant it can also nudge tremor up in some people, and no clear acute effect is established. Servings near a dose are set aside first, so what's left leans toward caffeine on its own — a lead to test, not proof."
+            return "Caffeine's effect on Parkinson's tremor is genuinely mixed. It blocks adenosine A2A receptors - the same target as some PD medications - and higher caffeine intake is linked to lower PD risk, which leans toward benefit; but as a stimulant it can also nudge tremor up in some people, and no clear acute effect is established. Servings near a dose are set aside first, so what's left leans toward caffeine on its own - a lead to test, not proof."
         case .sugar:
-            return "A sugar load drives a glucose spike and crash, and glucose swings may track with how steady your symptoms feel. The link is indirect with many other drivers — treat this as a lead to test, not a conclusion."
+            return "A sugar load drives a glucose spike and crash, and glucose swings may track with how steady your symptoms feel. The link is indirect with many other drivers - treat this as a lead to test, not a conclusion."
         default:
-            return "This is an association in your own data with many possible drivers — treat it as a lead to test, not a conclusion."
+            return "This is an association in your own data with many possible drivers - treat it as a lead to test, not a conclusion."
         }
     }
 
@@ -1129,7 +1129,7 @@ nonisolated extension CorrelationEngine {
         // the wobble stays invisible (it lives in the gate, not the words). Single string
         // literals (no `+` chains — those blow up Swift's type-checker).
         let summary = "On average, your afternoon dose takes \(aftMin) minutes to kick in, versus \(mornMin) minutes for your morning dose."
-        let finding = "It also peaks weaker, while duration stays normal — so the issue is how quickly the dose gets in, not it wearing off early. Morning: \(morn.n) doses · Afternoon: \(aft.n) doses over \(days) days."
+        let finding = "It also peaks weaker, while duration stays normal - so the issue is how quickly the dose gets in, not it wearing off early. Morning: \(morn.n) doses · Afternoon: \(aft.n) doses over \(days) days."
         let mechanism = "Levodopa is absorbed in the gut and enters the brain through the same transporter dietary protein uses, so a protein lunch can slow and blunt the dose after it. PD also slows stomach emptying, more after meals and later in the day. Both point to one lever you control: when you eat relative to the dose. Likely, not proven."
 
         // Stage omitted — `run()` derives it from the entry's safety class. This entry
@@ -1147,11 +1147,11 @@ nonisolated extension CorrelationEngine {
             evidenceDays: days,
             chart: doseResponseChart(traces: traces),
             clinical: ClinicalDiscussion(
-                whatTheyMightConsider: "A dose that comes on slowly and incompletely — more so later in the day — can stem from absorption, slowed stomach emptying, protein and meal timing around the dose, or the formulation itself. Your neurologist has the levers here that only they can weigh: for example dose timing or amount, a faster- or longer-acting formulation, or guidance on meal timing around the dose. The value is bringing them this pattern, with the data behind it.",
+                whatTheyMightConsider: "A dose that comes on slowly and incompletely - more so later in the day - can stem from absorption, slowed stomach emptying, protein and meal timing around the dose, or the formulation itself. Your neurologist has the levers here that only they can weigh: for example dose timing or amount, a faster- or longer-acting formulation, or guidance on meal timing around the dose. The value is bringing them this pattern, with the data behind it.",
                 bringThisData: [
                     "Afternoon onset ~\(aftMin) min vs ~\(mornMin) min in the morning",
                     "Afternoon dose also peaks weaker (shallower ON)",
-                    "Duration stays normal — the issue is onset, not early wearing-off",
+                    "Duration stays normal - the issue is onset, not early wearing-off",
                     "Morning: \(morn.n) doses, Afternoon: \(aft.n) doses over \(days) days"
                 ]
             )
@@ -2166,7 +2166,7 @@ nonisolated extension CorrelationEngine {
         let mcidLine = "A change of 60 min/day in OFF time is the published threshold for a clinically meaningful difference"
 
         let title = "Your doses leave about \(hrs(dailyUncovered)) hours a day uncovered"
-        let summary = "Each dose holds ~\(hrs(pooled.kmMedian)) h, but your doses don't span your waking day — the uncovered stretches add up."
+        let summary = "Each dose holds ~\(hrs(pooled.kmMedian)) h, but your doses don't span your waking day - the uncovered stretches add up."
         let finding = "Adding up every gap that outlasts the dose before it, counting only the time you were awake: ~\(uncoveredMin) min a day of OFF from spacing alone. From \(pooledResults.count) doses over \(days) days."
         let mechanism = "This is the classic wearing-off pattern: the interval between doses is longer than a single dose lasts."
         let bring = [
@@ -2176,7 +2176,7 @@ nonisolated extension CorrelationEngine {
             "\(pooled.observedCount) of \(pooledResults.count) doses observed wearing off before the next dose",
             mcidLine,
         ]
-        let consider = "When the gap between doses is longer than a dose lasts, predictable OFF windows open up. Neurologists have several levers for this — for example adjusting dose timing or frequency, or a longer-acting formulation. These are decisions only your neurologist can make. The value here is bringing them this pattern, with the data behind it."
+        let consider = "When the gap between doses is longer than a dose lasts, predictable OFF windows open up. Neurologists have several levers for this - for example adjusting dose timing or frequency, or a longer-acting formulation. These are decisions only your neurologist can make. The value here is bringing them this pattern, with the data behind it."
 
         // Stage omitted — `run()` derives it from the entry's safety class
         // (.clinicalReferral → clinical-discussion card). Chart is the POOLED aggregate curve
@@ -2611,11 +2611,11 @@ nonisolated extension CorrelationEngine {
         var insight = Insight(
             title: declining ? "Your mobility shows some change" : "Your mobility hasn't declined",
             summary: declining
-                ? "Over \(years) years, a gait marker is trending down — worth mentioning to your neurologist."
+                ? "Over \(years) years, a gait marker is trending down - worth mentioning to your neurologist."
                 : "Over \(years) years: walking speed \(speedPct), with no measurable decline in how you walk.",
             stage: .verdict,
             finding: "Walking speed \(speedPct) over \(years) years; \(others). Tracked month by month from your iPhone's walking data (\(speed.nMonths) months).",
-            mechanism: "Multi-year mobility metrics are noisy and shift with footwear, walking surface, phone placement, and device — read the direction, not the decimals. Not a clinical assessment.",
+            mechanism: "Multi-year mobility metrics are noisy and shift with footwear, walking surface, phone placement, and device - read the direction, not the decimals. Not a clinical assessment.",
             confidence: confidence,
             evidenceDays: Int(prog.spanYears * 365.25),
             verdict: Verdict(
@@ -2623,8 +2623,8 @@ nonisolated extension CorrelationEngine {
                 controlLabel: "Earliest", controlValue: "baseline",
                 changeLabel: "Now", changeValue: "speed \(speedPct)",
                 summary: declining
-                    ? "Some gait change over \(years) years — bring it up at your next appointment."
-                    : "No measurable gait decline over \(years) years — quietly reassuring for a progressive condition.",
+                    ? "Some gait change over \(years) years - bring it up at your next appointment."
+                    : "No measurable gait decline over \(years) years - quietly reassuring for a progressive condition.",
                 nextStep: declining
                     ? "Mention this trend to your neurologist."
                     : "Nothing to change. The app keeps watching the trend."

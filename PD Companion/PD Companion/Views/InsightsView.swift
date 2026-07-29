@@ -46,7 +46,7 @@ nonisolated struct Insight: Identifiable {
     var mechanism: String        // candidate "why" from PD pharmacology (hedged)
     var confidence: Confidence
     var evidenceDays: Int
-    var updatedNote: String?     // e.g. "Strengthened — now 47 days" (surfaced change)
+    var updatedNote: String?     // e.g. "Strengthened - now 47 days" (surfaced change)
 
     // Plot-ready data from the engine, rendered inside the expanded card.
     var chart: CorrelationEngine.InsightChart?
@@ -142,9 +142,9 @@ extension Insight {
             // live engine.
             Insight(
                 title: "Your afternoon dose works slower",
-                summary: "Takes ~67 min to kick in vs. ~38 min in the morning — but lasts a normal length.",
+                summary: "Takes ~67 min to kick in vs. ~38 min in the morning - but lasts a normal length.",
                 stage: .clinicalDiscussion,
-                finding: "It also peaks weaker, while duration stays normal (~3.2 h) — so the issue is how quickly the dose gets in, not it wearing off early. From 137 scored doses over 40 days.",
+                finding: "It also peaks weaker, while duration stays normal (~3.2 h) - so the issue is how quickly the dose gets in, not it wearing off early. From 137 scored doses over 40 days.",
                 mechanism: "Levodopa is absorbed in the gut and enters the brain through the same transporter dietary protein uses, so a protein lunch can slow and blunt the dose after it. PD also slows stomach emptying, more after meals and later in the day. Likely, not proven.",
                 confidence: .strong,
                 evidenceDays: 40,
@@ -158,11 +158,11 @@ extension Insight {
                     threshold: 1.0, doseMinute: 0
                 )),
                 clinical: ClinicalDiscussion(
-                    whatTheyMightConsider: "A dose that comes on slowly and incompletely — more so later in the day — can stem from absorption, slowed stomach emptying, protein and meal timing around the dose, or the formulation itself. Your neurologist has the levers here that only they can weigh: for example dose timing or amount, a faster- or longer-acting formulation, or guidance on meal timing around the dose. The value is bringing them this pattern, with the data behind it.",
+                    whatTheyMightConsider: "A dose that comes on slowly and incompletely - more so later in the day - can stem from absorption, slowed stomach emptying, protein and meal timing around the dose, or the formulation itself. Your neurologist has the levers here that only they can weigh: for example dose timing or amount, a faster- or longer-acting formulation, or guidance on meal timing around the dose. The value is bringing them this pattern, with the data behind it.",
                     bringThisData: [
                         "Afternoon onset ~67 min vs ~38 min in the morning",
                         "Afternoon dose also peaks weaker (shallower ON)",
-                        "Duration normal (~3.2 h) — the issue is onset, not early wearing-off",
+                        "Duration normal (~3.2 h) - the issue is onset, not early wearing-off",
                         "From 137 scored doses over 40 days"
                     ]
                 )
@@ -183,7 +183,7 @@ extension Insight {
                     threshold: 1.0, baseline: 1.5, bestOnMinute: 122, medianDurationMin: 192
                 )),
                 clinical: ClinicalDiscussion(
-                    whatTheyMightConsider: "When the gap between doses exceeds how long each dose lasts, predictable OFF windows open up. Neurologists have several levers for this — for example adjusting dose timing or frequency, or a longer-acting formulation. These are decisions only your neurologist can make. The value here is bringing them this pattern, with the data behind it.",
+                    whatTheyMightConsider: "When the gap between doses exceeds how long each dose lasts, predictable OFF windows open up. Neurologists have several levers for this - for example adjusting dose timing or frequency, or a longer-acting formulation. These are decisions only your neurologist can make. The value here is bringing them this pattern, with the data behind it.",
                     bringThisData: [
                         "Median ON-duration: 192 min (3.2 h), n=106 doses over 40 days",
                         "Median daytime gap between doses: ~5 h",
@@ -199,14 +199,14 @@ extension Insight {
                 summary: "Over 5.7 years: speed slightly up, gait slightly more stable. No measurable decline.",
                 stage: .verdict,
                 finding: "2020 → 2026: walking speed +5%, double-support −8% (steadier), step length and asymmetry flat.",
-                mechanism: "A plausible contributor is your active lifestyle. Caveat: noisy metrics across several devices (iPhone 11 → Air) — read the direction, not the decimals. Not a clinical assessment.",
+                mechanism: "A plausible contributor is your active lifestyle. Caveat: noisy metrics across several devices (iPhone 11 → Air) - read the direction, not the decimals. Not a clinical assessment.",
                 confidence: .moderate,
                 evidenceDays: 2080,
                 verdict: Verdict(
                     outcome: .worked,
                     controlLabel: "2020", controlValue: "baseline",
                     changeLabel: "2026", changeValue: "+5% speed",
-                    summary: "No measurable gait decline over 5.7 years — quietly reassuring for a degenerative condition.",
+                    summary: "No measurable gait decline over 5.7 years - quietly reassuring for a degenerative condition.",
                     nextStep: "Nothing to change. The app keeps watching the trend."
                 )
             ),
@@ -380,10 +380,10 @@ struct InsightsView: View {
     /// Plain-text fallback if PDF rendering fails. Lists each finding + an n-of-1
     /// provenance line so the share still carries the substance.
     private func reportFallbackText() -> String {
-        var lines = ["Kāmpa — symptom summary for clinical discussion", ""]
+        var lines = ["Kāmpa - symptom summary for clinical discussion", ""]
         lines.append(contentsOf: insights.map { "• \($0.title): \($0.summary)" })
         lines.append("")
-        lines.append("Generated from passive Apple Watch tremor monitoring (Movement Disorder API). One person's own data (n-of-1), shared for discussion — not a diagnosis or treatment recommendation.")
+        lines.append("Generated from passive Apple Watch tremor monitoring (Movement Disorder API). One person's own data (n-of-1), shared for discussion - not a diagnosis or treatment recommendation.")
         return lines.joined(separator: "\n")
     }
 
@@ -475,7 +475,7 @@ private struct InsightsList: View {
 
     // Quiet fine-print at the foot of the list rather than crowding the top.
     private var disclaimerFooter: some View {
-        Text("Your data, not medical advice — never change a dose without your neurologist.")
+        Text("Your data, not medical advice - never change a dose without your neurologist.")
             .font(.caption2)
             .foregroundStyle(.tertiary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -588,7 +588,7 @@ private struct InsightCard: View {
                 metaRow("checklist", "Success rule (set in advance)", exp.decisionRule)
                 VStack(alignment: .leading, spacing: 4) {
                     ProgressView(value: exp.progress).tint(Insight.brandBlue)
-                    Text("Day \(exp.daysElapsed) of \(exp.targetDays) — just keep logging as usual.")
+                    Text("Day \(exp.daysElapsed) of \(exp.targetDays) - just keep logging as usual.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 safetyBanner(exp.safetyNote)
@@ -641,7 +641,7 @@ private struct InsightCard: View {
             metric: "Minutes from dose until tremor drops below your ON threshold",
             decisionRule: "Counts as working if before-lunch is ≥15 min faster, averaged over the window.",
             targetDays: 14, daysElapsed: 0,
-            safetyNote: "Changes only *when you eat* around your existing 3 PM dose — not the dose itself."
+            safetyNote: "Changes only *when you eat* around your existing 3 PM dose - not the dose itself."
         )
     }
 
@@ -834,7 +834,7 @@ private struct DoseResponseChartView: View {
             .frame(height: 180)
             .accessibilityLabel("Tremor over time after each dose, comparing times of day")
 
-            Text("Lower is better — less tremor. Earlier, deeper dip = the dose working faster.")
+            Text("Lower is better - less tremor. Earlier, deeper dip = the dose working faster.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
@@ -1273,7 +1273,7 @@ private struct InsightsEmptyState: View {
             VStack(spacing: 8) {
                 Text("Gathering your data")
                     .font(.title2.weight(.semibold))
-                Text("Insights appear here on their own once there's enough data to find a pattern that's real, not noise. Nothing for you to do — keep wearing your Watch and logging as usual.")
+                Text("Insights appear here on their own once there's enough data to find a pattern that's real, not noise. Nothing for you to do - keep wearing your Watch and logging as usual.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
