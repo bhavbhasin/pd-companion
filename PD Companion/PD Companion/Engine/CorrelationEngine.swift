@@ -1794,70 +1794,74 @@ nonisolated extension CorrelationEngine {
         }
 
         // ── Statement 1: what was logged. Always present; it is the card's reason to exist.
+        //
+        // ⚠️ COPY RULES for everything below, learned the hard way on device:
+        //   · Short. The first draft ran seven paragraphs and Bhav called it a mouthful.
+        //   · No em dashes (his standing style).
+        //   · The counts must RECONCILE against statement 1: observed + still-working +
+        //     couldn't-measure = doses logged. Any number a reader can difference has to add up,
+        //     which is why the fall statement carries no dose count of its own.
         var lines: [String] = []
-        lines.append("You've logged \(own.count) \(own.count == 1 ? "dose" : "doses") of \(name), "
-                     + "on \(dosedDays) separate \(dosedDays == 1 ? "day" : "days") over \(spanDays) days.")
+        lines.append("\(own.count) \(own.count == 1 ? "dose" : "doses") of \(name) "
+                     + "on \(dosedDays) different \(dosedDays == 1 ? "day" : "days").")
 
         // ── Statement 2: how long it holds.
         let headline: String
         if km.isFinite {
-            let pm = precision.isFinite ? " (give or take \(Int(precision.rounded())) min)" : ""
+            let pm = precision.isFinite ? ", give or take \(Int(precision.rounded()))" : ""
             headline = "\(name): holds \(hm(km))"
-            lines.append("It holds \(hm(km))\(pm). To measure that we watch for your tremor to come "
-                         + "back after a dose — that happened \(endings.count) "
-                         + "\(endings.count == 1 ? "time" : "times").")
+            lines.append("Holds \(hm(km))\(pm). Measured from \(endings.count) "
+                         + "\(endings.count == 1 ? "dose" : "doses") where we saw your tremor return.")
         } else if !censoredRows.isEmpty {
             headline = "\(name): still working every time we looked"
-            lines.append("We haven't yet seen your tremor come back after a dose of \(name) while "
-                         + "you were awake, so we can't say how long it lasts.")
+            lines.append("We haven't yet seen your tremor return after a dose while you were "
+                         + "awake, so we can't say how long it lasts.")
         } else {
             headline = "\(name): \(own.count) \(own.count == 1 ? "dose" : "doses") logged"
-            lines.append("We can't yet say how long a dose of \(name) lasts.")
+            lines.append("We can't yet say how long a dose lasts.")
         }
 
-        // ── Statement 3: the at-least floor. A dose still working when the next arrived is a
-        // measurement, not a blank — and it is the ONLY thing measurable about a long-acting
-        // substance on a tight schedule, i.e. a drug that is working well.
-        if !nextDoseFloors.isEmpty {
-            let longest = nextDoseFloors.map(\.durationMin).max() ?? .nan
-            let n = nextDoseFloors.count
-            lines.append("\(n) \(n == 1 ? "dose was" : "doses were") still working when your next "
-                         + "dose arrived — up to \(hm(longest)) later. For \(n == 1 ? "that one" : "those") "
+        // ── Statement 3: the at-least floor, both reasons in one sentence. A dose still working
+        // when watching stopped is a measurement, and for a long-acting substance on a tight
+        // schedule it is the ONLY measurement, so it must never be dropped for brevity.
+        if !censoredRows.isEmpty {
+            var why: [String] = []
+            if let m = nextDoseFloors.map(\.durationMin).max() {
+                why.append("\(nextDoseFloors.count) at your next dose (up to \(hm(m)))")
+            }
+            if let m = lostSightFloors.map(\.durationMin).max() {
+                why.append("\(lostSightFloors.count) when we lost sight of you, usually asleep "
+                           + "(up to \(hm(m)))")
+            }
+            let n = censoredRows.count
+            lines.append("\(n) \(n == 1 ? "was" : "were") still working when watching stopped: "
+                         + why.joined(separator: ", ") + ". For \(n == 1 ? "that one" : "those") "
                          + "we can only say \"at least that long\".")
-        }
-        if !lostSightFloors.isEmpty {
-            let longest = lostSightFloors.map(\.durationMin).max() ?? .nan
-            let n = lostSightFloors.count
-            lines.append("\(n) \(n == 1 ? "dose was" : "doses were") still working the last time we "
-                         + "could see clearly — up to \(hm(longest)) in — usually because you'd "
-                         + "gone to sleep by then. Again, \"at least that long\".")
         }
 
         // ── Statement 4: what could not be measured, and why. Names the INSTRUMENT, never the
         // drug: the substance may well be doing something tremor is not equipped to see.
         if unreadable > 0 {
-            lines.append("\(unreadable) \(unreadable == 1 ? "dose" : "doses") couldn't be measured "
-                         + "this way: your tremor was already settled when you took "
-                         + "\(unreadable == 1 ? "it" : "them"), so there was nothing for us to watch "
-                         + "change. We read this substance through tremor — that doesn't mean "
-                         + "\(unreadable == 1 ? "it wasn't" : "they weren't") doing anything, it "
-                         + "means this isn't the way to find out.")
+            lines.append("\(unreadable) couldn't be measured. Your tremor was already settled "
+                         + "when you took \(unreadable == 1 ? "it" : "them"), so there was nothing "
+                         + "to watch change. We read this through tremor, so this isn't the way "
+                         + "to find out.")
         }
 
         // ── Statements 5 + 6: how far tremor falls, and how fast. Two doses is the floor for
-        // BOTH — one gives a number with no spread, so no uncertainty can be stated about it.
+        // both. Merged into one sentence, and carrying NO dose count: stating one invited a
+        // subtraction against statement 4 that did not reconcile (the fall and the duration come
+        // from different primitives with different windows). The exact n is in the bullets.
         if falls.count >= 2 {
             let base = median(falls.map(\.baseline)), trough = median(falls.map(\.trough))
-            lines.append(String(format: "After a dose your tremor typically goes from %.2f to %.2f",
-                                base, trough)
-                         + String(format: " — where %.1f", onThreshold)
-                         + " is the level we treat as OFF.")
+            // `hm` already says "about", so this reads ", starting about 40 min in".
+            let onsetPhrase = onsets.count >= 2 ? ", starting \(hm(median(onsets))) in" : ""
+            lines.append(String(format: "Tremor typically falls from %.2f to %.2f", base, trough)
+                         + onsetPhrase
+                         + String(format: ". We treat %.1f as OFF.", onThreshold))
         } else if !readableTraces.isEmpty || unreadable > 0 {
-            lines.append("We can't yet say how far it brings your tremor down — that needs at least "
-                         + "two doses taken while your tremor was up.")
-        }
-        if onsets.count >= 2 {
-            lines.append("It starts working after \(hm(median(onsets))).")
+            lines.append("We can't yet say how far it brings your tremor down. That needs at "
+                         + "least two doses taken while your tremor was up.")
         }
 
         let summary: String
@@ -1881,9 +1885,9 @@ nonisolated extension CorrelationEngine {
             title: headline,
             summary: summary,
             finding: lines.joined(separator: "\n\n"),
-            mechanism: "What a substance does for one person is not what it does on average across "
-                     + "patients, which is why this card only ever reports your own record. It "
-                     + "describes what was measured; it is not advice about your regimen.",
+            mechanism: "What a substance does for one person is not what it does on average "
+                     + "across patients, so this card reports only your own record. It describes "
+                     + "what was measured. It is not advice about your regimen.",
             confidence: confidence,
             evidenceDays: dosedDays,
             // isolatedOnly: false — the curve must rest on the same doses the duration above
@@ -1892,10 +1896,10 @@ nonisolated extension CorrelationEngine {
                                                  isolatedOnly: false,
                                                  clipToObservation: true) : nil,
             clinical: ClinicalDiscussion(
-                whatTheyMightConsider: "Your neurologist can weigh what this substance is doing for "
-                                     + "you against what they expect from it. Bring the numbers, not "
-                                     + "a conclusion — and never change a dose on the strength of a "
-                                     + "card.",
+                whatTheyMightConsider: "Your neurologist can weigh what this substance is doing "
+                                     + "for you against what they expect from it. Bring the "
+                                     + "numbers, not a conclusion. Never change a dose on the "
+                                     + "strength of a card.",
                 bringThisData: [
                     "\(name): \(own.count) doses on \(dosedDays) days over \(spanDays) days",
                     km.isFinite

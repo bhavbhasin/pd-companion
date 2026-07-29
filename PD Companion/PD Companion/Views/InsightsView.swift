@@ -1113,8 +1113,8 @@ private struct WearingOffChartView: View {
     private var captionText: String {
         let count = doseCountCaption
         let body = chart.marksDeepestOn
-            ? "One typical dose, averaged. It pulls tremor into the controlled zone, then wears off — the marked point is when the average dose has faded."
-            : "One typical dose, averaged. The line fades where fewer doses were still being watched — doses that wore off early drop out of the average, so a pale stretch rests on only a few."
+            ? "One typical dose, averaged. It pulls tremor into the controlled zone, then wears off. The marked point is when the average dose has faded."
+            : "One typical dose, averaged. The line fades where fewer doses were still being watched, because doses that wore off early drop out of the average."
         return count.isEmpty ? body : "\(count). \(body)"
     }
 
