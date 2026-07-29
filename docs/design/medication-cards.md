@@ -353,7 +353,16 @@ difference. Exact counts live in the clinician bullets, where arithmetic is the 
   against a 48-min duration, reading as though the dose wore off before doing its best work.
   Sinemet's rests on 137 of 175 and is stable, so the pooled card keeps it. The curve is still
   drawn; only the point-claim is withheld.
-- The chart now states how many doses it averages (the count was carried and never shown).
+- *The line now fades where the dose count thins,* and the caption states the RANGE behind each
+  point ("1–9 doses per point"), not one figure. The first version said "avg of 9 doses", which
+  implied all 9 stood behind every point — on Mucuna the truth ran 9 down to 1, making that label
+  the most confidently wrong thing on the chart. Fading needs no cutoff: solid where every dose
+  contributes, ghosted where one does. Drawn as per-pair segments because Swift Charts styles a
+  series uniformly — a per-point style on one series is silently ignored.
+- ⬜ **Logged, not solved (BACKLOG):** a mean-tremor curve is the wrong chart for a heavily-censored
+  substance at all. The correct one is the survival curve — *what fraction of doses were still
+  working at each minute* — which handles doses dropping out instead of averaging across them, and
+  is the same Kaplan–Meier the duration already comes from. New chart type; real work, not a tweak.
 
 ⬜ **Still open:** ordering/clutter rule (open question 4) · precision drawing (open question 5 — the
 thinning tail above is a concrete instance: fading the line where the dose count drops is the

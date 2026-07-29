@@ -1003,15 +1003,26 @@ private struct WearingOffChartView: View {
                         }
                 }
 
-                // The pooled response curve.
-                ForEach(plottable, id: \.minute) { pt in
-                    LineMark(
-                        x: .value("Minutes since dose", pt.minute),
-                        y: .value("Tremor", pt.value)
-                    )
-                    .foregroundStyle(Insight.brandBlue)
-                    .interpolationMethod(.catmullRom)
-                    .lineStyle(StrokeStyle(lineWidth: 2))
+                // The response curve, drawn segment by segment so its WEIGHT can follow how
+                // many doses stand behind each stretch.
+                //
+                // A single averaged line hides that its membership changes minute to minute:
+                // every dose that wears off drops out, so the tail is an average over the few
+                // doses that lasted longest. On a thin substance that produced a line swinging
+                // between 0.7 and 2.2 — not tremor moving, but doses entering and leaving the
+                // average. Fading by contributing count says that outright, and needs no
+                // cutoff: solid where every dose contributes, ghosted where one does.
+                ForEach(segments, id: \.id) { seg in
+                    ForEach(seg.points, id: \.minute) { pt in
+                        LineMark(
+                            x: .value("Minutes since dose", pt.minute),
+                            y: .value("Tremor", pt.value),
+                            series: .value("segment", seg.id)
+                        )
+                        .foregroundStyle(Insight.brandBlue.opacity(seg.opacity))
+                        .interpolationMethod(.catmullRom)
+                        .lineStyle(StrokeStyle(lineWidth: 2))
+                    }
                 }
 
                 // Deepest ON — the best the dose achieves.
@@ -1033,8 +1044,11 @@ private struct WearingOffChartView: View {
                 // How many doses this curve is an average of. Without it a line drawn from one
                 // dose is indistinguishable from one drawn from 130 — and the reader has no way
                 // to discount a noisy shape. Threshold-free: state the n, let them judge.
-                Text("avg of \(chart.curve.doseCount) "
-                     + (chart.curve.doseCount == 1 ? "dose" : "doses"))
+                // How many doses stand behind each point. Stating a single "avg of N doses"
+                // implied all N were behind every point; on a thin substance the true figure
+                // ranged from N down to 1, which made the label the most confidently wrong
+                // thing on the chart.
+                Text(doseCountCaption)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 2)
@@ -1054,7 +1068,9 @@ private struct WearingOffChartView: View {
             .frame(height: 180)
             .accessibilityLabel("One dose over time: tremor falls after the dose, then rises as it wears off")
 
-            Text("One typical dose, averaged. It pulls tremor into the controlled zone, then wears off — the marked point is when the average dose has faded.")
+            Text(chart.marksDeepestOn
+                 ? "One typical dose, averaged. It pulls tremor into the controlled zone, then wears off — the marked point is when the average dose has faded."
+                 : "One typical dose, averaged. The line fades where fewer doses were still being watched — doses that wore off early drop out of the average, so a pale stretch rests on only a few.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
@@ -1062,6 +1078,37 @@ private struct WearingOffChartView: View {
 
     private var plottable: [CorrelationEngine.CurvePoint] {
         chart.curve.points.filter { !$0.value.isNaN && $0.minute >= -30 && $0.minute <= 300 }
+    }
+
+    /// One drawn stretch of the curve plus the weight it has earned.
+    private struct CurveSegment {
+        let id: Int
+        let points: [CorrelationEngine.CurvePoint]
+        let opacity: Double
+    }
+
+    /// Consecutive pairs, each carrying the opacity its thinner end justifies. Pairs (rather
+    /// than one line) because Swift Charts styles a series uniformly — a per-point style on a
+    /// single series would be ignored, and the fade would silently do nothing.
+    private var segments: [CurveSegment] {
+        let pts = plottable
+        guard pts.count > 1 else { return [] }
+        let peak = max(1, pts.map(\.n).max() ?? 1)
+        return (0..<(pts.count - 1)).map { i in
+            let pair = [pts[i], pts[i + 1]]
+            // The weaker end governs: a segment is only as trustworthy as its thinner side.
+            let share = Double(min(pair[0].n, pair[1].n)) / Double(peak)
+            // Floored so a one-dose stretch stays faintly visible rather than vanishing —
+            // the reader should see that something was measured there, and how little.
+            return CurveSegment(id: i, points: pair, opacity: 0.12 + 0.88 * share)
+        }
+    }
+
+    private var doseCountCaption: String {
+        let ns = plottable.map(\.n).filter { $0 > 0 }
+        guard let lo = ns.min(), let hi = ns.max() else { return "" }
+        if lo == hi { return "avg of \(hi) \(hi == 1 ? "dose" : "doses")" }
+        return "\(lo)–\(hi) doses per point"
     }
 
     // Upper bound includes the pre-dose baseline (the curve's high point) plus the
