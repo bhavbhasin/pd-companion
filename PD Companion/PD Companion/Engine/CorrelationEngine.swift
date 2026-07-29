@@ -1174,6 +1174,55 @@ nonisolated extension CorrelationEngine {
         return mergeSleep(all)
     }
 
+    /// Sleep for CENSORING an observation window: recorded sleep, plus a synthetic night on
+    /// any day with none — whose bedtime is **never earlier than a dose logged that evening**,
+    /// because taking a pill is evidence of being awake.
+    ///
+    /// ⚠️ NOT WIRED UP YET (Jul 28 2026). Built and tested standalone ahead of the `maxWindow`
+    /// change, deliberately: the previous attempt synthesised inside `survivalDuration` and
+    /// silently re-censored every caller passing `sleep: []` — which is a CONTRACT meaning
+    /// "do not censor" (`dump_curve_anchors.py`, the parity fixtures), not "no data". 16 tests
+    /// failed. This must be called only by code that knows it holds a real user's record.
+    ///
+    /// Why it exists. Censoring used to refuse any fallback, because claiming "asleep at 22:00"
+    /// for a patient who demonstrably dosed at 22:00 discards a real observation — measured, it
+    /// dropped 35 of 106 doses off the parity curve. That was right about a NAIVE fallback and
+    /// wrong only because nobody had made the synthetic night respect the dose log. Without any
+    /// fallback, an uncapped window lets overnight zeros (tremor abates in sleep whatever the
+    /// drug is doing) read as the drug still working: measured, a 3 h dose reported as 9 h.
+    /// With this rule: nothing discarded, no inflation, daytime doses bit-identical.
+    ///
+    /// ⚠️ A day with recorded sleep NEVER gets a synthetic night, so anyone wearing the Watch
+    /// overnight never reaches this path — which matters, because 22:00 is deliberately
+    /// conservative and plain wrong for a night owl (see `fallbackBedHour`).
+    /// ⚠️ Pass EVERY dose, not one formulation's: a Sinemet dose at 22:30 is equally good
+    /// evidence of being awake while Mucuna is the substance being fitted.
+    static func censoringSleep(recorded: [SleepInterval], doses: [Date],
+                               covering range: ClosedRange<Date>) -> [SleepInterval] {
+        let real = recorded.filter { $0.end > $0.start }
+        // Attribute a night to the day it ENDED — the day the patient woke up. Same rule as
+        // `effectiveSleep`, so the two agree about which days are already covered.
+        let wokeOn = Set(real.map { calendar.startOfDay(for: $0.end) })
+        let sortedDoses = doses.sorted()
+        var all = real
+        var day = calendar.startOfDay(for: range.lowerBound)
+        let lastDay = calendar.startOfDay(for: range.upperBound)
+        while day <= lastDay {
+            defer { day = calendar.date(byAdding: .day, value: 1, to: day) ?? .distantFuture }
+            guard !wokeOn.contains(day),
+                  var bed = calendar.date(byAdding: .hour, value: fallbackBedHour - 24, to: day),
+                  let wake = calendar.date(byAdding: .hour, value: fallbackWakeHour, to: day)
+            else { continue }
+            // Awake-evidence: push bedtime past the last dose taken inside the guessed night,
+            // plus one bin so the dose still has something observable rather than a zero window.
+            if let lastDoseInNight = sortedDoses.last(where: { $0 >= bed && $0 < wake }) {
+                bed = max(bed, lastDoseInNight.addingTimeInterval(binMin * 60))
+            }
+            if wake > bed { all.append(SleepInterval(start: bed, end: wake)) }
+        }
+        return mergeSleep(all)
+    }
+
     /// Minutes of `[a, b)` spent asleep. `sleep` must be merged + sorted.
     static func asleepMinutes(from a: Date, to b: Date, sleep: [SleepInterval]) -> Double {
         guard b > a, !sleep.isEmpty else { return 0 }

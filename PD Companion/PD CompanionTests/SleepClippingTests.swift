@@ -284,6 +284,60 @@ struct SleepClippingTests {
                 "a day with recorded sleep must never receive a synthetic night")
     }
 
+    // MARK: - censoringSleep (built standalone ahead of the maxWindow change)
+    //
+    // Same synthesis as `effectiveSleep`, plus one rule: a guessed bedtime may never fall
+    // before a dose logged that evening, because taking a pill proves the patient was awake.
+    // That single rule is what lets censoring use a fallback at all — the naive version
+    // discarded 35 of 106 real doses, which is why censoring previously refused any fallback.
+
+    /// It agrees with `effectiveSleep` when no dose contradicts the guess: recorded nights
+    /// win, missing nights get 22:00–06:00, covered days get nothing.
+    @Test func censoringSleepSynthesisesOnlyWhereSleepIsMissing() {
+        pinCalendar()
+        let range = Self.at(1, 0)...Self.at(3, 23)
+        let real = [SleepInterval(start: Self.at(1, 23), end: Self.at(2, 6, 30))]
+        let s = CorrelationEngine.censoringSleep(recorded: real, doses: [], covering: range)
+
+        #expect(s.contains { $0.end == Self.at(2, 6, 30) }, "recorded sleep must win")
+        #expect(s.contains { $0.start == Self.at(2, 22) && $0.end == Self.at(3, 6) },
+                "a day with no sleep must get the fallback night")
+        #expect(!s.contains { $0.start == Self.at(1, 22) && $0.end == Self.at(2, 6) },
+                "a day with recorded sleep must never receive a synthetic night")
+    }
+
+    /// ⭐ The rule that makes a censoring fallback safe: a 22:30 dose proves he was awake at
+    /// 22:30, so the guessed night starts after it — never at 22:00, which would censor the
+    /// dose to a zero-length window and discard it.
+    @Test func censoringSleepNeverGuessesBedtimeBeforeAnEveningDose() {
+        pinCalendar()
+        let range = Self.at(1, 0)...Self.at(2, 23)
+        let doses = [Self.at(1, 22, 30)]        // dosed after the guessed bedtime
+        let s = CorrelationEngine.censoringSleep(recorded: [], doses: doses, covering: range)
+
+        let night = try? #require(s.first { $0.start >= Self.at(1, 20) && $0.start < Self.at(2, 6) })
+        let start = try? #require(night?.start)
+        #expect(start.map { $0 > Self.at(1, 22, 30) } ?? false,
+                "bedtime must be pushed past the 22:30 dose, got \(String(describing: start))")
+        // And it must still end at the normal wake hour — only the start moves.
+        #expect(night?.end == Self.at(2, 6))
+    }
+
+    /// A recorded night is never overridden by the dose rule — the rule only ever applies to
+    /// a night we invented. A night owl with real sleep data keeps their real 02:00 bedtime.
+    @Test func censoringSleepLeavesRecordedNightsAloneEvenWithLateDoses() {
+        pinCalendar()
+        let range = Self.at(1, 0)...Self.at(2, 23)
+        let real = [SleepInterval(start: Self.at(2, 2), end: Self.at(2, 9))]   // asleep 02:00
+        let doses = [Self.at(1, 23, 45)]                                        // dosed 23:45
+        let s = CorrelationEngine.censoringSleep(recorded: real, doses: doses, covering: range)
+
+        #expect(s.contains { $0.start == Self.at(2, 2) && $0.end == Self.at(2, 9) },
+                "a recorded 02:00 bedtime must survive untouched")
+        #expect(!s.contains { $0.start == Self.at(1, 22) },
+                "the night was recorded, so no synthetic night may be added for it")
+    }
+
     /// An evening dose whose coverage runs into sleep contributes ~nothing — no hour
     /// filter needed. The old `hour >= 6 && < 20` test was standing in for exactly this.
     @Test func eveningDoseCoveredBySleepContributesNothing() throws {
