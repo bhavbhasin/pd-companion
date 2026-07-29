@@ -315,9 +315,32 @@ stamped exactly like an effective one** while still contributing no coverage to 
 analyses. `.levodopaDose` survives untouched — the pooled coverage question is not replaced by
 per-substance cards. 95 tests green, parity + both Python oracles unchanged.
 
-⬜ Steps 4-5 (renderer, chart) remain. ⚠️ `run()` currently receives `levodopaDoses` (the
-estimable-only subset); the medication renderer needs the RAW dose log, or an inert substance's
-card will have no doses to describe. Thread that through when the renderer lands.
+**Steps 4-5 ✅ BUILT Jul 29 2026 (`MEDCARD`)** — `Renderer.medication` + `medicationInsight`, and
+the chart came free (`wearingOffChart` over the substance's own readable rows). `run()` now takes
+`allDoses` (the RAW log) alongside the levodopa-candidate set, so an inert substance's card has
+doses to describe. Real record: **Mucuna 48 min ±38 from 6 observed returns** — the prediction
+above, verified rather than assumed — and **Sinemet 183 min ±3 from 118**. `MedicationCardTests`
+pins the inert-substance case, the cross-substance window, the observability exclusion, the
+long-acting floor-only case, the 3-dose case, and that no card ever names another substance.
+102 tests green, parity + both Python oracles unchanged.
+
+⚠️ **Two defects the build surfaced, both fixed:**
+- *Unmeasurable doses were counted against the wrong denominator.* `survivalDuration` silently drops
+  a dose with no usable window, so counting against its output left those doses unexplained — the
+  "24 logged, 22 measured" gap on the real Mucuna record. Now counted against doses LOGGED, which
+  is what statement 1 tells the reader.
+- *Only next-dose floors were reported.* A long-acting substance is censored by SLEEP night after
+  night; those doses sat inside the duration figure and were mentioned nowhere. Every censored
+  readable row is now a floor, split by reason (next dose / lost sight of you).
+
+⚠️ **Copy rule learned here:** the fall statement no longer prints its own dose count. Statement 4
+said "16 couldn't be measured" out of 24 logged, and statement 5 said "measured on 6" — the reader
+subtracts, gets 8, and finds 2 unaccounted for (the two primitives have different window rules).
+Same lesson the wearing-off card already carries: print ONE number, never two that invite a
+difference. Exact counts live in the clinician bullets, where arithmetic is the point.
+
+⬜ **Still open:** ordering/clutter rule (open question 4) · precision drawing (open question 5) ·
+the Settings exclusion toggle · re-measure the ~6 ms/substance now that cards exist.
 
 1. **Vocabulary (small):** `Variable.medication(String)` + `.anyMedication`, plus the bridge
    accessor mirroring `workoutRawValue`. Easier than workouts — the substance key is engine-side

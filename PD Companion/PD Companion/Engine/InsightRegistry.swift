@@ -151,6 +151,15 @@ nonisolated enum Renderer: Hashable {
     case wearingOff        // pooled survival curve (the "discuss with neurologist" card)
     case gaitComposite     // bespoke: 4 mobility markers → 1 reassurance card
     case windowedEffect    // generic event→signal change card (exercise/diet cluster)
+    /// ONE substance: what this person's own data can support about it. Deliberately NOT a
+    /// variant of `.wearingOff` — that card answers a pooled scheduling question ("how much of
+    /// my day does dose spacing leave uncovered"), this one answers "what does this substance
+    /// do for me". Folding them together would mean one renderer branching internally on which
+    /// question it is answering, the exact pattern the `20` work exists to remove.
+    /// ⛔ Each instance speaks only about its own substance: no cross-substance comparison or
+    /// ranking, which is unestablished (log-rank p=0.52) and a dosing judgment the safety line
+    /// forbids. That is a property of THIS renderer, not of the copy it is handed.
+    case medication
 }
 
 // MARK: Provenance + safety + lifecycle
@@ -285,18 +294,14 @@ nonisolated enum InsightRegistry {
         // effects on display upward exactly where data is thinnest — the newest substance, with
         // the least data, would get the most overstated number. docs/design/medication-cards.md.
         //
-        // renderer: nil = registered but DORMANT, as designed. Steps 1-3 (vocabulary, stamping,
-        // this primitive) are config + plumbing only; nothing reaches the screen until the
-        // bespoke renderer lands. It must NOT reuse `.wearingOff`: that card answers a pooled
-        // scheduling question ("how much of my day is uncovered"), this one answers "what does
-        // this substance do for me", and folding both into one renderer means branching
-        // internally on which question is being asked.
         RegistryEntry(
             id: "medication-tremor", category: .medication,
             exposure: .anyMedication, outcome: .tremor,
-            // onThreshold matches the engine's offThreshold (tremor ≥ this = OFF).
+            // onThreshold matches the engine's offThreshold (tremor ≥ this = OFF). It does
+            // double duty here: it is also the observability line — a dose taken while tremor
+            // is already below it has no fall to measure and no return to watch for.
             primitive: .pulseModel(onThreshold: 1.0),
-            renderer: nil,
+            renderer: .medication,
             rationale: "Medication cluster template: for each substance the person actually logs, report what their own data can support about it — how much tremor drops, how fast, how long it holds, including 'nothing detectable' and 'not enough yet'. No drug list decides which substances qualify.",
             source: .curated, safety: .clinicalReferral,
             instantiation: .perObservedType),

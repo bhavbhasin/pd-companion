@@ -5,9 +5,11 @@
 //  Group 4, build steps 1-3: the registry can now ASK a per-substance question.
 //  docs/design/medication-cards.md.
 //
-//  Nothing here renders — the template ships `renderer: nil` on purpose, so these entries are
-//  registered and dormant until the bespoke card lands. What is tested is the grammar and the
-//  stamping, and above all the property the whole feature rests on:
+//  This file covers the GRAMMAR and the STAMPING — that the registry can phrase a per-substance
+//  question at all, and which substances it phrases one for. The card's own content is
+//  `MedicationCardTests`. (Steps 1-3 shipped with `renderer: nil` and these tests asserted
+//  dormancy; step 4 wired the renderer, so the dormancy test became a dispatch test.)
+//  Above all, the property the whole feature rests on:
 //
 //    ⭐ A substance earns a card by being TAKEN, never by having worked.
 //
@@ -79,7 +81,7 @@ struct MedicationCardVocabularyTests {
         }
         #expect(onThreshold == CorrelationEngine.offThreshold,
                 "the template's OFF threshold must track the engine's, not drift from it")
-        #expect(t.renderer == nil, "steps 1-3 are plumbing: the card is step 4 and stays dormant")
+        #expect(t.renderer == .medication, "step 4 wired the bespoke renderer")
     }
 
     // MARK: - 2. Stamping
@@ -191,10 +193,10 @@ struct MedicationCardVocabularyTests {
 
     // MARK: - Dormancy
 
-    /// The whole point of `renderer: nil`: the questions are registered, the engine iterates
-    /// them, and the user sees nothing new until step 4. A card appearing now would mean the
-    /// template picked up a renderer it should not have.
-    @Test func stampedEntriesProduceNoCardsYet() {
+    /// The dispatch seam, end to end: a stamped entry must reach the `.medication` renderer
+    /// and come back as a card. This test previously asserted the OPPOSITE — that the entries
+    /// stayed dormant — which was correct for steps 1-3 and is exactly what step 4 ends.
+    @Test func stampedEntriesNowRenderThroughTheDispatch() throws {
         pinCalendar()
         var doses: [Dose] = []
         var samples: [TremorPoint] = []
@@ -209,23 +211,22 @@ struct MedicationCardVocabularyTests {
                 t = t.addingTimeInterval(5 * 60)
             }
         }
-        // Dispatch a stamped entry directly — `Insight.id` is a fresh UUID, so the only precise
-        // way to ask "did this entry render" is to run the entry itself.
         let stamped = InsightRegistry.instantiate(
             Self.template, observedSubstances: CorrelationEngine.observedSubstanceKeys(doses: doses))
         #expect(stamped.count == 2, "fixture should stamp sinemet + mucuna, got \(stamped.count)")
         for entry in stamped {
-            let card = CorrelationEngine.run(entry, samples: samples, doses: doses,
-                                             gait: [:], workouts: [], food: [], sleep: [])
-            #expect(card == nil,
-                    "\(entry.id) must stay dormant until its renderer is built, got a card")
+            let card = try #require(
+                CorrelationEngine.run(entry, samples: samples, doses: doses,
+                                      gait: [:], workouts: [], food: [], sleep: [], allDoses: doses),
+                "\(entry.id) must now render")
+            // .clinicalReferral ⇒ no experiment offered, ever.
+            #expect(card.stage == .clinicalDiscussion)
         }
 
-        // And the whole run is unchanged: adding the template must not add, drop, or alter a
-        // single card while it has no renderer.
-        let withMucuna = CorrelationEngine.generateInsights(
+        // And the substance that did nothing still surfaces in a full run.
+        let all = CorrelationEngine.generateInsights(
             samples: samples, doses: doses, gait: [:], workouts: [], food: [], sleep: [])
-        #expect(!withMucuna.isEmpty, "fixture should still produce the existing dose cards")
-        #expect(!withMucuna.contains { $0.title.lowercased().contains("vitamin") })
+        #expect(all.contains { $0.title.hasPrefix("Mucuna") },
+                "the inert substance must still get a card; titles: \(all.map(\.title))")
     }
 }

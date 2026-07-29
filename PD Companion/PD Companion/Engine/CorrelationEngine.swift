@@ -300,7 +300,8 @@ nonisolated enum CorrelationEngine {
             }
             .compactMap { run($0, samples: samples, doses: levodopaDoses,
                               gait: gait, workouts: workouts, food: food,
-                              onWindow: onWindow, sleep: effSleep, cache: survivalCache) }
+                              onWindow: onWindow, sleep: effSleep, cache: survivalCache,
+                              allDoses: doses) }
     }
 
     /// Dispatch one registry entry to the renderer that draws it.
@@ -312,12 +313,19 @@ nonisolated enum CorrelationEngine {
     /// statistical parameters from `entry.primitive`, so a new question over a built
     /// renderer + primitive needs no code here — only its registry line. A nil
     /// renderer (or a primitive that doesn't match) = registered but dormant.
+    /// - Parameters:
+    ///   - doses: the LEVODOPA-CANDIDATE set — confirmed non-pulsatile substances already
+    ///     filtered out, so every pooled renderer below is safe.
+    ///   - allDoses: the RAW dose log, every substance. Only `.medication` reads it, and it
+    ///     must: a medication card exists because the person takes the substance, so filtering
+    ///     to the estimable set first would leave an inert substance's card with no doses to
+    ///     describe — deleting exactly the case the feature exists for. Defaults to `doses` so
+    ///     existing callers keep their behaviour.
     static func run(_ entry: RegistryEntry, samples: [TremorPoint], doses: [Dose],
                     gait: [GaitMetric: [GaitSample]], workouts: [WorkoutEvent],
                     food: [FoodIntakeEvent], onWindow: Double = doseOnWindowFallback,
-                    sleep: [SleepInterval] = [], cache: SurvivalCache? = nil) -> Insight? {
-        // `doses` here is the LEVODOPA-CANDIDATE set (see generateInsights): confirmed
-        // non-pulsatile substances are already filtered out, so every renderer below is safe.
+                    sleep: [SleepInterval] = [], cache: SurvivalCache? = nil,
+                    allDoses: [Dose]? = nil) -> Insight? {
         switch entry.renderer {
         case .doseResponse:
             guard case .doseResponseByTimeOfDay(let preMin, let postMin) = entry.primitive else { return nil }
@@ -344,6 +352,15 @@ nonisolated enum CorrelationEngine {
             guard var insight = windowedEffectInsight(entry: entry, samples: samples, doses: doses,
                                                       workouts: workouts, food: food,
                                                       preMin: preMin, postMin: postMin, onWindowMin: onWindow) else { return nil }
+            insight.stage = stage(for: entry)
+            return insight
+        case .medication:
+            guard case .pulseModel(let onThreshold) = entry.primitive,
+                  let key = entry.exposure.medicationKey else { return nil }
+            guard var insight = medicationInsight(key: key, samples: samples,
+                                                  allDoses: allDoses ?? doses,
+                                                  onThreshold: onThreshold,
+                                                  sleep: sleep, cache: cache) else { return nil }
             insight.stage = stage(for: entry)
             return insight
         case .none:
@@ -1662,6 +1679,238 @@ nonisolated extension CorrelationEngine {
             if surv <= 0.5 { return t }
         }
         return .nan
+    }
+
+    // MARK: - The per-substance medication card
+
+    /// Turn a canonical substance key back into something a person recognises. The key is
+    /// their own logged name, lowercased and stripped of dosage tokens, so title-casing it
+    /// is the whole job — there is no drug dictionary to look anything up in.
+    static func substanceDisplayName(_ key: String) -> String {
+        key.split(separator: " ").map { $0.capitalized }.joined(separator: " ")
+    }
+
+    /// What ONE substance's own data can support — the group 4 card.
+    /// docs/design/medication-cards.md.
+    ///
+    /// **Existence is decoupled from effect.** This never returns nil for a substance that did
+    /// nothing; it returns nil only when there is nothing to describe at all. A card that
+    /// appeared once an effect showed up would make its existence test a restatement of its own
+    /// content, and would bias the effects on display upward exactly where data is thinnest.
+    ///
+    /// **Six independent statements, each present only when its own estimator is defined.**
+    /// Never written as prose: a first draft shaped around one substance read fluently and did
+    /// not generalise (a 3-dose supplement and a long-acting once-daily need entirely different
+    /// subsets of the same sentences).
+    ///
+    /// Two rules from the Jul 29 measurements, both load-bearing:
+    ///
+    /// 1. **Cross-substance window.** A dose's observation ends at the next dose of ANY
+    ///    substance, not the next dose of itself. Measured: a Mucuna dose was otherwise watched
+    ///    for a median of **1600 min** — until the next Mucuna dose ~26 h later, across several
+    ///    Sinemet doses — so part of what was reported as one drug's duration was another's.
+    ///    ⚠️ Deliberately NOT applied to `estimableFormulations`, which answers a different
+    ///    question ("does this contribute coverage"); tightening it there drops substances from
+    ///    the pooled set and inflates the uncovered-hours figure for the heavily-medicated.
+    ///
+    /// 2. **Observability.** A dose taken while tremor is ALREADY below `onThreshold` is
+    ///    excluded from every statement — the fall, the onset, and the duration. You cannot
+    ///    measure a drop from a floor, nor watch a return to a level never left. Measured: 11
+    ///    of Bhav's 24 Mucuna doses are taken 01:00-05:00 and censored within ~10 min by his
+    ///    falling back asleep; carried as "still ON at t" they inflated the duration from ~48
+    ///    to ~92 min. ⚠️ The intuitive alternative — dropping observations shorter than the
+    ///    onset — was measured as an exact NO-OP and would have added a constant for nothing.
+    static func medicationInsight(
+        key: String, samples: [TremorPoint], allDoses: [Dose],
+        onThreshold: Double = CorrelationEngine.offThreshold,
+        sleep rawSleep: [SleepInterval] = [], cache: SurvivalCache? = nil
+    ) -> Insight? {
+        let own = allDoses.filter { formulationKey($0.name) == key }.sorted { $0.timestamp < $1.timestamp }
+        guard !own.isEmpty, !samples.isEmpty else { return nil }
+        let sig = samples.map { (time: $0.timestamp, value: $0.tremorScore) }
+        let name = substanceDisplayName(key)
+        let dosedDays = Set(own.map { calendar.startOfDay(for: $0.timestamp) }).count
+        let spanDays = max(1, Int(
+            (own.last!.timestamp.timeIntervalSince(own.first!.timestamp) / 86400).rounded()))
+
+        let measuredSleep = mergeSleep(rawSleep)
+        let censorSleep: [SleepInterval]
+        if let lo = samples.map(\.timestamp).min(), let hi = samples.map(\.timestamp).max() {
+            censorSleep = censoringSleep(recorded: measuredSleep,
+                                         doses: allDoses.map(\.timestamp), covering: lo...hi)
+        } else {
+            censorSleep = measuredSleep
+        }
+
+        // Rule 1: horizons bounded by EVERY dose, then narrowed to this substance's own rows.
+        let ownTimes = Set(own.map(\.timestamp))
+        let surv = survivalDuration(signal: sig, events: allDoses.map(\.timestamp).sorted(),
+                                    onThreshold: onThreshold, sleep: censorSleep, cache: cache)
+        let mine = surv.durations.filter { ownTimes.contains($0.t0) }
+        // Rule 2: keep only doses taken while there was something to observe.
+        let readable = mine.filter { $0.baseline.isFinite && $0.baseline >= onThreshold }
+        // Counted against what the READER was told in statement 1 — the doses they logged —
+        // not against the rows the primitive happened to return. `survivalDuration` silently
+        // drops a dose with no usable window at all (no readings, or none before the horizon
+        // closed), so counting `mine.count - readable.count` would leave those doses unexplained.
+        // That is the "24 logged, 22 measured" gap on the real Mucuna record: two doses that
+        // never reached the analysis and, until this line, were never accounted for anywhere.
+        let unreadable = own.count - readable.count
+
+        let km = kmMedian(durations: readable.map(\.durationMin), observed: readable.map(\.observed))
+        let precision = kmMedianPrecisionMin(durations: readable.map(\.durationMin),
+                                             observed: readable.map(\.observed))
+        let endings = readable.filter(\.observed)
+        // EVERY censored readable row is a floor: the dose was still working when observation
+        // stopped, so "at least this long" is a measurement. Only the REASON differs, and the
+        // reason is what the reader needs. `intervalMin` is the gap to the next event, and the
+        // events here are every dose, so equality identifies the next-dose case; anything
+        // shorter means observation ended first (asleep, or the watch off the wrist).
+        //
+        // ⚠️ Splitting this by reason, rather than reporting only the next-dose case, is what
+        // stops a long-acting substance from vanishing: its doses are censored by SLEEP night
+        // after night, and counting only next-dose floors left them inside the duration figure
+        // and mentioned nowhere.
+        let censoredRows = readable.filter { !$0.observed }
+        let nextDoseFloors = censoredRows.filter {
+            $0.intervalMin.isFinite && $0.durationMin >= $0.intervalMin - binMin
+        }
+        let lostSightFloors = censoredRows.filter {
+            !($0.intervalMin.isFinite && $0.durationMin >= $0.intervalMin - binMin)
+        }
+
+        // Fall + onset come from the same readable doses, over their own trajectories.
+        let dr = doseResponseByTimeOfDay(signal: sig, events: own.map(\.timestamp),
+                                         preMin: preMin, postMin: postMin)
+        let readableTraces = dr.traces.filter { $0.baseline.isFinite && $0.baseline >= onThreshold }
+        let falls = readableTraces.filter { !$0.drop.isNaN }
+        let onsets = readableTraces.filter { !$0.tHalf.isNaN }.map(\.tHalf)
+
+        func hm(_ min: Double) -> String {
+            let m = Int(min.rounded())
+            if m < 60 { return "about \(m) min" }
+            let h = m / 60, r = m % 60
+            return r == 0 ? "about \(h)h" : "about \(h)h \(r)m"
+        }
+
+        // ── Statement 1: what was logged. Always present; it is the card's reason to exist.
+        var lines: [String] = []
+        lines.append("You've logged \(own.count) \(own.count == 1 ? "dose" : "doses") of \(name), "
+                     + "on \(dosedDays) separate \(dosedDays == 1 ? "day" : "days") over \(spanDays) days.")
+
+        // ── Statement 2: how long it holds.
+        let headline: String
+        if km.isFinite {
+            let pm = precision.isFinite ? " (give or take \(Int(precision.rounded())) min)" : ""
+            headline = "\(name): holds \(hm(km))"
+            lines.append("It holds \(hm(km))\(pm). To measure that we watch for your tremor to come "
+                         + "back after a dose — that happened \(endings.count) "
+                         + "\(endings.count == 1 ? "time" : "times").")
+        } else if !censoredRows.isEmpty {
+            headline = "\(name): still working every time we looked"
+            lines.append("We haven't yet seen your tremor come back after a dose of \(name) while "
+                         + "you were awake, so we can't say how long it lasts.")
+        } else {
+            headline = "\(name): \(own.count) \(own.count == 1 ? "dose" : "doses") logged"
+            lines.append("We can't yet say how long a dose of \(name) lasts.")
+        }
+
+        // ── Statement 3: the at-least floor. A dose still working when the next arrived is a
+        // measurement, not a blank — and it is the ONLY thing measurable about a long-acting
+        // substance on a tight schedule, i.e. a drug that is working well.
+        if !nextDoseFloors.isEmpty {
+            let longest = nextDoseFloors.map(\.durationMin).max() ?? .nan
+            let n = nextDoseFloors.count
+            lines.append("\(n) \(n == 1 ? "dose was" : "doses were") still working when your next "
+                         + "dose arrived — up to \(hm(longest)) later. For \(n == 1 ? "that one" : "those") "
+                         + "we can only say \"at least that long\".")
+        }
+        if !lostSightFloors.isEmpty {
+            let longest = lostSightFloors.map(\.durationMin).max() ?? .nan
+            let n = lostSightFloors.count
+            lines.append("\(n) \(n == 1 ? "dose was" : "doses were") still working the last time we "
+                         + "could see clearly — up to \(hm(longest)) in — usually because you'd "
+                         + "gone to sleep by then. Again, \"at least that long\".")
+        }
+
+        // ── Statement 4: what could not be measured, and why. Names the INSTRUMENT, never the
+        // drug: the substance may well be doing something tremor is not equipped to see.
+        if unreadable > 0 {
+            lines.append("\(unreadable) \(unreadable == 1 ? "dose" : "doses") couldn't be measured "
+                         + "this way: your tremor was already settled when you took "
+                         + "\(unreadable == 1 ? "it" : "them"), so there was nothing for us to watch "
+                         + "change. We read this substance through tremor — that doesn't mean "
+                         + "\(unreadable == 1 ? "it wasn't" : "they weren't") doing anything, it "
+                         + "means this isn't the way to find out.")
+        }
+
+        // ── Statements 5 + 6: how far tremor falls, and how fast. Two doses is the floor for
+        // BOTH — one gives a number with no spread, so no uncertainty can be stated about it.
+        if falls.count >= 2 {
+            let base = median(falls.map(\.baseline)), trough = median(falls.map(\.trough))
+            lines.append(String(format: "After a dose your tremor typically goes from %.2f to %.2f",
+                                base, trough)
+                         + String(format: " — where %.1f", onThreshold)
+                         + " is the level we treat as OFF.")
+        } else if !readableTraces.isEmpty || unreadable > 0 {
+            lines.append("We can't yet say how far it brings your tremor down — that needs at least "
+                         + "two doses taken while your tremor was up.")
+        }
+        if onsets.count >= 2 {
+            lines.append("It starts working after \(hm(median(onsets))).")
+        }
+
+        let summary: String
+        if km.isFinite {
+            summary = "Measured on \(endings.count) of your own \(own.count) doses."
+        } else {
+            summary = "Logged \(own.count) times; here's what your data can and can't show yet."
+        }
+
+        // Confidence. There is NO sourced threshold for how long a substance should last, so
+        // there is nothing for a "strong" badge to mean — claiming one would be exactly the
+        // unearned tier the group-3 work removed. Two tiers, both mathematical:
+        //   .moderate — a duration exists AND how well it is known is itself measurable
+        //   .emerging — anything less (floors only, or a duration whose precision is unknowable)
+        // ⚠️ JUDGMENT CALL, no oracle: `.strong` is deliberately unreachable here. Revisit only
+        // if a per-substance duration threshold is ever sourced. docs/design/medication-cards.md.
+        let confidence: Insight.Confidence =
+            (km.isFinite && precision.isFinite) ? .moderate : .emerging
+
+        return Insight(
+            title: headline,
+            summary: summary,
+            finding: lines.joined(separator: "\n\n"),
+            mechanism: "What a substance does for one person is not what it does on average across "
+                     + "patients, which is why this card only ever reports your own record. It "
+                     + "describes what was measured; it is not advice about your regimen.",
+            confidence: confidence,
+            evidenceDays: dosedDays,
+            chart: km.isFinite ? wearingOffChart(results: readable, km: km) : nil,
+            clinical: ClinicalDiscussion(
+                whatTheyMightConsider: "Your neurologist can weigh what this substance is doing for "
+                                     + "you against what they expect from it. Bring the numbers, not "
+                                     + "a conclusion — and never change a dose on the strength of a "
+                                     + "card.",
+                bringThisData: [
+                    "\(name): \(own.count) doses on \(dosedDays) days over \(spanDays) days",
+                    km.isFinite
+                        ? "Measured ON-duration \(Int(km.rounded())) min"
+                          + (precision.isFinite ? " ± \(Int(precision.rounded()))" : "")
+                          + ", from \(endings.count) observed returns"
+                        : "ON-duration not yet measurable from \(readable.count) readable doses",
+                    censoredRows.isEmpty
+                        ? "Every readable dose was seen wearing off"
+                        : "Still active at the next dose: \(nextDoseFloors.count); "
+                          + "still active when observation stopped: \(lostSightFloors.count)",
+                    unreadable > 0
+                        ? "\(unreadable) doses excluded: tremor already below the OFF threshold when taken"
+                        : "All doses were taken with tremor above the OFF threshold",
+                    falls.count >= 2
+                        ? "Tremor fall measured on \(falls.count) doses, onset on \(onsets.count)"
+                        : "Tremor fall not measurable (\(falls.count) usable doses)",
+                ])
+        )
     }
 
     /// The wearing-off insight (the "discuss with your neurologist" card), or nil.

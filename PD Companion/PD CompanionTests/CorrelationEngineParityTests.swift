@@ -216,11 +216,22 @@ struct CorrelationEngineParityTests {
         // The blocks above call each renderer directly. This exercises the seam they
         // skip: the registry-driven path, where `generateInsights` iterates the entries
         // and dispatches each on its `renderer` (no id-switch). With no workouts passed,
-        // the exercise/diet/sleep/HRV entries stay dormant, so exactly the three built
-        // medication + gait cards fire — and they must match the direct-call results.
+        // the exercise/diet/sleep/HRV entries stay dormant. What fires is the three built
+        // pooled cards (dose-response, wearing-off, gait) PLUS one per-substance medication
+        // card for each substance the fixture logs — the `.medication` renderer landed in
+        // group 4 step 4, and the count is derived rather than hardcoded so adding a substance
+        // to the fixture cannot silently break it.
         let surfaced = CorrelationEngine.generateInsights(
             samples: samples, doses: doses, gait: Self.loadGait(), workouts: [])
-        #expect(surfaced.count == 3, "only the three built cards fire when no workouts are supplied")
+        let substances = CorrelationEngine.observedSubstanceKeys(doses: doses)
+        #expect(surfaced.count == 3 + substances.count,
+                "expected 3 pooled cards + \(substances.count) medication cards, got \(surfaced.count)")
+        // Every substance the person takes has a card, whether or not it did anything.
+        for key in substances {
+            let name = CorrelationEngine.substanceDisplayName(key)
+            #expect(surfaced.contains { $0.title.hasPrefix(name) },
+                    "no medication card for \(name); titles: \(surfaced.map(\.title))")
+        }
 
         // Both medication cards are .clinicalReferral, so the safety-derived stage
         // (CorrelationEngine.stage(for:)) routes them to .clinicalDiscussion — neither
