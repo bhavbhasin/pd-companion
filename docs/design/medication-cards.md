@@ -281,8 +281,44 @@ the point.
    [Classification](#classification-what-the-engine-treats-as-acting-on-tremor). The question became
    "does this substance have a measurable duration", which needs no margin and therefore never meets
    the missing-tremor-MID dead end.
-3. **Cost.** Fitting a model per logged substance is unmeasured. Should scale with total doses rather
-   than substance count, but that is reasoning, not a measurement. Measure before building.
+3. ~~**Cost.**~~ — **MEASURED Jul 29 2026 on the 07-24 export** (104,256 tremor samples, 273 taken
+   doses, 8,832 merged sleep intervals). **The reasoning was wrong.** Cost does *not* track total
+   doses alone: there is a **fixed ~25 ms per substance** that does not shrink as its dose count
+   falls. Same doses, relabelled into S substances:
+
+   | substances | 1 | 2 | 4 | 8 | 16 | 32 | 64 |
+   |---|---|---|---|---|---|---|---|
+   | `estimableFormulations` | 238 ms | 324 | 352 | 411 | 653 | 997 | **1831 ms** |
+
+   Dose count scales linearly and cheaply (69 → 137 → 273 doses = 187 → 264 → 452 ms at fixed S).
+
+   **Cause located — it is not new work, it is the known re-sort.** With only 4 doses,
+   `fitPulseModel` still costs 34 ms: `survivalDuration` 19 ms + `doseResponseByTimeOfDay` 14 ms.
+   Both open with `let series = signal.sorted { $0.time < $1.time }` — **a full sort of the 104k
+   signal on every call**, independent of how many doses that call is fitting. `estimableFormulations`
+   therefore sorts the signal 2×S times. This is already the BACKLOG item *"windowed cards each
+   re-sort the 100k signal → sort once in generateInsights, pass one indexed signal"*; group 4 does
+   not create the defect, it **multiplies it by the substance count**.
+
+   ✅ **FIXED Jul 29 (same session).** `survivalDuration` and `doseResponseByTimeOfDay` now skip the
+   sort when the signal is already time-ascending, and `asleepMinutes` binary-searches its starting
+   interval instead of walking the merged sleep list from the head. Both output-identical, pinned by
+   `EngineScanInvariantsTests` against the pre-change algorithm kept verbatim as an oracle.
+
+   | | before | after |
+   |---|---|---|
+   | `fitPulseModel`, 4 doses (the per-substance floor) | 34 ms | **9.3 ms** |
+   | `estimableFormulations`, 64 substances | 1831 ms | **615 ms** |
+   | `estimableFormulations`, 16 substances | 653 ms | **406 ms** |
+   | one `uncoveredPerDay` pass | 206 ms | **0.09 ms** |
+   | `wearingOffInsight` (the whole card) | 1008 ms | **613 ms** |
+
+   ⚠️ **Per-substance cost is smaller, not gone** — ~6 ms of it survives, so 64 substances is still
+   2.5× one substance. Group 4 should re-measure once cards exist rather than assume flatness. A
+   realistic supplement-heavy user (~16 substances) now pays ~406 ms, down from ~653.
+
+   ⚠️ Simulator timings, median of 5, and run-to-run spread is ~10-40% — the SHAPE is the finding,
+   the constants are soft.
 4. **Ordering rule for clutter.** "Most informative first" needs a concrete definition. Six
    supplements each reporting "no detectable effect" is true and useless. Handle by ordering and
    collapsing, never by hiding — hiding is what this document removes.

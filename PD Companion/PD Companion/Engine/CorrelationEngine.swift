@@ -971,7 +971,7 @@ nonisolated extension CorrelationEngine {
         signal: [(time: Date, value: Double)], events: [Date],
         preMin: Double, postMin: Double
     ) -> DoseResponseByToD {
-        let series = signal.sorted { $0.time < $1.time }
+        let series = isTimeAscending(signal) ? signal : signal.sorted { $0.time < $1.time }
         let ds = events.sorted()
         var traces: [DoseTrace] = []
 
@@ -1270,13 +1270,34 @@ nonisolated extension CorrelationEngine {
     }
 
     /// Minutes of `[a, b)` spent asleep. `sleep` must be merged + sorted.
+    /// ⚠️ PRECONDITION: `sleep` is sorted by `start` and non-overlapping — i.e. the output of
+    /// `mergeSleep`, which is what every path here produces (`effectiveSleep` ends in
+    /// `mergeSleep`, and `measuredSleep` is `mergeSleep(rawSleep)`). The search below relies
+    /// on it: at most ONE interval can start before `a` and still reach past it.
+    ///
+    /// Binary-searched rather than scanned from the head. The old loop `continue`d past every
+    /// interval ending before `a`, so a dose late in the record walked nearly the whole list —
+    /// measured on the 07-24 export at **8,832 merged intervals × 273 doses = ~150-200 ms per
+    /// pass** of the wearing-off card's daily-OFF sum, and `fc8f77b` added a second pass.
+    /// Same arithmetic over the same intervals, reached in O(log n) instead of O(n).
     static func asleepMinutes(from a: Date, to b: Date, sleep: [SleepInterval]) -> Double {
         guard b > a, !sleep.isEmpty else { return 0 }
+        // First interval starting at or after `a`; the one before it is the only earlier
+        // interval that can still overlap (they are disjoint), so back up one.
+        var lo = 0, hi = sleep.count
+        while lo < hi {
+            let m = (lo + hi) >> 1
+            if sleep[m].start < a { lo = m + 1 } else { hi = m }
+        }
+        var i = lo > 0 ? lo - 1 : 0
         var total = 0.0
-        for iv in sleep {
+        while i < sleep.count {
+            let iv = sleep[i]
             if iv.start >= b { break }
-            if iv.end <= a { continue }
-            total += min(b, iv.end).timeIntervalSince(max(a, iv.start)) / 60
+            if iv.end > a {
+                total += min(b, iv.end).timeIntervalSince(max(a, iv.start)) / 60
+            }
+            i += 1
         }
         return total
     }
@@ -1334,6 +1355,27 @@ nonisolated extension CorrelationEngine {
     /// (first time ≥ t); `firstIndexAfter` = upper bound (first time > t). A half-open slice
     /// `[atOrAfter(lo), after(hi))` reproduces `filter { $0.time >= lo && $0.time <= hi }`
     /// exactly (same elements, same order — the source is sorted), so results are unchanged.
+    /// Is the signal already time-ascending? An O(n) comparison pass, so that the primitives
+    /// below can SKIP `signal.sorted { ... }` — which is not just a sort but a fresh 100k-element
+    /// allocation, paid on **every call regardless of how many doses that call is fitting**.
+    ///
+    /// Measured on the 07-24 export (104,256 samples): fitting ONE substance with 4 doses cost
+    /// 34 ms — 19 in `survivalDuration`, 14 in `doseResponseByTimeOfDay` — essentially all of it
+    /// this line. `estimableFormulations` sorts 2× per substance, so 64 substances took 1.83 s
+    /// against 238 ms for one. Per-substance medication cards multiply that by substance count.
+    ///
+    /// Kept as a CHECK rather than deleting the sort or moving it to the caller: the sort was
+    /// defensive (the binary searches below already document a time-ascending precondition),
+    /// and every existing caller keeps its current behaviour whether or not it complies.
+    static func isTimeAscending(_ s: [(time: Date, value: Double)]) -> Bool {
+        var i = 1
+        while i < s.count {
+            if s[i].time < s[i - 1].time { return false }
+            i += 1
+        }
+        return true
+    }
+
     static func firstIndexAtOrAfter(_ s: [(time: Date, value: Double)], _ t: Date) -> Int {
         var lo = 0, hi = s.count
         while lo < hi { let m = (lo + hi) >> 1; if s[m].time < t { lo = m + 1 } else { hi = m } }
@@ -1372,7 +1414,7 @@ nonisolated extension CorrelationEngine {
         sleep: [SleepInterval] = [], cache: SurvivalCache? = nil
     ) -> SurvivalDuration {
         if let hit = cache?.get(events, onThreshold) { return hit }
-        let series = signal.sorted { $0.time < $1.time }
+        let series = isTimeAscending(signal) ? signal : signal.sorted { $0.time < $1.time }
         let ds = events.sorted()
         var results: [DoseDuration] = []
 
