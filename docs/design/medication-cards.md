@@ -57,14 +57,27 @@ weigh.
 
 ## What a card says
 
-Up to three statements. Each appears only when its estimator is *defined* — a mathematical
-condition, not a chosen threshold:
+**Six independent statements, each appearing only when its own estimator is *defined*** — a
+mathematical condition, not a chosen threshold. The card is composed, never written as prose per
+substance: a first draft written as paragraphs read fluently for one drug and did not generalise.
 
-| Statement | Needs | Floor |
-|---|---|---|
-| How much tremor drops after a dose | pre-dose level + post-dose trough | ≥2 doses — one gives a number with no spread, so no uncertainty can be computed |
-| How quickly it takes effect | same windows | ≥2 doses, same reason |
-| How long the effect holds | doses **observed** ending — awake, watch worn, before the next dose | the Kaplan–Meier median must exist, i.e. the survival curve actually reaches 50%. Already tested as `kmMedian.isFinite` |
+| # | Statement | Appears when | Sinemet (measured) | Mucuna (measured) |
+|---|---|---|---|---|
+| 1 | how many doses, over how long | always | 249 doses, 77 days | 24 doses, 22 days |
+| 2 | how long it holds | the survival curve reaches 50% (`kmMedian.isFinite`) | ~3h 0m, 162 endings | ~48m, 8 endings |
+| 3 | the at-least floor | some doses were still working when the next dose arrived | — | 3 doses, up to ~2h |
+| 4 | what could not be measured, and why | some doses had no readable window | — | 11 night doses |
+| 5 | how far tremor falls | ≥2 doses taken while actually OFF (see Observability) | 1.60 → 0, 174 doses | too few (6) |
+| 6 | how fast it acts | onset resolvable on those same doses | yes | ~22 min |
+
+A brand-new substance with 3 doses shows row 1 and says plainly that the rest is not yet knowable.
+A long-acting once-daily shows rows 1 and 3 but not 2 — it never wears off before the next dose, and
+that IS the finding. Nothing is hidden, nothing is per-drug, and no row assumes a levodopa shape.
+
+⚠️ **Row 4 is not an apology and must never read as one.** "These doses tell us nothing" is both
+wrong and dismissive — the substance may well be doing something we are not equipped to see. The
+honest sentence names the instrument, not the drug: *we measure this through tremor, and while you
+are asleep tremor tells us nothing.*
 
 Duration is the scarce one. On the reference dataset one formulation is 59% censored: more than half
 its doses never showed an ending.
@@ -92,6 +105,57 @@ long as they were watched. "The median exists" is not the same as "half the dose
 That tells the reader what is known, what isn't, and *why* — instead of silence, which they cannot
 distinguish from the app never having looked. For anyone running a personal experiment with an
 unproven substance, this is the point of the feature.
+
+### Observability: a dose you cannot see is not evidence — DECIDED Jul 29 2026
+
+**Measured first, and the obvious rule turned out to be a no-op.** Mucuna, 07-24 export, 24 doses
+(22 with windows), under the cross-substance rule:
+
+- **8 seen wearing off** — every one a daytime dose (08:55–14:00).
+- **11 cut short by falling back asleep** — every one a night dose (01:00–05:00), a median of
+  **10 minutes** of observation. The next dose was typically 5–10 h away, so "the next dose arrived"
+  was never the reason. (An earlier draft of this card said it was. It was not checked.)
+- **3 cut by the next dose** — daytime, median 114 min. These are genuine coverage floors.
+
+| rule | rows | endings | duration |
+|---|---|---|---|
+| censor as-is (today) | 22 | 8 | **92.5 min** ±37.5 |
+| drop censored rows shorter than the onset (22.5 min) | 16 | 8 | 92.5 ±37.5 |
+| drop censored rows shorter than 30 min | 13 | 8 | 92.5 ±37.5 |
+| **daytime doses only** | 11 | 8 | **47.5 min** ±37.5 |
+
+Dropping *short* observations changes nothing; dropping the *night* doses nearly halves the figure.
+The reason: a censored row normally means "still ON at t", a legitimate floor that pushes the
+estimate up — but **during sleep tremor is near zero regardless of medication**, so that floor is
+measuring sleep, not the drug. Today's Mucuna headline is ~2× what its daytime doses alone support.
+
+**DECISION — one rule, both halves.** A dose whose **pre-dose baseline is already below the OFF
+threshold** is excluded from every statement: the drop, the onset, *and* the duration. You cannot
+measure a fall from a floor, and you cannot watch a return to a level you never left. Rejected
+alternative: a minimum-observation-window length — measured as a no-op above, and it would have been
+a new arbitrary number.
+
+- Reuses `offThreshold`; introduces no constant.
+- Generalises past sleep: it also covers a dose taken while still ON from the previous one.
+- ⚠️ **PREDICTION, NOT YET MEASURED:** this should bring Mucuna's headline near 48 min. The build
+  must verify that, not assume it.
+
+### The night-dose question belongs to the experiment loop, not to a card
+
+Bhav reports the 01:00–05:00 Mucuna doses help him get back to sleep. Tremor cannot see that, and
+the observational sleep comparison **cannot settle it either** — measured on matched dates:
+
+| | n | median time awake |
+|---|---|---|
+| night wakings **with** a Mucuna dose | 10 | 42 min |
+| night wakings **without** | 126 | 4 min |
+
+This is **not** evidence the substance keeps him awake. It is confounding by indication in its
+purest form: he takes it on the awakenings that are already bad, and the comparison group is 126
+mostly-brief stirrings. No retrospective slice separates the indication from the effect.
+⇒ Route to the **experiment loop** (Hypothesis → Experiment → Verdict, BACKLOG): it needs a
+prospective label — qualifying awakenings treated and comparable ones not. The card must claim
+nothing about sleep in the meantime.
 
 ### Fixed rules
 
@@ -280,7 +344,34 @@ the point.
 
 ## Open questions
 
-1. **Cross-substance confounding — the clean window.** A substance's observation window runs to the
+1. ~~**Cross-substance confounding — the clean window.**~~ — **CLOSED Jul 29 2026: adopt it for
+   per-substance duration, and do NOT apply it to `estimableFormulations`.**
+
+   Measured on all three testers, and the first finding is that **only one record can answer it** —
+   Harpal has **zero** dose rows, John has **1 taken of 28** (the rest `notInteracted`). On Bhav's:
+
+   | | today (window ends at the next dose of ITSELF) | cross-substance |
+   |---|---|---|
+   | Sinemet, 249 doses | 182.5 ±2.5, 162 endings | **182.5 ±2.5**, 160 endings |
+   | Mucuna, 24 doses | 92.5 ±32.5, 11 endings | **92.5 ±37.5**, 8 endings |
+   | Mucuna watched window | **1600 min** | **167 min** |
+
+   The 1600-minute window is the whole argument: today a Mucuna dose is watched until the next
+   *Mucuna* dose ~26 h later, across several Sinemet doses in between. The headline barely moves,
+   but its meaning changes from contaminated-and-precise-looking to honest-and-thin. A card labelled
+   *Mucuna* printing a number that is substantially Sinemet is the exact failure per-substance cards
+   would otherwise introduce.
+
+   **Why `estimableFormulations` keeps the old rule:** it answers a different question — "does this
+   substance contribute coverage" — and tightening it drops substances out of the pooled set, which
+   inflates the uncovered-hours figure for precisely the heavily-medicated patient (window length
+   scales ~960/total daily doses; see BACKLOG group 2 constraint A). Same split as `wearingOffGate`
+   vs `wearingOffCardGate`: one question, one rule, no constant doing double duty.
+
+   ⚠️ The old ordering constraint *"ship with censoring-as-floor, never alone"* **dissolves for
+   group 4**: censoring-as-floor is not a separate feature here, it is statement 3 of the card.
+
+   Superseded sub-question, kept for the record: A substance's observation window runs to the
    next dose of *itself*; another substance taken in between is invisible. So part of what is reported
    as one drug's duration may be another drug's effect. This is **not** a general oversight — the
    substrate band excludes every dose's active window regardless of substance, the food and exercise
