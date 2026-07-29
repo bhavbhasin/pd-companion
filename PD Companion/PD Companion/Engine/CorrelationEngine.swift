@@ -252,7 +252,16 @@ nonisolated enum CorrelationEngine {
         let survivalCache = SurvivalCache()
 
         let sig = samples.map { (time: $0.timestamp, value: $0.tremorScore) }
-        let effSleep = mergeSleep(sleep)
+        // Recorded nights + a dose-respecting guessed night wherever none was recorded. Required
+        // since the horizon lost its 300-min cap: measured sleep alone leaves an unrecorded night
+        // unbounded and the overnight zeros read as the drug still working. `censoringSleep`
+        // never touches a day that HAS recorded sleep, so this is a no-op for a Watch-wearer.
+        let effSleep: [SleepInterval]
+        if let lo = samples.map(\.timestamp).min(), let hi = samples.map(\.timestamp).max() {
+            effSleep = censoringSleep(recorded: sleep, doses: doses.map(\.timestamp), covering: lo...hi)
+        } else {
+            effSleep = mergeSleep(sleep)
+        }
         let estimableKeys = Set(estimableFormulations(signal: sig, doses: doses, sleep: effSleep, cache: survivalCache).keys)
         let levodopaDoses = doses.filter { estimableKeys.contains(formulationKey($0.name)) }
 
@@ -1117,7 +1126,19 @@ nonisolated extension CorrelationEngine {
 
     // Ledger: provisional (tested — only ~6% swing — but not clinically anchored). docs/intelligence-architecture.md.
     static let offThreshold = 1.0   // tremor >= this == OFF
-    static let maxWindow = 300.0    // look up to 5h post-dose for the natural decay
+    /// The DISPLAY + binning grid: how far past a dose the canonical curve is drawn and
+    /// `DoseDuration.binValues` is stored. **No longer the observation horizon** as of
+    /// Jul 28 2026 — that is bounded by events (next dose, sleep onset). Kept at 300 because
+    /// it is a chart's x-range, a presentation choice, not a claim about any drug; widening it
+    /// would stretch a shipped card's axis and move its pinned anchors for nothing.
+    static let maxWindow = 300.0    // display grid: 5h of curve past the dose
+
+    /// Structural backstop on the observation horizon: one circadian period. Not a drug
+    /// assumption and not tuned — a window is bounded by the next dose or by sleep, and a
+    /// caller supplying `censoringSleep` guarantees a sleep onset within a day of every dose.
+    /// This exists so the horizon is provably finite rather than relying on that guarantee.
+    /// Ledger: structural (one day; everybody sleeps within one).
+    static let observationCeilingMin = 24.0 * 60.0
     static let gapIso = 240.0       // "isolated" dose = next dose >= this many min away
     static let sustainBins = 2      // consecutive OFF bins required to call OFF-return
 
@@ -1371,13 +1392,44 @@ nonisolated extension CorrelationEngine {
             // 177.5 -> 192.5 min. This is a CENSOR, not a subtraction: the drug keeps
             // metabolising while he sleeps, so the dose's clock never pauses — we just
             // stop being able to observe it, and record "held at least this long".
-            var horizon = interval.isNaN ? maxWindow : min(maxWindow, interval)
+            // ⭐ Jul 28 2026 — the 300-min cap is GONE from the horizon. It made a long-acting
+            // drug invisible: an 8 h drug never showed an ending inside 5 h, so its duration read
+            // "not estimable", and after the classification collapse that means no coverage and
+            // no forecast band at all. Measured on a fixture with a KNOWN 480-min duration: 0 of
+            // 30 endings observed at the cap, 30 of 30 without it. The bound is now EVENTS only.
+            //
+            // ⚠️ `sleep` is used EXACTLY as given — `sleep: []` is a contract meaning "do not
+            // censor" (`dump_curve_anchors.py`, fixtures), NOT "no data". Do not synthesise a
+            // fallback night here; that belongs to callers holding a real record, via
+            // `censoringSleep`. Synthesising here broke 16 tests including parity.
+            // ⚠️ Uncapped + `sleep: []` watches straight through the night, and overnight zeros
+            // (tremor abates in sleep whatever the drug is doing) read as the drug working:
+            // measured on the 18-06 fixture, observed endings 101 -> 127 and a duration of 718
+            // min. Any caller with real data MUST pass censoring sleep.
+            var horizon = interval.isNaN ? observationCeilingMin : min(observationCeilingMin, interval)
             if let onset = sleepOnset(after: t0, sleep: sleep) {
                 horizon = min(horizon, max(0, onset.timeIntervalSince(t0) / 60))
             }
             // Dosed while already asleep (or within a bin of it): nothing observable.
             if horizon <= 0 { continue }
-            let (duration, observed) = offReturn(centers: centers, sm: sm, horizon: horizon, thr: onThreshold)
+
+            // OFF-return is judged on a grid reaching the whole horizon. Past the display grid
+            // we RE-BIN rather than widen the stored `binValues` — those feed wearingOffChart's
+            // canonical curve and its pinned anchors and must stay on [-preMin, maxWindow).
+            // Baseline and trough likewise stay on the display grid: the deepest-ON minute of a
+            // real dose is inside 5 h.
+            let (duration, observed): (Double, Bool)
+            if horizon > maxWindow {
+                let farHi = t0.addingTimeInterval(horizon * 60)
+                let farWin = series[firstIndexAtOrAfter(series, lo)..<firstIndexAfter(series, farHi)]
+                let farRel = farWin.map { $0.time.timeIntervalSince(t0) / 60.0 }
+                let farVals = farWin.map { $0.value }
+                let (farCenters, farRaw) = binned(rel: farRel, vals: farVals, lo: -preMin, hi: horizon)
+                (duration, observed) = offReturn(centers: farCenters, sm: smooth(farRaw),
+                                                 horizon: horizon, thr: onThreshold)
+            } else {
+                (duration, observed) = offReturn(centers: centers, sm: sm, horizon: horizon, thr: onThreshold)
+            }
 
             let hour = hourOfDay(t0)
             results.append(DoseDuration(
@@ -1397,10 +1449,14 @@ nonisolated extension CorrelationEngine {
 
     /// Tremor/dose adapter over the survival primitive. The parity surface the test
     /// pins; uses the engine's OFF threshold (= the registry entry's `onThreshold`).
-    static func analyzeWearingOff(samples: [TremorPoint], doses: [Dose]) -> [DoseDuration] {
+    /// ⚠️ `sleep` defaults to `[]` = NO censoring, preserving this surface's original contract
+    /// for `dump_curve_anchors.py`. Since the horizon lost its 300-min cap that default watches
+    /// straight through the night, so any caller holding a real record must pass censoring sleep.
+    static func analyzeWearingOff(samples: [TremorPoint], doses: [Dose],
+                                  sleep: [SleepInterval] = []) -> [DoseDuration] {
         survivalDuration(
             signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
-            events: doses.map(\.timestamp), onThreshold: offThreshold
+            events: doses.map(\.timestamp), onThreshold: offThreshold, sleep: sleep
         ).durations
     }
 
@@ -1481,10 +1537,19 @@ nonisolated extension CorrelationEngine {
         // callers asking different questions. Idempotent, so callers may pre-merge.
         let measuredSleep = mergeSleep(rawSleep)
         let effectiveSleepIntervals: [SleepInterval]
+        // CENSORING sleep: recorded nights plus a dose-respecting guessed night wherever none
+        // was recorded. Required since the observation horizon lost its 300-min cap — measured
+        // sleep alone leaves any unrecorded night unbounded, and the overnight zeros then read
+        // as the drug still working (measured: a 3 h dose reported as 9 h). The dose-respecting
+        // rule is what lets censoring use a guess at all; see `censoringSleep`.
+        let censorSleep: [SleepInterval]
         if let lo = samples.map(\.timestamp).min(), let hi = samples.map(\.timestamp).max() {
             effectiveSleepIntervals = effectiveSleep(recorded: measuredSleep, covering: lo...hi)
+            censorSleep = censoringSleep(recorded: measuredSleep,
+                                         doses: doses.map(\.timestamp), covering: lo...hi)
         } else {
             effectiveSleepIntervals = measuredSleep
+            censorSleep = measuredSleep
         }
 
         // POOLED wearing-off over all doses drives the FIRING gate + the chart, and matches the
@@ -1494,7 +1559,7 @@ nonisolated extension CorrelationEngine {
         // formulations, while "how long it lasts" is per-formulation — so the aggregate curve
         // stays the visual, and the by-formulation medians go in the text.
         let pooled = survivalDuration(signal: sig, events: doses.map(\.timestamp),
-                                      onThreshold: onThreshold, sleep: measuredSleep, cache: cache)
+                                      onThreshold: onThreshold, sleep: censorSleep, cache: cache)
         let pooledResults = pooled.durations
         guard pooledResults.count >= 20, pooled.kmMedian.isFinite else { return nil }
         // Daily OFF attributable to dose SPACING: sum every gap's shortfall against how long a
@@ -1550,7 +1615,7 @@ nonisolated extension CorrelationEngine {
         var rows: [Row] = []
         for (key, ds) in Dictionary(grouping: doses, by: { formulationKey($0.name) }) {
             let surv = survivalDuration(signal: sig, events: ds.map(\.timestamp),
-                                        onThreshold: onThreshold, sleep: measuredSleep, cache: cache)
+                                        onThreshold: onThreshold, sleep: censorSleep, cache: cache)
             let results = surv.durations
             guard results.count >= 20, surv.kmMedian.isFinite else { continue }
             var dayIntervals: [Double] = []
@@ -2589,7 +2654,15 @@ nonisolated extension CorrelationEngine {
         // Computed BEFORE the zero-dose branch: the substrate also needs the per-formulation
         // ON-durations to censor historical dose windows out of the band.
         let sig = history.map { (time: $0.timestamp, value: $0.tremorScore) }
-        let models = estimableFormulations(signal: sig, doses: allDoses, sleep: sleep)
+        // Censoring sleep, not raw recorded sleep — see `censoringSleep`. Without it an
+        // unrecorded night leaves the (now uncapped) window running through the small hours,
+        // where tremor is zero for reasons that have nothing to do with the drug.
+        let censorSleep: [SleepInterval] = {
+            guard let lo = history.map(\.timestamp).min(),
+                  let hi = history.map(\.timestamp).max() else { return mergeSleep(sleep) }
+            return censoringSleep(recorded: sleep, doses: allDoses.map(\.timestamp), covering: lo...hi)
+        }()
+        let models = estimableFormulations(signal: sig, doses: allDoses, sleep: censorSleep)
 
         // ZERO-DOSE DAY (Phase 0, forecast-composition-model.md): nothing to project, but
         // the day still gets a forecast — the flat personal band, which is the VALIDATED

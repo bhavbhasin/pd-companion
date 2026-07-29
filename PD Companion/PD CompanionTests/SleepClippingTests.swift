@@ -145,13 +145,24 @@ struct SleepClippingTests {
 
         let card = try #require(CorrelationEngine.wearingOffInsight(samples: samples, doses: doses))
         let n = try #require(Self.uncovered(from: card))
-        // 483 with the fallback vs 502 with this user's real sleep — the fallback lands
-        // BELOW the measured answer, which is the whole intent: 22:00 is a conservative
-        // bedtime (his real onset is ~midnight) and without measured sleep nothing is
-        // censored, so the dose reads longer-lasting. It errs toward under-claiming.
-        #expect(abs(n - 483) <= 5, "fallback figure drifted: \(n)")
-        #expect(n < 502, "fallback must not exceed the measured-sleep answer (got \(n))")
-        #expect(n > 234, "fallback must still beat the old capped figure (got \(n))")
+        // The point of this test: with NO recorded sleep the card must still be roughly right,
+        // and must never score an unconscious night as waking OFF.
+        //
+        // ⚠️ RE-PINNED Jul 28 2026: 483 → 503, against a measured-sleep answer of 502.
+        // Censoring now runs on `censoringSleep`, whose guessed night starts AFTER any dose
+        // logged that evening. He doses at 22:00 and his real sleep onset is ~midnight, so
+        // refusing to call him asleep at 22:00 makes the guess markedly more accurate — the
+        // fallback now tracks the measured answer almost exactly instead of under-claiming
+        // by ~19 min.
+        //
+        // The old assertion `n < 502` is DELETED, not relaxed. "The fallback lands below the
+        // measured answer" was an observation about the old numbers, never a derived property,
+        // and at 503-vs-502 it was asserting a one-minute ordering between two different
+        // censoring paths. What actually matters is tested below: close to the measured
+        // answer, and nowhere near the failure modes on either side.
+        #expect(abs(n - 502) <= 15, "fallback should track the measured-sleep answer: \(n)")
+        #expect(n > 234, "must beat the old capped figure, which ignored whole evenings (got \(n))")
+        #expect(n < 700, "must not be scoring the unconscious night as waking OFF (got \(n))")
     }
 
     /// Censoring must use MEASURED sleep only — never the fallback. A guessed 22:00 bedtime
@@ -361,6 +372,102 @@ struct SleepClippingTests {
         // Waking 07:00-23:00 = 16h. Covered 08:00-11:00 and 22:00-23:00 => ~12h ≈ 720 uncovered.
         // The 22:00 dose's own gap runs into sleep and must add ~0 of it.
         #expect(n > 600 && n < 820, "got \(n)")
+    }
+
+    // MARK: - Observation window (the maxWindow removal)
+    //
+    // A dose's window is bounded by EVENTS — the next dose, and sleep onset — never by a clock.
+    // The old 300-min cap made a long-acting drug invisible: an 8 h drug never showed an ending
+    // inside 5 h, so its duration read "not estimable", and after the classification collapse
+    // that means no coverage and no forecast band at all.
+    //
+    // The two guards below go through `censoringSleep`, which is where a real caller gets its
+    // sleep. They must NOT pass `sleep:` straight to `survivalDuration` — there, `[]` means
+    // "do not censor" by contract, so they would be testing a path no user is ever on.
+
+    /// A once-daily long-acting drug (8 h) MUST yield a duration. Dose 08:00, next dose 24 h
+    /// later, asleep 23:00 — sleep bounds the window at 15 h, no clock involved.
+    /// ⛔ Fails under the old 300-min cap: nothing is ever observed ending.
+    @Test func longActingOnceDailyRecoversItsDuration() throws {
+        pinCalendar()
+        let trueOn = 480.0
+        let doses = (1..<31).map { Dose(timestamp: Self.at($0, 8), name: "Rytary") }
+        let sleep = CorrelationEngine.mergeSleep(
+            (1..<31).map { SleepInterval(start: Self.at($0 - 1, 23), end: Self.at($0, 7)) })
+        let samples = Self.series(days: 1..<31) { t in
+            let h = Self.cal.component(.hour, from: t)
+            if h >= 23 || h < 7 { return 0.0 }
+            let mins = t.timeIntervalSince(Self.at(Self.cal.component(.day, from: t), 8)) / 60
+            if mins < 0 { return 2.0 }
+            if mins < 45 { return 2.0 - (mins / 45) * 1.6 }
+            if mins < trueOn { return 0.4 }
+            if mins < trueOn + 30 { return 0.4 + ((mins - trueOn) / 30) * 1.6 }
+            return 2.0
+        }
+        let surv = CorrelationEngine.survivalDuration(
+            signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
+            events: doses.map(\.timestamp),
+            onThreshold: CorrelationEngine.offThreshold, sleep: sleep)
+        #expect(surv.kmMedian.isFinite, "an 8h drug must produce a duration, not silence")
+        // ~480 plus the sustained-OFF-return detection lag (~18 min).
+        #expect(surv.kmMedian > 420 && surv.kmMedian < 580, "got \(surv.kmMedian)")
+    }
+
+    /// GUARD — an evening dose for a user with NO recorded sleep must not read as lasting all
+    /// night. Tremor is 0 overnight because he is asleep, not because the drug is working.
+    /// `censoringSleep` supplies the guessed night that prevents it, and its dose-respecting
+    /// rule is what stops that guess from discarding the 22:00 dose outright.
+    @Test func eveningDoseWithoutSleepDataDoesNotInflate() throws {
+        pinCalendar()
+        let trueOn = 180.0
+        let doses = (1..<31).map { Dose(timestamp: Self.at($0, 22), name: "Sinemet") }
+        let samples = Self.series(days: 1..<31) { t in
+            let h = Self.cal.component(.hour, from: t)
+            return (h >= 23 || h < 7) ? 0.0 : 1.5
+        }
+        let censor = CorrelationEngine.censoringSleep(
+            recorded: [], doses: doses.map(\.timestamp),
+            covering: Self.at(1, 0)...Self.at(31, 0))
+        let surv = CorrelationEngine.survivalDuration(
+            signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
+            events: doses.map(\.timestamp),
+            onThreshold: CorrelationEngine.offThreshold, sleep: censor)
+
+        if surv.kmMedian.isFinite {
+            #expect(surv.kmMedian < trueOn + 120, "inflated to \(surv.kmMedian)")
+        }
+        // No dose may be DISCARDED by the guess — a 22:00 dose proves he was awake at 22:00.
+        #expect(surv.durations.count == doses.count,
+                "the guessed night threw away \(doses.count - surv.durations.count) real doses")
+    }
+
+    /// GUARD — a user who normally records sleep but MISSED one night must not have that night's
+    /// dose watched until tomorrow's bedtime. `sleepOnset` returns the NEXT recorded interval, so
+    /// without a per-night fallback the window silently reaches ~24 h on exactly the users who
+    /// look best covered.
+    @Test func oneMissingSleepNightDoesNotOpenA24HourWindow() throws {
+        pinCalendar()
+        let missingDay = 15
+        let doses = (1..<31).map { Dose(timestamp: Self.at($0, 20), name: "Sinemet") }
+        let recorded = CorrelationEngine.mergeSleep(
+            (1..<31).compactMap { d in
+                d == missingDay + 1 ? nil     // the night after day 15 was never recorded
+                    : SleepInterval(start: Self.at(d - 1, 23), end: Self.at(d, 7))
+            })
+        let samples = Self.series(days: 1..<31) { t in
+            let h = Self.cal.component(.hour, from: t)
+            return (h >= 23 || h < 7) ? 0.0 : 1.5
+        }
+        let censor = CorrelationEngine.censoringSleep(
+            recorded: recorded, doses: doses.map(\.timestamp),
+            covering: Self.at(1, 0)...Self.at(31, 0))
+        let surv = CorrelationEngine.survivalDuration(
+            signal: samples.map { (time: $0.timestamp, value: $0.tremorScore) },
+            events: doses.map(\.timestamp),
+            onThreshold: CorrelationEngine.offThreshold, sleep: censor)
+
+        let longest = surv.durations.map(\.durationMin).filter { !$0.isNaN }.max() ?? 0
+        #expect(longest < 12 * 60, "a missing night opened a \(longest / 60)h window")
     }
 
     // MARK: - Loaders

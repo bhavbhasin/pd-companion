@@ -15,7 +15,22 @@ import Testing
 
 struct DayForecastTests {
 
-    private static let base = Date(timeIntervalSince1970: 1_700_000_000)
+    /// Pin the engine's calendar so day-grouping and the synthesized fallback night are
+    /// deterministic regardless of the machine's zone. Swift Testing builds a fresh instance
+    /// per test, so this runs for every one.
+    init() {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        CorrelationEngine.calendar = c
+    }
+
+    /// ⚠️ MIDNIGHT Pacific, not an arbitrary epoch instant (was 1_700_000_000 = 14:13 PST).
+    /// Every time in this fixture is expressed as an offset from `base`, so if `base` is not
+    /// aligned to a local day boundary then a "09:00" dose is really 23:13 — which lands
+    /// inside the 22:00-06:00 night the engine synthesizes for a record with no sleep, and the
+    /// dose is dropped as "taken while asleep". Harmless while the observation window was
+    /// capped at 5h and censoring was effectively off; load-bearing now that it is not.
+    private static let base = Date(timeIntervalSince1970: 1_700_035_200)
     private static let hour = 3600.0
 
     /// A clean per-dose wearing-off profile (minutes since dose): OFF baseline → ON dip
