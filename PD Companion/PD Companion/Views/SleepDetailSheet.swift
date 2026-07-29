@@ -22,7 +22,9 @@ struct SleepDetailSheet: View {
     let dayDate: Date
 
     @State private var data: SleepTrendData?
-    @State private var range: HRVRange = .month
+        // Week, not month (Bhav, Jul 28 2026): a month is a review horizon, a week is what he can
+    // still remember and act on. Applies to every detail sheet so they open consistently.
+    @State private var range: HRVRange = .week
     @State private var loading = true
 
     var body: some View {

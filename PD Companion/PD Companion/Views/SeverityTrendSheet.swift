@@ -35,7 +35,9 @@ struct SeverityTrendSheet: View {
     let load: () async -> [DatedSample]
 
     @State private var data: SeverityTrendData?
-    @State private var range: SeverityRange = .month
+        // Week, not month (Bhav, Jul 28 2026): a month is a review horizon, a week is what he can
+    // still remember and act on. Applies to every detail sheet so they open consistently.
+    @State private var range: SeverityRange = .week
     @State private var loading = true
 
     var body: some View {
