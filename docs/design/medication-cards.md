@@ -416,7 +416,7 @@ difference. Exact counts live in the clinician bullets, where arithmetic is the 
 
 ⬜ **Still open:** ordering/clutter rule (open question 4) · precision drawing (open question 5 — the
 thinning tail above is a concrete instance: fading the line where the dose count drops is the
-general fix) · the Settings exclusion toggle · re-measure the ~6 ms/substance now that cards exist.
+general fix) · the Settings exclusion toggle. Cost re-measured Jul 29 (see open question 3) and DEFERRED.
 
 1. **Vocabulary (small):** `Variable.medication(String)` + `.anyMedication`, plus the bridge
    accessor mirroring `workoutRawValue`. Easier than workouts — the substance key is engine-side
@@ -519,6 +519,17 @@ the point.
    ⚠️ **Per-substance cost is smaller, not gone** — ~6 ms of it survives, so 64 substances is still
    2.5× one substance. Group 4 should re-measure once cards exist rather than assume flatness. A
    realistic supplement-heavy user (~16 substances) now pays ~406 ms, down from ~653.
+
+   ✅ **RE-MEASURED Jul 29 2026, cards included — and the ~6 ms was the smaller of two costs.**
+   With a production-shaped shared `SurvivalCache`, a warm medication card costs **77 ms** (cold
+   338), flat per card ⇒ 64 cards = 5.2 s; `estimableFormulations`' own residual is ~4.3 ms per
+   substance (750 → 1028 ms at S=64), which is the ~6 ms above, confirmed and minor. Nearly all of
+   the warm 77 ms is `mergeSleep` (12 ms over 30,689 rows) plus `censoringSleep` (84 ms, including
+   two full `map` allocations over 104,256 tremor timestamps for the record's min/max) — identical
+   inputs, identical output, recomputed per card. Fix = hoist out of `medicationInsight`, compute
+   once per run, pass in; output-identical, same shape as `b6e6f69`.
+   ⛔ **DEFERRED by Bhav Jul 29** — no felt problem at his 2 substances (~155 ms). Logged in
+   BACKLOG under Insights tab performance, item 4.
 
    ⚠️ Simulator timings, median of 5, and run-to-run spread is ~10-40% — the SHAPE is the finding,
    the constants are soft.
