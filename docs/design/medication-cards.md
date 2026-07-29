@@ -311,8 +311,14 @@ equal authority.
 After this change the card does one job: how many waking hours a day the dose *spacing* leaves
 uncovered. Per-substance numbers live on per-substance cards, each carrying its own dose count.
 
-**Side effect:** the deleted branch contains one of the `20` sites (`:1484`). Removing the rows
-removes the site rather than converting it.
+**Side effect:** the deleted branch contains one of the `20` sites. Removing the rows removes the
+site rather than converting it.
+
+✅ **DONE Jul 29 2026** (`COVROWS`), once the per-substance cards shipped — deferred until then so
+the app was never thinner than before. Pinned by `theCoverageCardNamesNoSubstance`, which builds a
+two-formulation regimen of exactly the shape that used to trigger the rows and asserts the coverage
+copy names neither substance. **That leaves ONE `20` in the engine**: `doseResponseGate`, which waits
+on the split-half stability rule.
 
 ---
 

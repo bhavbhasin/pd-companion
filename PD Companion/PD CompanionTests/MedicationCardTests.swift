@@ -244,6 +244,47 @@ struct MedicationCardTests {
         #expect(card.confidence == .emerging)
     }
 
+    // MARK: - The pooled coverage card stops naming substances
+
+    /// ⛔ The coverage card's per-formulation rows are deleted. They printed two formulations
+    /// inside one sentence ("holds ~3.0 h … holds ~1.6 h"), arranging two true facts so a reader
+    /// concludes a comparison that is NOT established (log-rank p=0.52 on the reference data)
+    /// and giving a 240-dose estimate and a 22-dose estimate equal authority. Per-substance
+    /// numbers now live on per-substance cards, each carrying its own dose count.
+    ///
+    /// Deleting the rows also removed the eighth of the nine `20` sites, which gated each
+    /// formulation on `results.count >= 20`.
+    @Test func theCoverageCardNamesNoSubstance() throws {
+        pinCalendar()
+        let days = 1..<31
+        var doses: [Dose] = []
+        var on: [(Date, Double)] = []
+        for d in days {
+            // Two formulations with clearly DIFFERENT durations and plenty of doses each —
+            // exactly the shape that used to trigger the two-formulation copy.
+            doses.append(Dose(timestamp: Self.at(d, 8), name: "Sinemet"))
+            on.append((Self.at(d, 8), 180))
+            doses.append(Dose(timestamp: Self.at(d, 13), name: "Mucuna Pruriens"))
+            on.append((Self.at(d, 13), 60))
+        }
+        let sleep = Self.nights(1..<32, from: 23, to: 7)
+        let samples = Self.series(days: days, on: on, sleep: sleep)
+        let card = try #require(CorrelationEngine.wearingOffInsight(
+            samples: samples, doses: doses, sleep: sleep),
+            "the coverage card should still fire on a two-formulation regimen")
+
+        let text = ([card.title, card.summary, card.finding, card.mechanism,
+                     card.clinical?.whatTheyMightConsider ?? ""]
+                    + (card.clinical?.bringThisData ?? []))
+            .joined(separator: " ").lowercased()
+        #expect(!text.contains("sinemet"), "coverage copy named a substance: \(text)")
+        #expect(!text.contains("mucuna"), "coverage copy named a substance: \(text)")
+        #expect(!text.contains("by formulation"))
+        #expect(!text.contains("formulations don't last"))
+        // It must still do its own job.
+        #expect(card.title.contains("uncovered"), "got: \(card.title)")
+    }
+
     // MARK: - Does the copy hold up for someone who is not Bhav?
 
     /// ⭐ The failure medication-cards.md predicts by name: "least able to describe the drugs
