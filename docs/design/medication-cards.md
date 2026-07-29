@@ -1,6 +1,6 @@
 # Medication cards: one per substance, existence decoupled from effect
 
-**Status:** DESIGNED Jul 26 2026, **not built**. 4 open questions (was 5). Supersedes the narrower "per-drug insight cards"
+**Status:** BUILT Jul 29 2026 (groups 4 steps 1-5, `4855a75` `9a00939` `e728842`). 2 open questions parked, 1 leftover logged. Supersedes the narrower "per-drug insight cards"
 scope in BACKLOG (which was: give Mucuna its own card). The scope grew during design because the
 narrow version turned out to be circular — see [The circularity](#the-circularity).
 
@@ -295,6 +295,14 @@ correlation engine entirely** — not merely hidden.
 - **⚠️ State the consequence when the substance is pharmacologically active.** Excluding a working
   drug makes the coverage card compute dose spacing as though it were not taken, inflating the
   uncovered-hours figure. Say so at the toggle; do not prevent it.
+⬜ **NOT BUILT. Logged Jul 29 2026, and Bhav ranks it above the ordering rule.** ⭐ His reason names
+the trigger the substance count misses: **clutter arrives when a user starts confirming doses on a
+schedule they already have, not when they add substances.** Verified — the fetch gates on
+`logStatus == .taken` (`HealthKitManager.swift:1058`), so a scheduled-but-unconfirmed medication
+produces no card today. A typical polypharmacy PD regimen is 5-8 medications sitting unconfirmed in
+Health; the day someone taps "taken" across that list, every one becomes a card at once. Today no
+record exceeds 2 substances, so this is preparation, not a fix.
+
 - **Not a performance feature.** If per-substance model fitting proves expensive, the answer is
   caching or lazy computation — not asking the patient to prune their list. Build this for agency and
   classification hygiene.
@@ -536,6 +544,15 @@ the point.
 4. **Ordering rule for clutter.** "Most informative first" needs a concrete definition. Six
    supplements each reporting "no detectable effect" is true and useless. Handle by ordering and
    collapsing, never by hiding — hiding is what this document removes.
+
+   ⛔ **PARKED Jul 29 2026 — measured, no target.** No record has more than **2** distinct
+   substances (Bhav 2, John 1, Harpal 0), and the shipped sort already ranks confidence then stage,
+   so `.emerging` nulls sink on their own. Revisit when a record has a tail.
+
+   ⚠️ **Separable and REAL today:** two `.moderate` + `.clinicalDiscussion` cards tie and fall
+   through to registry order, so **Mucuna's 28 doses render above Sinemet's 251**. The fix is a
+   tie-break on evidence, but it lives in `InsightsView.orderedInsights` and applies to every card,
+   so it reorders unrelated equal-confidence pairs. Logged in BACKLOG, Bhav's call.
 5. **How precision is drawn.** Downstream of the `20` redesign: one substance's duration is confident
    within ~5 minutes, another within ~32. Showing both as plain numbers implies an equal confidence
    that is not there.
