@@ -49,10 +49,20 @@ the threshold directly reuses a number that is already sourced and introduces no
 
 ## Order of work
 
-1. **MEASURE FIRST.** On the reference data and on a thin synthetic substance: what is the daily-OFF
-   interval, and does anything actually change tier? Bhav's Sinemet is ±2.5 min over ~2.2 daytime
-   gaps/day ⇒ roughly ±6 min/day against a 60 min/day threshold, so his card should stay Strong and
-   this should be a no-op for him. If the measurement disagrees, the design is wrong, not the data.
+1. ✅ **MEASURED Jul 28 2026 on the 07-24 export — the design holds.**
+
+   | | |
+   |---|---|
+   | pooled duration | 182.5 min, precision **±2.5** |
+   | daily OFF from spacing | 513.6 min/day |
+   | recomputed at duration −2.5 / +2.5 | 518.8 / 508.4 |
+   | **uncertainty on the claim** | **±5.2 min/day** (predicted ~±6) |
+   | lower bound vs MCID | 508.4 vs 60 ⇒ **Strong** |
+
+   A no-op for Bhav, which is the right outcome: this replaces an arbitrary gate, it should not move
+   anyone's tier. ⚠️ The 513.6 comes from a scratch reimplementation of the sum that does not handle
+   the first/last dose of a day as the engine does (the app reads ~495) — the RATIO is what the
+   design turns on, and ±5.2 against a 60-min bar is ~9%, robust to the base value.
 2. Build the interval, then the gate. Fail-first test verified against the old gate.
 3. Parity + device check before anything builds on it.
 
