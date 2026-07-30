@@ -484,7 +484,16 @@
             gap: 64px;
             align-items: center;
         }
-        .insight-lede .phone { width: 300px; }
+        /* Cropped list, so a bordered card - not a device bezel, which only reads
+           as a phone at true full-screen proportions. */
+        .insight-shot {
+            width: 340px;
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            overflow: hidden;
+            background: var(--surface-2);
+        }
+        .insight-shot img { width: 100%; display: block; }
         .insight-points { display: flex; flex-direction: column; gap: 26px; }
         .ipoint strong {
             display: block; font-size: 15.5px; font-weight: 600;
@@ -493,7 +502,7 @@
         .ipoint span { font-size: 14.5px; color: var(--text-2); line-height: 1.65; font-weight: 380; }
         @media (max-width: 900px) {
             .insight-lede { grid-template-columns: 1fr; gap: 40px; justify-items: center; }
-            .insight-lede .phone { width: 100%; max-width: 300px; }
+            .insight-shot { width: 100%; max-width: 340px; }
             .insight-points { max-width: 520px; }
         }
 
@@ -693,7 +702,7 @@
         }
         .door {
             display: grid;
-            grid-template-columns: 150px 1fr;
+            grid-template-columns: 178px 1fr;
             gap: 24px;
             align-items: center;
             background: var(--surface-2);
@@ -1005,7 +1014,7 @@
     </div>
     <div class="phone-wrap">
         <div class="phone">
-            <img src="images/review-today.jpg" alt="Kampa's Review screen for Wednesday, July 29: sleep score 73, tremor average 1.0 (Slight), HRV 61 ms, dyskinesia 0.0, above a full-day tremor chart with medication, food and walking marked">
+            <img src="images/review-today.jpg" alt="Kampa's Review screen for Wednesday, July 29: sleep score 73, tremor average 1.0 (Slight), HRV 56 ms, dyskinesia 0.0, above a full-day tremor chart with food and walking marked, and Today's forecast below it">
         </div>
         <div class="phone-glow"></div>
     </div>
@@ -1187,7 +1196,7 @@
             <p><strong>And when no dose is active</strong> - a day you haven't dosed yet, or hours after the last one has cleared - it stops projecting windows and shows your own typical range instead, saying which it's doing and why.</p>
         </div>
         <div class="forecast-shot">
-            <img src="images/forecast-panel.jpg" alt="Kampa's Today's forecast panel: a banded timeline in blue and red above the line 'expect around your usual level: Slight, generally between None and Mild', with a legend reading usual or better / worse than usual">
+            <img src="images/forecast-panel.jpg" alt="Kampa's Today's forecast panel: a banded timeline in blue and red above the line 'Your last dose is past its expected window - expect around your usual level: Mild, generally Slight to Mild', with a legend reading ON / usual or better, worse than usual, and no watch data">
         </div>
     </div>
 </div>
@@ -1214,9 +1223,8 @@
     <h2 class="section-h">The patterns you'd never spot yourself.</h2>
     <p class="section-p">A single day shows what happened. Across weeks and months, the Insights view surfaces the longer patterns - how your medication really performs, when wearing-off tends to hit, how your walking is trending - each with an honest confidence level, and only when the data actually supports it.</p>
     <div class="insight-lede">
-        <div class="phone-wrap">
-            <div class="phone"><img src="images/insights-list.jpg" alt="Kampa's Insights list: dose coverage and mobility findings marked Strong, separate Moderate cards measuring Mucuna Pruriens and Sinemet, and two Emerging cards reporting that caffeine and sugar sit inside normal daily variation"></div>
-            <div class="phone-glow"></div>
+        <div class="insight-shot">
+            <img src="images/insights-list.jpg" alt="Kampa's Insights list: dose coverage and mobility findings marked Strong, separate Moderate cards measuring Mucuna Pruriens and Sinemet, and an Emerging card reporting that caffeine sits inside normal daily variation">
         </div>
         <div class="insight-points">
             <div class="ipoint">
@@ -1233,7 +1241,7 @@
             </div>
             <div class="ipoint">
                 <strong>It will tell you when there's nothing there</strong>
-                <span>Caffeine and sugar both come back as "inside your usual daily variation." A finding of no effect is a finding, and Kampa reports it rather than inventing a pattern.</span>
+                <span>Caffeine comes back as "inside your usual daily variation" - the app's own way of saying it found nothing. A finding of no effect is still a finding, and Kampa reports it rather than inventing a pattern.</span>
             </div>
         </div>
     </div>
