@@ -36,6 +36,25 @@
         ],
         "createdAt": "2026-07-30T06:29:43.499Z",
         "reason": "Geist is the brand face per docs/brand-guide.md"
+      },
+      {
+        "rule": "overused-font",
+        "value": "*",
+        "files": [
+          "website/faq.html"
+        ],
+        "createdAt": "2026-07-30T06:54:41.458Z",
+        "reason": "Geist is the brand face per docs/brand-guide.md"
+      },
+      {
+        "rule": "overused-font",
+        "value": "*",
+        "files": [
+          "website/privacy.html",
+          "website/terms.html"
+        ],
+        "createdAt": "2026-07-30T06:54:59.665Z",
+        "reason": "Geist is the brand face per docs/brand-guide.md"
       }
     ]
   }
