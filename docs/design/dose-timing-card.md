@@ -7,6 +7,23 @@ chart and mechanism copy left in place for reuse here.
 **One line:** show every dose time the person actually uses, with onset, coverage, dose count and
 span; make a comparative claim only when one time genuinely differs beyond noise.
 
+**Name — DECIDED Jul 30 2026:** **"Each dose of your day"**, registry id `dose-by-position`.
+
+Chosen because it has to survive a flat result. On the reference record the three well-populated
+slots are 42/42/48 min onset and 182/178/162 min coverage, so the card's normal state is "your dose
+timing behaves consistently" — a name that promises a comparison ("morning vs evening", "your best
+dose time") would repeat exactly the defect that retired the old card. It also says *sequence*, not
+clock, which is the grouping the data actually supports, and it does not collide with the two
+neighbouring surfaces: **Doses panel** (today, per dose) and the **medication cards** (per
+substance, all history).
+
+Two headline states:
+- neutral (the reference user's current data): *Each dose of your day*
+- differentiated, only when a slot clears noise: *Your third dose starts slower than your first*
+
+Rejected: "Your dose times" and "Dose timing" (drift back to clock language); "First dose to last"
+(breaks at two doses).
+
 ---
 
 ## Why the old card was retired
