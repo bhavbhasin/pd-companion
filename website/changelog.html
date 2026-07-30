@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>What's new — Kampa</title>
+    <meta name="description" content="Everything that has shipped in Kampa - passive tremor and dyskinesia sensing, medication measurement, forecasting, logging by voice and barcode, insights, and privacy work.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;1,14..32,400&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0a0a0a;
+            --surface-1: #111113;
+            --surface-2: #1c1c1e;
+            --border: #2c2c2e;
+            --blue: #4A8CD6;
+            --blue-dim: rgba(74, 140, 214, 0.12);
+            --blue-border: rgba(74, 140, 214, 0.30);
+            --text-1: #ffffff;
+            --text-2: rgba(235, 235, 245, 0.76);
+            --text-3: rgba(235, 235, 245, 0.36);
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-geist: 'Geist', 'Inter', sans-serif;
+            --max-w: 800px;
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            background: var(--bg);
+            color: var(--text-1);
+            font-family: var(--font);
+            -webkit-font-smoothing: antialiased;
+            line-height: 1.7;
+            font-weight: 300;
+        }
+        nav {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 32px;
+            background: rgba(10, 10, 10, 0.72);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .wordmark { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+        .wordmark .name {
+            font-family: var(--font-geist); font-weight: 500; font-size: 18px;
+            letter-spacing: -0.02em; color: #fff;
+        }
+        .wordmark .name .a-blue { color: var(--blue); }
+        .nav-back { color: var(--text-2); text-decoration: none; font-size: 14px; transition: color 0.18s; }
+        .nav-back:hover { color: var(--text-1); }
+
+        .container { max-width: var(--max-w); margin: 0 auto; padding: 72px 32px 96px; }
+        .eyebrow {
+            font-size: 11.5px; font-weight: 650; letter-spacing: 0.11em;
+            text-transform: uppercase; color: var(--blue); margin-bottom: 14px;
+        }
+        h1 {
+            font-size: clamp(30px, 4vw, 42px); font-weight: 700;
+            letter-spacing: -0.03em; line-height: 1.1; margin-bottom: 12px;
+        }
+        .lede {
+            font-size: 16.5px; color: var(--text-2); line-height: 1.75;
+            max-width: 620px; margin-bottom: 56px;
+        }
+        .lede a { color: var(--blue); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s; }
+        .lede a:hover { border-bottom-color: var(--blue); }
+
+        /* Month group: a quiet rail on the left, entries stacked to its right */
+        .month { display: grid; grid-template-columns: 104px 1fr; gap: 32px; margin-bottom: 8px; }
+        .month-label {
+            font-size: 11.5px; font-weight: 650; letter-spacing: 0.1em;
+            text-transform: uppercase; color: var(--blue);
+            padding-top: 22px;
+        }
+        .month-label span { position: sticky; top: 92px; display: block; }
+        .entries { display: flex; flex-direction: column; }
+
+        .entry {
+            padding: 22px 0 26px;
+            border-bottom: 1px solid var(--border);
+        }
+        .month:last-child .entry:last-child { border-bottom: none; }
+        .entry h2 {
+            font-size: 17px; font-weight: 600; color: var(--text-1);
+            letter-spacing: -0.015em; line-height: 1.35; margin-bottom: 7px;
+        }
+        .entry p { font-size: 15px; color: var(--text-2); line-height: 1.7; }
+        .entry p em { color: var(--text-1); font-style: italic; }
+        .entry p + p { margin-top: 10px; }
+        .entry a { color: var(--blue); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s; }
+        .entry a:hover { border-bottom-color: var(--blue); }
+
+        .backlink {
+            margin-top: 64px; padding: 24px 26px; background: var(--surface-1);
+            border: 1px solid var(--border); border-radius: 14px;
+        }
+        .backlink p { font-size: 15.5px; color: var(--text-2); margin: 0; }
+        .backlink a { color: var(--blue); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s; }
+        .backlink a:hover { border-bottom-color: var(--blue); }
+
+        footer {
+            border-top: 1px solid var(--border); padding: 32px;
+            text-align: center; font-size: 12.5px; color: var(--text-3);
+        }
+        footer a { color: var(--text-2); text-decoration: none; }
+
+        @media (max-width: 640px) {
+            nav { padding: 14px 20px; }
+            .container { padding: 48px 20px 72px; }
+            .month { grid-template-columns: 1fr; gap: 0; }
+            .month-label { padding-top: 28px; padding-bottom: 4px; }
+            .month-label span { position: static; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a href="index.html" class="wordmark" aria-label="Kampa home">
+        <svg width="38" height="23" viewBox="0 0 240 144" fill="none" xmlns="http://www.w3.org/2000/svg" style="color:#fff; flex-shrink:0;">
+            <path d="M8 90 C 28 90, 30 30, 56 30 C 78 30, 80 110, 104 95 C 124 82, 126 60, 150 60 C 168 60, 172 78, 192 78 L 232 78" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="232" cy="78" r="5" fill="currentColor"/>
+        </svg>
+        <span class="name">k<span class="a-blue">ā</span>mpa</span>
+    </a>
+    <a href="index.html" class="nav-back">← Back to Kampa</a>
+</nav>
+
+<div class="container">
+    <p class="eyebrow">What's new</p>
+    <h1>Everything that's shipped.</h1>
+    <p class="lede">Kampa is in a private, invite-only beta and changes most weeks. Each release gets a closer look on <a href="https://www.linkedin.com/company/kampa-health/" target="_blank" rel="noopener">LinkedIn</a>.</p>
+
+    <div class="month">
+        <div class="month-label"><span>Jul 2026</span></div>
+        <div class="entries">
+
+            <div class="entry">
+                <h2>A card for each of your medications</h2>
+                <p>Kampa now measures every substance you take on its own terms - how long each one holds, and how many of your own doses that measurement rests on. Sinemet and Mucuna Pruriens get separate cards, because they behave differently and averaging them together hides both.</p>
+                <p>The rule for whether a card exists is simply whether you take the substance - not whether medicine has decided it works. Traditional and unproven treatments are measured the same way as anything else.</p>
+            </div>
+
+            <div class="entry">
+                <h2>Log a symptom in two taps</h2>
+                <p>Constipation, fatigue, mood, and urinary symptoms, each with a severity, saved straight to Apple Health and marked on your timeline. Log one when it's present - a normal day needs no entry, so there's no daily checklist to keep up with.</p>
+            </div>
+
+            <div class="entry">
+                <h2>Scan a package instead of describing it</h2>
+                <p>Point the camera at a barcode and Kampa fills in the product and its nutrition. It searches 439,082 products in an 11.8 MB file bundled inside the app - <em>no network call, nothing leaves your phone.</em> Typing and voice still work; scanning is just the fastest door for anything that came in a wrapper.</p>
+            </div>
+
+            <div class="entry">
+                <h2>Tap any number to see its history</h2>
+                <p>Sleep and HRV on your daily summary are now doors. Tap one and it opens into its own history, with today marked against your own range so you can tell an unusual day from an ordinary one. Scrubbing the chart moves every panel together.</p>
+            </div>
+
+            <div class="entry">
+                <h2>A sleep score that agrees with itself</h2>
+                <p>One number for how you slept, computed one way, from your own baseline rather than a population average. The history behind it also loads roughly instantly now, rather than taking a few seconds every time you open the day.</p>
+            </div>
+
+            <div class="entry">
+                <h2>What to expect today</h2>
+                <p>Kampa runs your wearing-off curve forward from the doses you've logged and draws the likely shape of your day - your probable on and off windows - as a band right under your tremor chart. On a day without an active dose it shows your own typical range instead, and says so. A heads-up for planning the day ahead, never a dosing instruction.</p>
+            </div>
+
+            <div class="entry">
+                <h2>Log gut symptoms by voice</h2>
+                <p>Tap + and say it - "bloated after lunch," "nausea this morning." Kampa saves it to Apple Health and marks it on your timeline, so slow-digestion days sit alongside how your doses landed. Constipation and gut motility are among the most common non-motor patterns in Parkinson's.</p>
+            </div>
+
+            <div class="entry">
+                <h2>Glucose, on the same timeline</h2>
+                <p>Wear an over-the-counter glucose sensor - Abbott Lingo, Dexcom Stelo, no prescription - and Kampa reads it straight from Apple Health and draws your glucose curve in its own panel, time-aligned right under your tremor chart. Touch and hold anywhere and a crosshair sweeps every panel at once, so a dose, a meal, a tremor uptick, and a glucose swing all line up to the same minute. It works fully without a sensor, too.</p>
+            </div>
+
+            <div class="entry">
+                <h2>In private beta</h2>
+                <p>Kampa is running on real devices in a private TestFlight beta - passive tremor and dyskinesia tracking, dose correlation, and your day-ahead forecast, all on your own data. Access is invite-only for now; <a href="mailto:info@kampa.health?subject=Kampa%20beta%20access">get in touch</a> if you'd like to try it.</p>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="month">
+        <div class="month-label"><span>Jun 2026</span></div>
+        <div class="entries">
+
+            <div class="entry">
+                <h2>Log by voice</h2>
+                <p>Speak a meal, a dose, or a mindfulness session and Kampa transcribes it on device, works out what you meant, and files it at the right time - even "last night at 9 PM." Food and mindfulness also work hands-free through Siri. Built for tremor-affected hands: no typing, no forms.</p>
+            </div>
+
+            <div class="entry">
+                <h2>Dyskinesia, alongside tremor</h2>
+                <p>Kampa now reads the full tremor distribution and the raw dyskinesia stream from Apple's Movement Disorder API - and draws both on the same timeline. Two motor signals, one chart, so you can see the whole picture of how a day moved.</p>
+            </div>
+
+            <div class="entry">
+                <h2>A redesigned Apple Watch face</h2>
+                <p>The Watch app gets a clean Kampa lockup and a live tremor sparkline - and the iPhone can now wake it to sync in the background, so your tremor data keeps flowing without opening anything.</p>
+            </div>
+
+            <div class="entry">
+                <h2>Cross-day Insights</h2>
+                <p>A new Insights view looks across weeks and months, not just today - surfacing longer-running patterns like medication response, wearing-off timing, and walking trends. Each comes with an honest confidence level and a clear "discuss with your neurologist" note. It only claims a pattern when the data actually supports it.</p>
+            </div>
+
+            <div class="entry">
+                <h2>A pattern engine built for rigor</h2>
+                <p>Behind the Insights view, Kampa analyzes dose-response by time of day, wearing-off windows, long-term gait trends, and food timing - and guards against confounds, so a meal doesn't get credit for what the medication actually did. When the signal isn't there, it stays quiet.</p>
+            </div>
+
+            <div class="entry">
+                <h2>Neurologist-ready report</h2>
+                <p>Export a clean, plain-language summary of your patterns as a PDF to bring to any appointment - your data, on your terms, ready to discuss with your care team.</p>
+            </div>
+
+            <div class="entry">
+                <h2>Kampa enters private testing</h2>
+                <p>Kampa reaches real devices beyond the builder's own, with a small, invitation-only group of testers.</p>
+            </div>
+
+            <div class="entry">
+                <h2>Private cloud backup &amp; restore</h2>
+                <p>Your data backs up to your own private iCloud (Apple's CloudKit) and restores on a new device - lose or replace your phone and your history isn't gone. On-device first; you stay in control of what it's ever used for.</p>
+            </div>
+
+            <div class="entry">
+                <h2>See exactly what's stored</h2>
+                <p>A new in-app Backup view shows every record type, count, and date range Kampa holds on your device - plus one-tap CSV export of everything.</p>
+            </div>
+
+            <div class="entry">
+                <h2>Kāmpa, named</h2>
+                <p>The app takes its name and identity: <em>Kāmpa</em>, from <em>Kampavata</em> - the Ayurvedic term for the tremor disorder now called Parkinson's.</p>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="month">
+        <div class="month-label"><span>May 2026</span></div>
+        <div class="entries">
+
+            <div class="entry">
+                <h2>Food, meditation &amp; event logging</h2>
+                <p>Capture meals, mindfulness sessions, and daily events - each timestamped and ready to correlate against continuous tremor data.</p>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="backlink">
+        <p>Want to try it? Kampa is in a private, invite-only beta - <a href="index.html#try">request access</a>.</p>
+    </div>
+
+</div>
+
+<footer>
+    © 2026 Kampa Health · <a href="index.html">kampa.health</a> · <a href="faq.html">FAQ</a> · <a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Use</a>
+</footer>
+
+</body>
+</html>
