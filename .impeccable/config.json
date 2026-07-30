@@ -1,0 +1,42 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "geist",
+        "createdAt": "2026-07-30T06:28:46.405Z",
+        "reason": "Brand face per docs/brand-guide.md"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "website/index.html"
+        ],
+        "createdAt": "2026-07-30T06:28:46.453Z",
+        "reason": "blockquote pull-quote rule in the Story section, not a card accent stripe"
+      },
+      {
+        "rule": "dark-glow",
+        "value": "*",
+        "files": [
+          "website/index.html"
+        ],
+        "createdAt": "2026-07-30T06:28:46.500Z",
+        "reason": "deliberate device-mockup lighting under the phone frame"
+      },
+      {
+        "rule": "overused-font",
+        "value": "*",
+        "files": [
+          "website/changelog.html",
+          "website/index.html"
+        ],
+        "createdAt": "2026-07-30T06:29:43.499Z",
+        "reason": "Geist is the brand face per docs/brand-guide.md"
+      }
+    ]
+  }
+}

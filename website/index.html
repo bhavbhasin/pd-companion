@@ -484,11 +484,7 @@
             gap: 64px;
             align-items: center;
         }
-        /* A crop sits flat. Wrapping it in a bordered box frames content that
-           already carries its own card edges, and the outer rounding then reads
-           as a broken device bezel. */
-        .insight-shot { width: 360px; }
-        .insight-shot img { width: 100%; display: block; }
+        .insight-lede .phone { width: 285px; }
         .insight-points { display: flex; flex-direction: column; gap: 26px; }
         .ipoint strong {
             display: block; font-size: 15.5px; font-weight: 600;
@@ -497,7 +493,6 @@
         .ipoint span { font-size: 14.5px; color: var(--text-2); line-height: 1.65; font-weight: 380; }
         @media (max-width: 900px) {
             .insight-lede { grid-template-columns: 1fr; gap: 40px; justify-items: center; }
-            .insight-shot { width: 100%; max-width: 340px; }
             .insight-points { max-width: 520px; }
         }
 
@@ -682,24 +677,27 @@
             .voice-strip { grid-template-columns: 1fr; max-width: 320px; margin: 0 auto; gap: 40px; }
         }
 
-        /* ── The other two capture doors: scan, and symptom ── */
+        /* ── The other two capture doors: scan, and symptom ──
+           Same grammar as .voice-step above: a real bezel around a full screen,
+           caption beside it. No new container. */
         .doors {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-top: 52px;
+            gap: 44px 40px;
+            margin-top: 56px;
         }
         .door {
-            display: flex;
-            flex-direction: column;
-            gap: 22px;
+            display: grid;
+            grid-template-columns: 208px 1fr;
+            gap: 28px;
+            align-items: center;
         }
-        .door-shot { width: 100%; }
-        .door-shot img { width: 100%; display: block; }
+        .door .phone { width: 208px; }
         .door-copy strong { display: block; font-size: 15.5px; font-weight: 600; color: var(--text-1); margin-bottom: 7px; }
         .door-copy p { font-size: 14px; color: var(--text-2); line-height: 1.65; }
         .door-copy em { color: var(--text-1); font-style: normal; font-weight: 500; }
-        @media (max-width: 760px) { .doors { grid-template-columns: 1fr; max-width: 380px; margin-left: auto; margin-right: auto; } }
+        @media (max-width: 1024px) { .doors { grid-template-columns: 1fr; max-width: 560px; margin-left: auto; margin-right: auto; } }
+        @media (max-width: 520px) { .door { grid-template-columns: 1fr; gap: 18px; justify-items: center; text-align: center; } }
 
         /* ── Watch lede ── */
         .watch-lede {
@@ -1145,14 +1143,14 @@
         <!-- The other two doors: scan a package, or log a symptom -->
         <div class="doors">
             <div class="door">
-                <div class="door-shot"><img src="images/barcode-logfood.jpg" alt="Kampa's Log food screen with the product name filled in from a scan and the note 'Scanned - recording: Protein, Sugar, Fat'"></div>
+                <div class="phone"><img src="images/barcode-logfood.jpg" alt="Kampa's Log food screen with the product name filled in from a scan and the note 'Scanned - recording: Protein, Sugar, Fat'"></div>
                 <div class="door-copy">
                     <strong>Anything in a wrapper, scan it</strong>
                     <p>Point the camera at a barcode and the product and its nutrition fill themselves in. Kampa searches 439,082 products in an 11.8 MB file bundled inside the app - <em>no network call, nothing leaves your phone.</em></p>
                 </div>
             </div>
             <div class="door">
-                <div class="door-shot"><img src="images/symptom-log.jpg" alt="Kampa's Log symptom screen: chips for Constipation, Fatigue, Mood and Urinary, a Mild/Moderate/Severe severity control, and a date and time"></div>
+                <div class="phone"><img src="images/symptom-log.jpg" alt="Kampa's Log symptom screen: chips for Constipation, Fatigue, Mood and Urinary, a Mild/Moderate/Severe severity control, and a date and time"></div>
                 <div class="door-copy">
                     <strong>A symptom, in two taps</strong>
                     <p>Constipation, fatigue, mood and urinary symptoms, each with a severity, saved straight to Apple Health and marked on your timeline. Log one when it's present - a normal day needs no entry, so there's no daily checklist to fall behind on.</p>
@@ -1201,8 +1199,9 @@
     <h2 class="section-h">The patterns you'd never spot yourself.</h2>
     <p class="section-p">A single day shows what happened. Across weeks and months, the Insights view surfaces the longer patterns - how your medication really performs, when wearing-off tends to hit, how your walking is trending - each with an honest confidence level, and only when the data actually supports it.</p>
     <div class="insight-lede">
-        <div class="insight-shot">
-            <img src="images/insights-list.jpg" alt="Kampa's Insights list: dose coverage and mobility findings marked Strong, separate Moderate cards measuring Mucuna Pruriens and Sinemet, and an Emerging card reporting that caffeine sits inside normal daily variation">
+        <div class="phone-wrap">
+            <div class="phone"><img src="images/insights-list.jpg" alt="Kampa's Insights list: dose coverage and mobility findings marked Strong, separate Moderate cards measuring Mucuna Pruriens and Sinemet, and an Emerging card reporting that caffeine sits inside normal daily variation"></div>
+            <div class="phone-glow"></div>
         </div>
         <div class="insight-points">
             <div class="ipoint">
