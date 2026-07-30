@@ -46,13 +46,9 @@
             font-weight: 500;
         }
 
-        /* Etymology block */
-        .etym-wrap {
-            max-width: var(--max-w);
-            margin: 0 auto;
-            padding: 40px 56px 0;
-        }
+        /* Etymology block - lives inside the Story section */
         .etym-inner {
+            margin-top: 44px;
             border: 1px solid var(--border);
             border-radius: 16px;
             padding: 28px 32px;
@@ -113,7 +109,6 @@
         @media (max-width: 768px) {
             .etym-inner { grid-template-columns: 1fr; gap: 16px; }
             .etym-def { border-left: none; padding-left: 0; border-top: 1px solid var(--border); padding-top: 16px; }
-            .etym-wrap { padding: 32px 32px 0; }
         }
 
         /* HealthKit domains strip */
@@ -996,20 +991,6 @@
     </div>
 </div>
 
-<!-- ── Etymology ── -->
-<div class="etym-wrap">
-    <div class="etym-inner">
-        <div class="etym-name">
-            <span class="etym-word">k<span class="a-blue">ā</span>mpa</span>
-            <span class="etym-pron">kuhm-pah<button class="pron-btn" type="button" aria-label="Play pronunciation of kāmpa" onclick="document.getElementById('pron-audio').play()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none"></polygon><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg></button><audio id="pron-audio" src="audio/kampa-pron.m4a" preload="none"></audio></span>
-            <span class="etym-lang">Sanskrit · कम्प</span>
-        </div>
-        <p class="etym-def">
-            The Sanskrit word for "tremor." From <em>Kampavata</em> (कम्पवात) - the Ayurvedic term for what modern medicine calls Parkinson's disease, described in Indian medicine centuries before James Parkinson named it in 1817. The name isn't a metaphor - it is the oldest clinical term for the condition this app was built to understand.
-        </p>
-    </div>
-</div>
-
 <!-- ── Wave divider ── -->
 <div class="wave-divider">
     <svg viewBox="0 0 240 144" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1292,6 +1273,18 @@
                 </a>
             </div>
         </div>
+    </div>
+
+    <!-- Where the name comes from -->
+    <div class="etym-inner">
+        <div class="etym-name">
+            <span class="etym-word">k<span class="a-blue">ā</span>mpa</span>
+            <span class="etym-pron">kuhm-pah<button class="pron-btn" type="button" aria-label="Play pronunciation of kāmpa" onclick="document.getElementById('pron-audio').play()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none"></polygon><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg></button><audio id="pron-audio" src="audio/kampa-pron.m4a" preload="none"></audio></span>
+            <span class="etym-lang">Sanskrit · कम्प</span>
+        </div>
+        <p class="etym-def">
+            The Sanskrit word for "tremor." From <em>Kampavata</em> (कम्पवात) - the Ayurvedic term for what modern medicine calls Parkinson's disease, described in Indian medicine centuries before James Parkinson named it in 1817. The name isn't a metaphor - it is the oldest clinical term for the condition this app was built to understand.
+        </p>
     </div>
 </div>
 

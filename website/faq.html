@@ -148,7 +148,8 @@
         <p>An iPhone 11 or newer running iOS 26 or later, and an Apple Watch Series 4 or newer running watchOS 10 or later. The Watch is essential - it is where tremor and dyskinesia are sensed. Kampa works with older Watches like the Series 5 and first-generation SE.</p>
 
         <h3>I installed Kampa and it says "no data yet." Is something wrong?</h3>
-        <p>No - this is expected. Tremor sensing needs a few days of regular Watch wear before patterns appear. Wear your Watch through your normal days, and Kampa will start showing data as it accumulates. If you see nothing after 3-4 days of wear, check that Kampa has Motion and Health permissions in Settings.</p>
+        <p>No - this is expected. Tremor sensing needs a few days of regular Watch wear before patterns appear. Wear your Watch through your normal days, and Kampa will start showing data as it accumulates.</p>
+        <p>If you still see nothing after 3-4 days of wear, the usual cause is a permission rather than a fault. Check that Kampa is installed on your Apple Watch, and that Motion &amp; Fitness is on in <strong>Settings → Privacy &amp; Security → Motion &amp; Fitness</strong>. Without it the Watch returns no tremor readings at all, and the app cannot tell that apart from a calm day - which is why it now says so directly instead of showing you an empty chart.</p>
 
         <h3>Do I need to open the app every day?</h3>
         <p>No, but open it every few days. Your Watch stores about a week of tremor data and hands it to your iPhone when the app opens. If the app stays closed longer than that, the oldest days can be lost. Kampa will remind you if it has not heard from your Watch in a while - that reminder is the one notification we will always send, because your data matters. We are working toward fully automatic background sync.</p>
@@ -183,15 +184,42 @@
 
         <h3>What is the "what to expect today" forecast?</h3>
         <p>On today's Review, Kampa projects the likely shape of your day - your probable <strong>on</strong> and <strong>wearing-off</strong> windows - from the doses you've logged and how each of your medications has tended to act for you, learned from your own history rather than a textbook drug curve. It is a heads-up for planning, not a dosing instruction. As always, decisions about medication are for you and your neurologist.</p>
+        <p>The panel has two modes and always tells you which one you are looking at. While a dose is still inside its expected window, you get on and off windows. When no dose is active - a day you have not dosed yet, or hours after the last one has cleared - it stops projecting windows and shows your own typical range instead, and says so. Stretches are then marked <strong>usual or better</strong> or <strong>worse than usual</strong>, measured against your own baseline rather than anyone else's.</p>
+        <p>Stretches where your Watch was off your wrist are drawn as <strong>no watch data</strong> rather than quietly filled in.</p>
+
+        <h3>Why does the forecast only cover part of my day?</h3>
+        <p>Because it only claims what it can explain. A projected window is tied to a specific dose whose behaviour Kampa has measured enough times to model. Outside those windows it falls back to your typical range. Kampa deliberately does not stretch a dose's influence past the point where the evidence runs out, which is why the coloured windows sometimes cover less of the day than you might expect.</p>
 
         <h3>What is the difference between Observations and Insights?</h3>
         <p>Observations describe today: "Tremor eased 68% in the hour after your 8 AM dose." They are honest descriptions of what co-occurred, not proof of cause. Insights are patterns that hold up across many days and pass statistical checks before you ever see them. Observations are the daily read; Insights are the accumulated evidence.</p>
 
         <h3>What do the confidence labels on Insights mean?</h3>
-        <p>Emerging, moderate, and strong reflect how much evidence supports a pattern - how many days, how large the effect, and how consistently it repeats. Kampa shows the basis plainly ("based on 23 days"). If a pattern stops holding, its card is downgraded or retired. We would rather show you nothing than something that is not real.</p>
+        <p>Emerging, moderate, and strong reflect how much evidence supports a pattern - how many days, how large the effect, and how consistently it repeats. Kampa shows the basis plainly, so a medication card will say something like "measured on 160 of your own 252 doses" and you can see how much data sits behind the claim. If a pattern stops holding, its card is downgraded or retired. We would rather show you nothing than something that is not real.</p>
+
+        <h3>Why does a card say it found nothing?</h3>
+        <p>Because that is a result too. If Kampa checks whether caffeine moves your tremor and the answer is "the difference sits inside your usual daily variation," it says exactly that rather than dressing a non-finding up as a discovery. Most consumer health apps only show you the hits. A pattern engine that never reports a miss is not measuring anything - it is just narrating.</p>
 
         <h3>Why do I have so few Insights? / Why did a card disappear?</h3>
         <p>Because Kampa applies real statistical standards before claiming anything, and honest standards mean fewer, better cards. Some things genuinely have no effect on your symptoms - learning that is valuable too. Cards appear when evidence clears the bar and retire when it no longer does; the screen reflects the current state of evidence, never a highlight reel.</p>
+
+        <h3>Why does each of my medications get its own card?</h3>
+        <p>Because they behave differently, and averaging them together hides both. If you take Sinemet and Mucuna Pruriens, Kampa measures each one separately - how long it holds, and how many of your own doses that estimate rests on - rather than reporting a single blended number that describes neither.</p>
+        <p>Whether a card exists depends only on whether you take the substance. Kampa does not decide in advance which treatments deserve measuring, so traditional and unproven treatments are measured exactly like anything else. That is not an endorsement of them; it is the opposite of an opinion. If you take it and there is enough data, you get the number, and what you conclude from it is yours and your neurologist's to decide.</p>
+
+        <h3>What does "your doses leave N hours a day uncovered" mean?</h3>
+        <p>It compares how long your doses tend to hold against how long you are awake. If each dose covers roughly three hours and your doses do not span your waking day, the uncovered stretches add up, and that total is what the card reports.</p>
+        <div class="callout">
+            <p><strong>Uncovered does not mean OFF.</strong> It means no dose was inside its expected window - not that you were symptomatic. You may well feel fine during an uncovered stretch. The card is measuring your dosing schedule against your day, not measuring how you felt.</p>
+        </div>
+
+        <h3>What is the sleep score?</h3>
+        <p>A single number for how you slept, built from your own history rather than a population average, so it answers "how did I sleep compared with my normal?" It can differ from other sleep scores you have seen - Apple Health does not publish one, so this is Kampa's own calculation from the sleep stages your Watch recorded, and other apps use their own formulas.</p>
+
+        <h3>Can I see the history behind a number?</h3>
+        <p>Yes. The summary tiles at the top of Review are doors - tap sleep or HRV and it opens into that measure's own history, with today marked against your usual range so you can tell an unusual day from an ordinary one. Scrubbing the chart moves every panel on the screen together, so you can line one signal up against the rest.</p>
+
+        <h3>Kampa is reading data from another app and I don't want it to. Can I stop that?</h3>
+        <p>Yes. Apple Health pools data from every app and device that writes to it, which sometimes means duplicates or a source you do not trust. Settings lets you exclude a data source app-wide, and Kampa will ignore everything from it.</p>
 
         <h3>Will Kampa ever tell me to change my medication?</h3>
         <p>No. Never. Kampa may surface an observation worth discussing - for example, that your afternoon doses seem to act more slowly than your morning ones - and help you prepare a summary for your neurologist. What to do about it is a decision for you and your doctor.</p>
@@ -221,10 +249,22 @@
         <h2>Logging and voice</h2>
 
         <h3>How does voice logging work?</h3>
-        <p>The simplest way is inside the app: tap <strong>+</strong> on the Review screen, then speak. Say "5 almonds with tea," "bloated after lunch," or "ten minutes of breathing" and Kampa sorts each into the right place - food, a gut symptom, or a mindfulness session. It reads back what it understood so you can confirm before anything is saved. You can also start food and mindfulness logs hands-free with Siri ("log a 20 minute meditation"). It was designed for days when typing is hard.</p>
+        <p>The simplest way is inside the app: tap <strong>+</strong> on the Review screen, then speak. Say "5 almonds with tea," "bloated after lunch," or "ten minutes of breathing" and Kampa sorts each into the right place - food, a symptom, or a mindfulness session. It reads back what it understood so you can confirm before anything is saved. You can also start food and mindfulness logs hands-free with Siri ("log a 20 minute meditation"). It was designed for days when typing is hard.</p>
 
-        <h3>Can I log gut or digestive symptoms?</h3>
-        <p>Yes. Tap <strong>+</strong> on the Review screen and describe it in plain words ("bloated after lunch," "nausea this morning"). Kampa saves it to Apple Health and marks it on your timeline, so slow-digestion days can be seen alongside how your doses landed.</p>
+        <h3>Do I have to use my voice?</h3>
+        <p>No. Everything can be typed, and packaged food can be scanned. Voice exists because typing is hard on some days, not because it is the only way in.</p>
+
+        <h3>How does the barcode scanner work?</h3>
+        <p>In Log Food, tap <strong>Scan a package barcode</strong> and point the camera at the barcode. Kampa fills in the product name and its nutrition, and records the attributes it can correlate against - protein, sugar, fat, fibre, caffeine.</p>
+        <p>It searches 439,082 products in an 11.8 MB file bundled inside the app, so <strong>there is no network call and nothing about what you eat leaves your phone.</strong> It is fastest for anything that came in a wrapper.</p>
+
+        <h3>What if the scanner doesn't recognise a product?</h3>
+        <p>Type or say it instead, and Kampa classifies it the same way it classifies any other described meal. The bundled catalogue covers packaged groceries well, and it is thinner on regional and imported foods - South Asian products especially. Home-cooked food has no barcode at all, so describing it is the normal path, not a fallback.</p>
+
+        <h3>What symptoms can I log, and how?</h3>
+        <p>Tap <strong>+</strong>, then <strong>Symptom</strong>. Constipation, fatigue, mood, and urinary symptoms each take a severity of mild, moderate, or severe. Everything is saved to Apple Health and marked on your timeline, so a difficult stretch sits alongside how your doses landed that day. You can also just say it - "bloated after lunch," "nausea this morning."</p>
+        <p><strong>Log a symptom when it is present. A normal day needs no entry.</strong> There is no daily checklist to keep up with and nothing to fall behind on, which matters more than it sounds: a tracker you feel guilty about is one you stop opening.</p>
+        <p>Constipation and gut motility are among the most common non-motor patterns in Parkinson's, and gut motility also affects how well levodopa is absorbed - which is why these sit on the same timeline as your doses rather than in a separate diary.</p>
 
         <h3>Why can't I log a medication dose by voice through Kampa?</h3>
         <p>Apple allows apps to read medication doses from Apple Health but not to write them. Saying "log my meds" opens Apple Health's own medication screen instead. This is an Apple platform rule, and it exists for a good reason - one trusted list of record for something as important as medication.</p>
