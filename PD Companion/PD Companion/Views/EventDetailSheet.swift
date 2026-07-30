@@ -11,10 +11,9 @@ struct EventDetailSheet: View {
     @State private var isDeleting = false
     @State private var showEditScreen = false
     @State private var deleteError: String?
-    @State private var fittedHeight: CGFloat = 260   // compact sheet grows/shrinks to its content
 
-    /// Food is the one detail with extra content and an edit-screen push, so it keeps a
-    /// roomy sheet; every other event is a few lines and gets a content-fitted sheet.
+    /// Food is the one detail with extra content and an edit-screen push, so its actions
+    /// pin to the bottom of the sheet; every other event hugs its content.
     private var isFood: Bool { if case .food = event { true } else { false } }
 
     var body: some View {
@@ -94,8 +93,9 @@ struct EventDetailSheet: View {
                     healthAppNote
                 }
 
-                // Food pins its actions to the bottom of the roomy sheet; compact events
-                // hug their content (no Spacer) so the content-fitted sheet has no dead gap.
+                // Food pins its actions to the bottom of the sheet; every other event keeps
+                // its actions directly under the content they act on, with the remaining
+                // sheet height left empty below.
                 if isFood { Spacer() }
 
                 // Action buttons
@@ -157,10 +157,17 @@ struct EventDetailSheet: View {
                     )
                 }
             }
-            // Measure the content so a compact sheet is exactly as tall as it needs to be.
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fittedHeight = $0 }
         }
-        .presentationDetents(isFood ? [.medium] : [.height(fittedHeight)])
+        // Was: a content-fitted detent driven by .onGeometryChange. That measurement was
+        // attached to the NavigationStack's content, which fills the sheet, which is exactly
+        // `fittedHeight` tall - so it resolved to `fittedHeight = fittedHeight` and stayed
+        // pinned at its 260 seed forever. Medication and workout details, which are taller
+        // than 260, clipped with no way to reach the rest.
+        //
+        // A correct self-sizing sheet needs the content measured outside the detent's own
+        // constraint; `.medium` plus a `.large` the user can drag to costs a little dead
+        // space on the shortest sheets and cannot truncate anything.
+        .presentationDetents(isFood ? [.medium] : [.medium, .large])
         .presentationDragIndicator(.visible)
         .alert("Delete entry?", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) { performDelete() }
