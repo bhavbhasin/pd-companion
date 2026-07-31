@@ -7,7 +7,7 @@
         "rule": "overused-font",
         "value": "geist",
         "createdAt": "2026-07-30T06:28:46.405Z",
-        "reason": "Brand face per docs/brand-guide.md"
+        "reason": "User confirmed Geist is the Kampa wordmark face in docs/brand-guide.md"
       },
       {
         "rule": "side-tab",
@@ -55,6 +55,12 @@
         ],
         "createdAt": "2026-07-30T06:54:59.665Z",
         "reason": "Geist is the brand face per docs/brand-guide.md"
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "createdAt": "2026-07-31T00:29:50.262Z",
+        "reason": "User confirmed Inter is the site-wide body face in docs/brand-guide.md"
       }
     ]
   }
