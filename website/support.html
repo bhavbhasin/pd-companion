@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support — Kampa</title>
+    <meta name="description" content="Get help with Kampa. Email support, quick fixes for syncing and permissions, and links to the FAQ, privacy policy, and terms.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;1,14..32,400&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0a0a0a;
+            --surface-1: #111113;
+            --surface-2: #1c1c1e;
+            --border: #2c2c2e;
+            --blue: #4A8CD6;
+            --blue-dim: rgba(74, 140, 214, 0.12);
+            --blue-border: rgba(74, 140, 214, 0.30);
+            --text-1: #ffffff;
+            --text-2: rgba(235, 235, 245, 0.76);
+            --text-3: rgba(235, 235, 245, 0.36);
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-geist: 'Geist', 'Inter', sans-serif;
+            --max-w: 760px;
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            background: var(--bg);
+            color: var(--text-1);
+            font-family: var(--font);
+            -webkit-font-smoothing: antialiased;
+            line-height: 1.7;
+            font-weight: 300;
+        }
+        nav {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 32px;
+            background: rgba(10, 10, 10, 0.72);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .wordmark { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+        .wordmark .name {
+            font-family: var(--font-geist); font-weight: 500; font-size: 18px;
+            letter-spacing: -0.02em; color: #fff;
+        }
+        .wordmark .name .a-blue { color: var(--blue); }
+        .nav-back { color: var(--text-2); text-decoration: none; font-size: 14px; transition: color 0.18s; }
+        .nav-back:hover { color: var(--text-1); }
+        .container { max-width: var(--max-w); margin: 0 auto; padding: 72px 32px 96px; }
+        .eyebrow {
+            font-size: 11.5px; font-weight: 650; letter-spacing: 0.11em;
+            text-transform: uppercase; color: var(--blue); margin-bottom: 14px;
+        }
+        h1 {
+            font-size: clamp(30px, 4vw, 42px); font-weight: 700;
+            letter-spacing: -0.03em; line-height: 1.1; margin-bottom: 12px;
+        }
+        .meta { font-size: 13.5px; color: var(--text-3); margin-bottom: 40px; }
+        .intro {
+            background: var(--surface-1); border: 1px solid var(--border);
+            border-radius: 14px; padding: 24px 26px; margin-bottom: 36px;
+            font-size: 16px; color: var(--text-2); line-height: 1.75;
+        }
+        .email-big {
+            display: inline-block; font-size: 19px; font-weight: 500;
+            color: var(--blue); margin-top: 6px;
+        }
+        section { scroll-margin-top: 80px; }
+        h2 {
+            font-size: 20px; font-weight: 600; letter-spacing: -0.02em;
+            color: var(--text-1); margin: 48px 0 8px;
+            padding-bottom: 12px; border-bottom: 1px solid var(--border);
+        }
+        h3 { font-size: 15.5px; font-weight: 600; color: var(--text-1); margin: 28px 0 8px; }
+        p { color: var(--text-2); margin-bottom: 14px; font-size: 15.5px; }
+        ul { color: var(--text-2); margin: 0 0 14px 20px; font-size: 15.5px; }
+        li { margin-bottom: 8px; }
+        strong { font-weight: 500; color: var(--text-1); }
+        a { color: var(--blue); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s; }
+        a:hover { border-bottom-color: var(--blue); }
+        .callout {
+            background: var(--blue-dim); border: 1px solid var(--blue-border);
+            border-radius: 10px; padding: 16px 20px; margin: 22px 0;
+        }
+        .callout p { margin: 0; color: var(--text-1); font-weight: 400; font-size: 15px; }
+        .links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+        .links a {
+            font-size: 13px; color: var(--text-2); text-decoration: none;
+            background: var(--surface-2); border: 1px solid var(--border);
+            border-radius: 999px; padding: 7px 14px; transition: border-color 0.18s, color 0.18s;
+        }
+        .links a:hover { border-color: var(--blue); color: var(--text-1); }
+        footer {
+            border-top: 1px solid var(--border); padding: 32px;
+            text-align: center; font-size: 12.5px; color: var(--text-3);
+        }
+        footer a { color: var(--text-2); }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a href="index.html" class="wordmark" aria-label="Kampa home">
+        <svg width="38" height="23" viewBox="0 0 240 144" fill="none" xmlns="http://www.w3.org/2000/svg" style="color:#fff; flex-shrink:0;">
+            <path d="M8 90 C 28 90, 30 30, 56 30 C 78 30, 80 110, 104 95 C 124 82, 126 60, 150 60 C 168 60, 172 78, 192 78 L 232 78" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="232" cy="78" r="5" fill="currentColor"/>
+        </svg>
+        <span class="name">k<span class="a-blue">ā</span>mpa</span>
+    </a>
+    <a href="index.html" class="nav-back">← Back to site</a>
+</nav>
+
+<div class="container">
+
+    <p class="eyebrow">Support</p>
+    <h1>Get help with Kampa</h1>
+    <p class="meta">Email us, or try the quick checks below first. Not medical advice.</p>
+
+    <div class="intro">
+        Kampa is built by a small team, and support email reaches us directly - not a queue.
+        <br>
+        <a href="mailto:support@kampa.health" class="email-big">support@kampa.health</a>
+    </div>
+
+    <section id="email-us">
+        <h2>Emailing us</h2>
+        <p>Tell us what happened in your own words. That is genuinely enough to start - you don't need to diagnose it for us.</p>
+        <p>If you can, include the details block from inside the app: open <strong>Settings → Contact support</strong>, then tap <strong>Copy details</strong> or <strong>Share details</strong>. It records which version you're running, whether a Watch is paired, and how much data you have.</p>
+        <div class="callout">
+            <p>The details block contains no health information - no tremor readings, no doses, no symptoms. Only counts, dates, and version numbers. You can read the whole thing on screen before you send it.</p>
+        </div>
+        <p>We aim to reply within two working days.</p>
+    </section>
+
+    <section id="quick-checks">
+        <h2>Worth checking first</h2>
+        <p>Three things account for most of what people write in about.</p>
+        <h3>The Watch isn't sending data</h3>
+        <ul>
+            <li>Check the Watch and iPhone are paired and near each other.</li>
+            <li>Open Kampa on the Watch once - background transfer can stall if the app has never been opened since a restart.</li>
+            <li>Data arrives in batches, not instantly. A gap of an hour or two is normal.</li>
+        </ul>
+        <h3>Health data looks missing</h3>
+        <ul>
+            <li>Open the iPhone <strong>Health</strong> app, go to <strong>Sharing → Apps</strong>, choose Kampa, and confirm the categories are enabled. iOS turns these off individually, and a single missed toggle is usually the cause.</li>
+            <li>In Kampa, check <strong>Settings → Data sources</strong> - if a device was switched off there, its data is excluded everywhere on purpose.</li>
+        </ul>
+        <h3>Insights haven't appeared</h3>
+        <ul>
+            <li>Insights need enough history before they will say anything. Kampa deliberately stays quiet rather than showing a pattern it cannot yet support.</li>
+            <li>They also need the events they depend on to be logged - a medication insight needs logged doses.</li>
+        </ul>
+    </section>
+
+    <section id="more">
+        <h2>More</h2>
+        <p>The FAQ covers setup, how the tremor chart and Insights work, privacy, and cost.</p>
+        <div class="links">
+            <a href="faq.html">FAQ</a>
+            <a href="faq.html#getting-started">Getting started</a>
+            <a href="privacy.html">Privacy Policy</a>
+            <a href="terms.html">Terms of Use</a>
+            <a href="changelog.html">What's new</a>
+        </div>
+    </section>
+
+    <section id="medical">
+        <h2>One thing we can't help with</h2>
+        <p>Kampa is a wellness tool, not a medical device. It doesn't diagnose or treat any condition, and it never tells you to change your medication. For anything about your treatment, talk to your doctor or neurologist.</p>
+    </section>
+
+</div>
+
+<footer>
+    © 2026 Kampa Health · <a href="index.html">kampa.health</a> · <a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Use</a>
+</footer>
+
+</body>
+</html>

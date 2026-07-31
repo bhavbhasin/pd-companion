@@ -87,7 +87,7 @@ struct DayInReviewView: View {
                 EventDetailSheet(event: event)
             }
             .sheet(isPresented: $showingBackup) {
-                BackupSheet()
+                SettingsSheet()
             }
             .sheet(isPresented: $showingHRVDetail) {
                 HRVDetailSheet(dayValue: healthKit.dayHRV,

@@ -1,13 +1,13 @@
 import SwiftUI
 import SwiftData
 
-/// Backup screen: shows the on-device record counts and date spans that should
-/// match the iCloud (CloudKit) backup, and hosts the CSV export action.
+/// The app's Settings screen: what Kampa has stored, where it came from, how to get
+/// it out, how to get help, and the legal footing.
 ///
-/// The counts here are the one-glance verification: compare them against the
-/// record counts in the CloudKit Console. No need to sort ascending/descending
-/// in the console — the "From → To" line is the span, the number is the total.
-struct BackupSheet: View {
+/// The record counts are the one-glance verification against iCloud: compare them
+/// against the record counts in the CloudKit Console. No need to sort ascending or
+/// descending there — the "From → To" line is the span, the number is the total.
+struct SettingsSheet: View {
     @EnvironmentObject var healthKit: HealthKitManager
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \TremorReading.timestamp, order: .forward) private var tremorReadings: [TremorReading]
@@ -34,21 +34,25 @@ struct BackupSheet: View {
                         first: foodEvents.first?.timestamp,
                         last: foodEvents.last?.timestamp
                     )
-                } header: {
-                    Text("Stored on this device")
-                } footer: {
-                    Text("Saved on this iPhone and mirrored to your private iCloud backup.")
-                }
-
-                Section {
                     NavigationLink {
                         HealthSourcesView()
                     } label: {
                         Label("Data sources", systemImage: "laptopcomputer.and.iphone")
                     }
+                } header: {
+                    Text("Your data")
                 } footer: {
                     Text("Choose which devices are yours. Data from anyone else won't be used.")
                 }
+
+                // MARK: - Medications (not built yet)
+                //
+                // The per-drug card exclusion toggle belongs here, between Your data and
+                // Backup. Design: docs/design/medication-cards.md. The trigger is a user
+                // who confirms doses on a schedule they already keep — the dose fetch gates
+                // on `logStatus == .taken`, so 5-8 confirmed medications become 5-8 cards
+                // in a single day. Slot a `Section { … } header: { Text("Medications") }`
+                // in here; nothing else on this screen needs to move.
 
                 Section {
                     Button {
@@ -63,8 +67,47 @@ struct BackupSheet: View {
                         }
                     }
                     .disabled(isExporting)
+                } header: {
+                    Text("Backup & export")
                 } footer: {
-                    Text("Save your tremor, food, and Health data as CSV files.")
+                    Text("Your data is saved on this iPhone and mirrored to your private iCloud backup automatically. Exporting saves a copy of your tremor, food, and Health data as CSV files you can keep or share.")
+                }
+
+                Section {
+                    Link(destination: URL(string: "https://kampa.health/faq.html#getting-started")!) {
+                        Label("Getting started", systemImage: "book")
+                    }
+                    Link(destination: URL(string: "https://kampa.health/faq.html")!) {
+                        Label("FAQ", systemImage: "questionmark.circle")
+                    }
+                    NavigationLink {
+                        SupportView(
+                            tremorCount: tremorReadings.count,
+                            tremorFirst: tremorReadings.first?.timestamp,
+                            tremorLast: tremorReadings.last?.timestamp,
+                            foodCount: foodEvents.count,
+                            foodFirst: foodEvents.first?.timestamp,
+                            foodLast: foodEvents.last?.timestamp
+                        )
+                    } label: {
+                        Label("Contact support", systemImage: "envelope")
+                    }
+                } header: {
+                    Text("Help & support")
+                }
+
+                Section {
+                    Link(destination: URL(string: "https://kampa.health/privacy.html")!) {
+                        Label("Privacy policy", systemImage: "hand.raised")
+                    }
+                    Link(destination: URL(string: "https://kampa.health/terms.html")!) {
+                        Label("Terms of use", systemImage: "doc.text")
+                    }
+                    LabeledContent("Version", value: SupportDiagnostics.versionAndBuild)
+                } header: {
+                    Text("About")
+                } footer: {
+                    Text("Kampa is a wellness tool, not a medical device. It doesn't diagnose or treat any condition, and it never tells you to change your medication. Talk to your neurologist about your care.")
                 }
             }
             .navigationTitle("Settings")
