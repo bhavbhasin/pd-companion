@@ -54,6 +54,50 @@ enum HealthSourcePrefs {
     }
 }
 
+// MARK: - Which sources can stage sleep
+//
+// A "stager" is a source that reports Deep/REM (e.g. Apple Watch, Oura) as opposed to a coarse
+// source that only writes one long "asleep unspecified" block (e.g. AutoSleep). `reduceSleepNight`
+// lets a stager win wherever it tracked so a coarse block can only gap-fill.
+//
+// Deciding that from ONE night's samples is wrong: a fragmented night can contain no Deep or REM
+// at all, and the watch is then indistinguishable from the coarse source. Measured on 2026-07-30 —
+// 21 samples, every one `asleepUnspecified` or `awake` — the coarse block outranked the watch's
+// awake segments by stage priority and painted 59 min of detected wakefulness as sleep: 4h33 asleep
+// against Apple's 3h32, 20 min awake against ~124, and a sleep score of 59 against Apple's 28. The
+// error is largest on exactly the broken nights the score most needs to report honestly.
+//
+// So capability is remembered, not re-derived nightly: a source that has EVER staged stays a stager.
+// The set only grows, and an unseen source degrades to the old per-night behavior, so a fresh
+// install is never worse off than before.
+enum SleepStagerPrefs {
+    private static let key = "sleepStagingSources"
+
+    /// Bundle IDs observed emitting Deep/REM at any point in the record.
+    static var known: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: key) ?? []) }
+        set { UserDefaults.standard.set(Array(newValue), forKey: key) }
+    }
+
+    /// Fold newly-observed stagers into the remembered set and return the union.
+    @discardableResult
+    static func learn(_ observed: Set<String>) -> Set<String> {
+        let merged = known.union(observed)
+        if merged != known { known = merged }
+        return merged
+    }
+
+    /// The stagers among `samples` — sources that emitted Deep or REM here.
+    static func observed(in samples: [HKCategorySample]) -> Set<String> {
+        Set(
+            samples.filter {
+                $0.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
+                $0.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue
+            }.map { $0.sourceRevision.source.bundleIdentifier }
+        )
+    }
+}
+
 @MainActor
 class HealthKitManager: ObservableObject {
     private let store = HKHealthStore()
@@ -581,7 +625,11 @@ class HealthKitManager: ObservableObject {
                 // spans the stager left blank. This recovers sleep the Watch missed (a
                 // late-detected onset) without letting a coarse all-night block steamroll
                 // the Watch's real awake/interruption detail.
-                continuation.resume(returning: Self.reduceSleepNight(relevant))
+                // Capability comes from the remembered set: this one-day window can't tell a
+                // stager from a coarse source on a night with no Deep/REM.
+                continuation.resume(
+                    returning: Self.reduceSleepNight(relevant, stagers: SleepStagerPrefs.known)
+                )
             }
             store.execute(query)
         }
@@ -590,16 +638,17 @@ class HealthKitManager: ObservableObject {
     /// Reduce one night's raw sleep samples to a `SleepBreakdown`. Shared by the daily fetch and
     /// the multi-night history fetch so both count sleep identically (gap-fill across sources,
     /// stage flatten, interruptions). Pure/static → safe to run off the query callback.
-    private nonisolated static func reduceSleepNight(_ relevant: [HKCategorySample]) -> SleepBreakdown {
+    private nonisolated static func reduceSleepNight(
+        _ relevant: [HKCategorySample], stagers: Set<String>
+    ) -> SleepBreakdown {
         // Gap-fill across sources: a "staging" source (one that emits Deep/REM — e.g. Apple
         // Watch) is authoritative wherever it tracked; coarser sources (e.g. AutoSleep, which
         // only writes "asleep unspecified") fill ONLY the spans the stager left blank.
-        let primarySources = Set(
-            relevant.filter {
-                $0.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue ||
-                $0.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue
-            }.map { $0.sourceRevision.source.bundleIdentifier }
-        )
+        //
+        // `stagers` carries capability learned across the whole record; union it with tonight's
+        // evidence so a source staging for the first time counts immediately. Deriving this from
+        // tonight alone silently demotes the watch on nights with no Deep/REM — see SleepStagerPrefs.
+        let primarySources = stagers.union(SleepStagerPrefs.observed(in: relevant))
 
         // Flatten to one stage-per-moment timeline (also dedupes a single source that overlaps
         // itself across syncs), with staging sources winning per-moment.
@@ -616,6 +665,12 @@ class HealthKitManager: ObservableObject {
             }
         }
 
+        // Bedtime/wake span the whole sleep-day, first asleep segment to last. Anchoring them to
+        // the largest sleep EPISODE instead (so an evening doze can't be read as the bedtime) was
+        // measured against Apple's 20 labelled nights and REJECTED: it improved the bedtime
+        // component (3.25 → 2.60 mean abs pts) but moved the total the wrong way (3.45 → 3.80), and
+        // still lost with the oversleep nights excluded (3.80 → 3.93). Don't re-litigate without
+        // new labelled multi-episode nights — the record holds only four.
         let asleepSegments = segments.filter { $0.stage != .awake }
         let bedtime = asleepSegments.first?.start
         let wakeTime = asleepSegments.last?.end
@@ -704,13 +759,17 @@ class HealthKitManager: ObservableObject {
                     return
                 }
                 let included = Self.includedSources(raw, excluded: HealthSourcePrefs.excluded)
+                // This query spans many nights, so it sees staging evidence any single night may
+                // lack. Learn from the whole window before reducing, and persist it for the
+                // one-day path above.
+                let stagers = SleepStagerPrefs.learn(SleepStagerPrefs.observed(in: included))
                 let cal = Calendar.current
                 let byNight = Dictionary(grouping: included) { sample in
                     cal.startOfDay(for: sample.endDate.addingTimeInterval(6 * 3600))
                 }
                 var nights: [NightSleep] = []
                 for (day, nightSamples) in byNight {
-                    let b = Self.reduceSleepNight(nightSamples)
+                    let b = Self.reduceSleepNight(nightSamples, stagers: stagers)
                     guard b.hasData else { continue }
                     nights.append(NightSleep(
                         date: day,

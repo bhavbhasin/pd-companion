@@ -18,7 +18,9 @@ enum SleepHistoryStore {
     /// Bump when a change makes previously-stored nights untrustworthy — the cache is then thrown
     /// away and rebuilt from HealthKit rather than carried forward. v2: v1 wrote clipped nights at
     /// the incremental window's boundary, so any v1 file may hold a corrupted settled night.
-    private static let version = 2
+    /// v3: staging capability is now remembered across the record rather than re-derived per night,
+    /// which changes stored asleep/awake/interruptions on nights with no Deep/REM.
+    private static let version = 3
 
     private struct Payload: Codable {
         var version: Int = 1
