@@ -110,8 +110,6 @@ Your data stays yours, on your device.
 Put the hashtags here rather than in the article body. The article editor has no tag field, and tags in
 an article body do not behave like they do in a feed post. Two or three lines plus the tags:
 
-One of my favorite features launched in Kampa to date. Food plays a key role in Parkinson's symptoms management. This post describes how we built frictionless food logging with wide coverage, without the need for server calls. #Kampa #Parkinsons #HealthTech #AppleHealth #Privacy
-
 Three ways to log food in Kampa, and the part I didn't expect to be the hard problem: fitting 439,082 products into 11.8 MB so the lookup never leaves your phone.
 
 #Parkinsons #HealthTech  #AppleHealth  #Privacy #ProductDesign
