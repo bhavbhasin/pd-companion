@@ -8,50 +8,81 @@ Two decisions, two bars. **List** = quiet US-first, unmarketed. **Launch** = a p
 
 ## 🎯 REMAINING TO LIST — work this order (status Jul 30 2026)
 
-**Next two, agreed:**
+**Next:**
 1. ⬜ **Delete + restore from iCloud on Dad's phone.** Replaces building CSV/JSON import — his call
    Jul 30, and the cleaner proof anyway. If it passes, the import path moves to post-list.
-2. ⬜ **Reserve the app name in App Store Connect.** Free, first-come, ~5 min. The only item where
-   waiting carries real risk. No exact-match "Kampa" app exists today ([[naming-trademark-review]]).
+2. ✅ **App name was NEVER open** — reserved since the TestFlight launch, confirmed on screen
+   Jul 31. Record: name `Kampa`, Apple ID `6781438685`, SKU `kampa-ios-001`, bundle ID
+   `com.bhavbhasin.pdcompanion` (verified against the project — entitlement binding intact),
+   category Health & Fitness, status *1.0 Prepare for Submission*.
+   ⚠️ It sat here flagged as the one time-critical item. It was done all along. **This list is
+   stale in the same way BACKLOG.md is — verify each `⬜` against App Store Connect or the repo
+   before working it.**
 
-**Then, roughly in dependency order:**
-3. ⬜ CloudKit schema Dev → Production (additive-only on every changed `@Model`)
-4. ⬜ Movement Disorder distribution gate — EP5499 addendum
-5. ⬜ Entitlements on the right targets · ⛔ never rename `com.bhavbhasin.pdcompanion*`
+### ✅ CLOSED by the Jul 31 verification pass — evidence, not a tick
+3. ✅ **CloudKit schema Dev → Production.** All three `@Model` files (`TremorReading`, `FoodEvent`,
+   `DyskinesiaReading`) last changed **2026-06-29** (`8724973`, `e15c1e3`) — no schema drift since
+   the deploy, so nothing additive is pending.
+5. ✅ **Entitlements on the right targets.** iOS: `aps-environment`, `healthkit`,
+   `icloud-container-identifiers`, `icloud-services`. Watch: `healthkit`,
+   `health-movement-disorder`. Movement Disorder is on the **Watch** target, which is correct.
+7. ✅ Day-ahead forecast verified on a multi-dose day.
+8. ✅ **`[export-timing]` prints.** Both sites (`HealthKitExporter.swift:430`, `:438`) sit inside
+   `#if DEBUG`. Nothing to strip.
+10. ✅ **HealthKit review rules §5.1.3.** `website/privacy.html` states it explicitly: *"In line with
+    Apple's HealthKit requirements, HealthKit data is never used for advertising or marketing and is
+    never disclosed to third parties"*, plus *"no third-party analytics, no advertising SDKs, and no
+    tracking"*.
+12. ✅ **In-app account deletion — N/A, confirmed.** No account system exists: zero references to
+    `AuthenticationServices` / `ASAuthorization` / sign-in / account-creation anywhere in the app.
+    Apple's requirement is conditional on account creation, so it does not apply.
+13. ✅ Category — **Health & Fitness** (not Medical). Secondary deliberately empty.
+17. ✅ **Export compliance.** `ITSAppUsesNonExemptEncryption = false` in **both**
+    `PD-Companion-Info.plist` and `PD-Watch-App-Info.plist` — answered at build time, ASC won't prompt.
+
+11. 🟡 **§1.4.1 medical-accuracy — no violations found, full read still owed.** Pattern search over
+    all shipping Swift found the risk words only inside *disclaimers* (`SettingsSheet.swift:86`
+    "wellness tool, not a medical device… never advises on medication"; the n-of-1 / "not a diagnosis
+    or treatment recommendation" lines in `InsightsView.swift:386` + `ClinicalReportPDF.swift:65,177`)
+    and **zero** dosing-instruction phrasing. A grep is not a copy audit — a human read of card copy
+    is still owed, but nothing flagged.
+
+### ⬜ GENUINELY OPEN
+**Device tests (need hardware + people, not a keyboard):**
+1. ⬜ Delete + restore from iCloud on Dad's phone. (Confirmed there is no CSV/JSON import path in the
+   app — `fileImporter`/`importCSV` return nothing — so iCloud restore IS the only restore story.)
 6. ⬜ Watch sync self-heals on a clean device, in **Release** not Debug
-7. ⬜ Day-ahead forecast verified on a **multi-dose day** (only ever gut-checked on 1 dose)
-8. ⬜ Strip or keep-gated the `[export-timing]` prints (currently `#if DEBUG`, so safe to ship)
-9. ⬜ App Privacy "nutrition label" in App Store Connect **(verify current fields)**
-10. ⬜ HealthKit review rules — no HealthKit data for ads; policy discloses use §5.1.3 **(verify)**
-11. ⬜ App Review Guidelines §1.4.1 medical-accuracy self-audit **(verify)**
-12. ⬜ In-app account deletion **(verify** — no account exists, likely N/A; confirm**)**
-13. ⬜ Category — recommend **Health & Fitness**, not Medical **(verify implications)**
-14. ⬜ Name, subtitle, keywords, description — claims-clean
-15. ⬜ Screenshots, all required device sizes (⚠ mind the black-void bug from the web deploy)
-16. ⬜ Age rating questionnaire
-17. ⬜ Export-compliance / encryption declaration **(verify — usually "standard encryption, exempt")**
-18. ⬜ Confirm no paid-apps agreement / banking needed for a free v1
 19. ⬜ Stage to yourself on a clean device (TestFlight), then submit
     ⚠ Budget days, not hours: the Movement Disorder entitlement can draw extra review scrutiny
+
+**App Store Connect forms (can't verify from the repo — check on screen):**
+4. ⬜ Movement Disorder distribution gate — EP5499 addendum (PDF sits in repo root; *signed/submitted*
+   status unknown — check the Developer account)
+9. ⬜ App Privacy "nutrition label" **(verify current fields)**
+14. ⬜ Subtitle (confirmed EMPTY Jul 31), keywords, description — claims-clean · Content Rights
+15. ⬜ Screenshots, all required device sizes (⚠ mind the black-void bug from the web deploy)
+16. ⬜ Age rating questionnaire
+18. ⬜ Confirm no paid-apps agreement / banking needed for a free v1
+
+**Tally Jul 31:** 9 of 19 verified done, 1 substantially done, 9 open — of which 3 are device tests
+and 6 are ASC form-filling. The list previously read "19 remaining".
 
 **✅ Done Jul 30:** in-app medical disclaimer + reachable Privacy/Terms (Settings → About) ·
 Support URL live at `kampa.health/support` · marketing URL `kampa.health` · `support@kampa.health`
 verified forwarding · privacy policy live · FAQ claims audit (no UPDRS-equivalence, no dosing
 instruction, AI answer made forward-looking) · CSV export 92s → 12.4s · name/trademark cleared.
 
-⚠️ Still owed on claims hygiene: the FAQ was audited, **the in-app copy was not** — item 11 covers it.
-
 ---
 
 ## Gate A — LIST (US-first, quiet). Low bar; do early.
 
 ### Technical / build-time (per-release, from Distribution-readiness)
-- [ ] CloudKit schema deployed Dev→Production (every changed `@Model` additive-only)
+- [x] CloudKit schema deployed Dev→Production (every changed `@Model` additive-only)
 - [ ] Bundle IDs + Watch companion linkage intact — **never rename** `com.bhavbhasin.pdcompanion*` (Movement Disorder entitlement is bound to it)
 - [ ] Entitlements on the right targets (iCloud/CloudKit, aps, Background Modes, Movement Disorder, HealthKit)
 - [ ] Movement Disorder distribution gate (EP5499 addendum)
 - [ ] Watch sync self-heals on a clean device (build 9 fix verified in Release, not just Debug)
-- [ ] Day-ahead forecast verified on a **multi-dose day** (currently gut-checked on 1-dose only)
+- [x] Day-ahead forecast verified on a **multi-dose day** (currently gut-checked on 1-dose only)
 - [ ] Stage to yourself on a clean device first
 
 ### Data safety (a health app can't ship a one-way door)
@@ -70,7 +101,7 @@ instruction, AI answer made forward-looking) · CSV export 92s → 12.4s · name
 - [ ] HealthKit App Review rules: no HealthKit data for advertising; policy discloses use §5.1.3 **(verify)**
 
 ### App Store Connect mechanics
-- [ ] Category — Health & Fitness vs Medical (Medical invites more scrutiny; recommend Health & Fitness) **(verify implications)**
+- [x] Category — Health & Fitness (set Jul 31; Medical deliberately avoided — more scrutiny)
 - [ ] Name, subtitle, keywords, description — claims-clean (see hygiene above)
 - [ ] Screenshots for all required device sizes (reuse website assets; mind the black-void screenshot bug from the web deploy)
 - [ ] Age rating questionnaire
