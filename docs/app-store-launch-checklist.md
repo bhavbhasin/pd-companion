@@ -6,6 +6,43 @@ Two decisions, two bars. **List** = quiet US-first, unmarketed. **Launch** = a p
 
 ---
 
+## 🎯 REMAINING TO LIST — work this order (status Jul 30 2026)
+
+**Next two, agreed:**
+1. ⬜ **Delete + restore from iCloud on Dad's phone.** Replaces building CSV/JSON import — his call
+   Jul 30, and the cleaner proof anyway. If it passes, the import path moves to post-list.
+2. ⬜ **Reserve the app name in App Store Connect.** Free, first-come, ~5 min. The only item where
+   waiting carries real risk. No exact-match "Kampa" app exists today ([[naming-trademark-review]]).
+
+**Then, roughly in dependency order:**
+3. ⬜ CloudKit schema Dev → Production (additive-only on every changed `@Model`)
+4. ⬜ Movement Disorder distribution gate — EP5499 addendum
+5. ⬜ Entitlements on the right targets · ⛔ never rename `com.bhavbhasin.pdcompanion*`
+6. ⬜ Watch sync self-heals on a clean device, in **Release** not Debug
+7. ⬜ Day-ahead forecast verified on a **multi-dose day** (only ever gut-checked on 1 dose)
+8. ⬜ Strip or keep-gated the `[export-timing]` prints (currently `#if DEBUG`, so safe to ship)
+9. ⬜ App Privacy "nutrition label" in App Store Connect **(verify current fields)**
+10. ⬜ HealthKit review rules — no HealthKit data for ads; policy discloses use §5.1.3 **(verify)**
+11. ⬜ App Review Guidelines §1.4.1 medical-accuracy self-audit **(verify)**
+12. ⬜ In-app account deletion **(verify** — no account exists, likely N/A; confirm**)**
+13. ⬜ Category — recommend **Health & Fitness**, not Medical **(verify implications)**
+14. ⬜ Name, subtitle, keywords, description — claims-clean
+15. ⬜ Screenshots, all required device sizes (⚠ mind the black-void bug from the web deploy)
+16. ⬜ Age rating questionnaire
+17. ⬜ Export-compliance / encryption declaration **(verify — usually "standard encryption, exempt")**
+18. ⬜ Confirm no paid-apps agreement / banking needed for a free v1
+19. ⬜ Stage to yourself on a clean device (TestFlight), then submit
+    ⚠ Budget days, not hours: the Movement Disorder entitlement can draw extra review scrutiny
+
+**✅ Done Jul 30:** in-app medical disclaimer + reachable Privacy/Terms (Settings → About) ·
+Support URL live at `kampa.health/support` · marketing URL `kampa.health` · `support@kampa.health`
+verified forwarding · privacy policy live · FAQ claims audit (no UPDRS-equivalence, no dosing
+instruction, AI answer made forward-looking) · CSV export 92s → 12.4s · name/trademark cleared.
+
+⚠️ Still owed on claims hygiene: the FAQ was audited, **the in-app copy was not** — item 11 covers it.
+
+---
+
 ## Gate A — LIST (US-first, quiet). Low bar; do early.
 
 ### Technical / build-time (per-release, from Distribution-readiness)
