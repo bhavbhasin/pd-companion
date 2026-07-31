@@ -55,8 +55,14 @@ enum ClinicalReportPDF {
                 drawHeader(&c)
                 c.space(20)
 
-                let days = insights.map(\.evidenceDays).max() ?? 0
-                let intro = "A plain-language summary of patterns Kampa detected from passive Apple Watch monitoring over \(days) days, prepared for discussion with your care team. One person's own data (n-of-1) - not a diagnosis or a treatment recommendation."
+                // ⛔ No aggregate day count here. It used to print
+                // `insights.map(\.evidenceDays).max()`, which is the LONGEST window across all
+                // findings — 2,129 days, from the mobility insight's backfilled HealthKit gait
+                // history. Kampa's own monitoring was ~81 days, so the opening sentence of a
+                // clinical document claimed nearly six years of Apple Watch monitoring. The
+                // findings genuinely span different periods, so no single figure is honest;
+                // each section states its own.
+                let intro = "A plain-language summary of patterns Kampa detected from passive Apple Watch monitoring, prepared for discussion with your care team. Each finding states the period it draws on. One person's own data (n-of-1) - not a diagnosis or a treatment recommendation."
                 c.text(intro, geist(11), kInk)
                 c.space(16)
 
@@ -65,7 +71,10 @@ enum ClinicalReportPDF {
                     for m in meds {
                         let perDay = m.dayCount > 0 ? Double(m.doseCount) / Double(m.dayCount) : 0
                         let rate = perDay >= 1 ? "~\(Int(perDay.rounded()))/day" : "occasional"
-                        c.bullet("\(m.name) - \(m.doseCount) doses logged, \(rate)")
+                        // Trim the name: HealthKit medication names carry trailing whitespace, which
+                        // the old em dash was wide enough to hide and a hyphen is not.
+                        let name = m.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        c.bullet("\(name) - \(m.doseCount) doses logged, \(rate)")
                     }
                     c.space(14)
                 }

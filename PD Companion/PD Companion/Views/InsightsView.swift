@@ -973,7 +973,11 @@ private struct WearingOffChartView: View {
                     RuleMark(y: .value("Before dose", chart.baseline))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
                         .foregroundStyle(.secondary.opacity(0.3))
-                        .annotation(position: .bottom, alignment: .trailing, spacing: 2) {
+                        // LEADING, not trailing: the OFF threshold and the pre-dose baseline sit
+                        // close together (1.0 vs ~1.25 on real data), so two right-anchored labels
+                        // land in the same narrow gap and overlap — and "before dose" also ran into
+                        // the y-axis numbers. Opposite ends can never collide, whatever the gap.
+                        .annotation(position: .bottom, alignment: .leading, spacing: 2) {
                             Text("before dose").font(.caption2).foregroundStyle(.tertiary)
                         }
                 }
@@ -1049,8 +1053,22 @@ private struct WearingOffChartView: View {
                     }
                 }
             }
+            // Fixed stride and a fixed one-decimal label, rather than letting Swift Charts pick
+            // per chart. Left automatic, a thin substance and a dense one drew different ladders
+            // — Mucuna got `2 / 1 / 0` while Sinemet got `2.0 / 1.5 / 1.0 / 0.5 / 0` — so two
+            // drugs a clinician reads one after the other in the PDF were plotted against axes
+            // that neither matched nor were labelled alike.
             .chartYAxis {
-                AxisMarks { AxisGridLine(); AxisTick(); AxisValueLabel() }
+                AxisMarks(values: .stride(by: yTickStride)) { value in
+                    AxisGridLine()
+                    AxisTick()
+                    AxisValueLabel {
+                        if let v = value.as(Double.self) {
+                            Text(v.formatted(.number.precision(.fractionLength(1))))
+                                .font(.caption2)
+                        }
+                    }
+                }
             }
             .frame(height: 180)
             .accessibilityLabel("One dose over time: tremor falls after the dose, then rises as it wears off")
@@ -1135,6 +1153,11 @@ private struct WearingOffChartView: View {
         let m = max(chart.threshold, base, plottable.map(\.value).max() ?? 1.5)
         return max(1.5, (m * 2).rounded(.up) / 2)
     }
+
+    /// Y tick spacing. `yMax` is already rounded to a half-unit, so 0.5 divides it exactly and
+    /// every chart lands on the same ladder. Widens past 3.0 so a high-baseline substance does
+    /// not crowd the axis with eight labels in 180pt.
+    private var yTickStride: Double { yMax > 3 ? 1.0 : 0.5 }
 
     // Lowest post-dose point = deepest ON (matches the engine's bestOnMinute).
     private var troughPoint: CorrelationEngine.CurvePoint? {
