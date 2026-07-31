@@ -53,11 +53,30 @@ Two decisions, two bars. **List** = quiet US-first, unmarketed. **Launch** = a p
    app — `fileImporter`/`importCSV` return nothing — so iCloud restore IS the only restore story.)
 6. ⬜ Watch sync self-heals on a clean device, in **Release** not Debug
 19. ⬜ Stage to yourself on a clean device (TestFlight), then submit
+    ⭐ **At submission: paste the Movement Disorder disclosure into App Review Information → Notes**
+    (draft in item 4). Contractually required by EP5499 §4 and there is no repo artifact to remind you.
     ⚠ Budget days, not hours: the Movement Disorder entitlement can draw extra review scrutiny
 
 **App Store Connect forms (can't verify from the repo — check on screen):**
-4. ⬜ Movement Disorder distribution gate — EP5499 addendum (PDF sits in repo root; *signed/submitted*
-   status unknown — check the Developer account)
+4. 🟡 **Movement Disorder / EP5499 — mostly a non-item; ONE action at submission.** Read the addendum
+   Jul 31: it is a **click-through** ("AGREE"), not a document to sign and return, and §2 makes
+   acceptance a **precondition of receiving the Entitlement Profile** — which he holds and which works
+   on device. ⇒ already accepted. Confirm visually if wanted at developer.apple.com/account →
+   Membership, or ASC → Business.
+   ⭐ **THE ACTUAL TO-DO — §4 "Submission to Apple":** *"You agree to disclose to Apple in writing any
+   use of the Movement Disorder APIs as part of the submission process."* ⇒ **paste a line into
+   App Review Information → Notes when submitting** (see item 19). Draft:
+   > *Kampa uses Apple's Movement Disorder APIs (CoreMotion) under our approved entitlement
+   > `com.apple.developer.health-movement-disorder` to passively measure tremor and dyskinesia on
+   > Apple Watch for personal Parkinson's symptom tracking. The app makes no diagnosis and no
+   > medication or clinical recommendation.*
+   ⛔ Not a repo change — nothing to commit, which is exactly why it gets forgotten.
+   ✅ §3.3 (disclose to end-users how their health data is used) — already satisfied by
+   `website/privacy.html`. §3.4's consent/third-party duties are a **human-subject-research** clause;
+   Kampa has no participants and no data recipients, so it does not bite (Bhav's call Jul 31, and the
+   obligations are incoherent without third parties). ⛔ Don't re-raise it as a blocker.
+   ⬜ **Opt-out paragraph ADDED to `website/privacy.html` Jul 31 — NOT DEPLOYED.** Batch with the other
+   website items before spending a Netlify prod deploy (~15 of 300 monthly credits).
 9. ⬜ App Privacy "nutrition label" **(verify current fields)**
 14. ⬜ Subtitle (confirmed EMPTY Jul 31), keywords, description — claims-clean · Content Rights
 15. ⬜ Screenshots, all required device sizes (⚠ mind the black-void bug from the web deploy)
