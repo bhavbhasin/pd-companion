@@ -48,6 +48,9 @@ struct SeverityTrendSheet: View {
                     if loading {
                         ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
                     } else {
+                        // Composition before comparison: the headline number, then what it is
+                        // made of, then how it sits against other days.
+                        bandSection
                         compareSection
                     }
                 }
@@ -63,7 +66,7 @@ struct SeverityTrendSheet: View {
             }
         }
         .task {
-            data = SeverityTrendData.build(samples: await load(), now: Date())
+            data = SeverityTrendData.build(samples: await load(), now: Date(), dayDate: dayDate)
             loading = false
         }
     }
@@ -106,7 +109,75 @@ struct SeverityTrendSheet: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
-    // MARK: Section 2 — How it compares
+    // MARK: Section 2 — Time at each level
+    //
+    // What the Today average is MADE OF. A single mean hides whether a 1.1 day was steady all
+    // day or calm with a rough hour in it, and that difference is the whole of how the day felt.
+    // Facts, no verdict: five rows, fixed scale order, no threshold picked and nothing sorted.
+
+    @ViewBuilder
+    private var bandSection: some View {
+        if let data, data.hasBandData {
+            let total = max(1, data.bandMinutes.values.reduce(0, +))
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Time at each level").font(.headline)
+                    Spacer()
+                    // Only today needs a qualifier — it says the day is still running. On a past
+                    // day the card above already names the date, so anything here just repeats it.
+                    if isToday {
+                        Text("so far").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+
+                VStack(spacing: 6) {
+                    ForEach(data.bandRows, id: \.band) { row in
+                        bandRow(row.band, minutes: row.minutes, total: total)
+                    }
+                }
+
+                Text("Includes time asleep, when tremor is usually near zero.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding()
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private func bandRow(_ band: SeverityBand, minutes: Int, total: Int) -> some View {
+        HStack(spacing: 10) {
+            // Labels wear text tokens, never the fill color — the bar beside them carries the
+            // severity, so the row stays readable if color is lost.
+            Text(band.name)
+                .font(.subheadline)
+                .foregroundStyle(minutes > 0 ? Color.primary : Color.secondary)
+                .frame(width: 74, alignment: .leading)
+
+            GeometryReader { geo in
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(accent.opacity(band.fillOpacity))
+                    .frame(width: max(minutes > 0 ? 3 : 0,
+                                      geo.size.width * CGFloat(minutes) / CGFloat(total)))
+                    .frame(maxHeight: .infinity, alignment: .center)
+            }
+            .frame(height: 12)
+
+            Text(minutes > 0 ? Self.duration(minutes) : "—")
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(minutes > 0 ? Color.primary : Color.secondary)
+                .frame(width: 62, alignment: .trailing)
+        }
+    }
+
+    /// Minutes as h/m, matching how the sleep card writes durations.
+    static func duration(_ minutes: Int) -> String {
+        let h = minutes / 60, m = minutes % 60
+        if h == 0 { return "\(m)m" }
+        return m == 0 ? "\(h)h" : "\(h)h \(m)m"
+    }
+
+    // MARK: Section 3 — How it compares
 
     @ViewBuilder
     private var compareSection: some View {
@@ -194,19 +265,64 @@ enum SeverityRange: String, CaseIterable, Identifiable {
 // MARK: - Severity scale (shared with the glance tiles' 0-4 naming)
 
 enum SeverityScale {
-    static func name(_ v: Double) -> String {
-        switch v {
-        case ..<0.5: "None"
-        case ..<1.5: "Slight"
-        case ..<2.5: "Mild"
-        case ..<3.5: "Moderate"
-        default:     "Strong"
+    static func name(_ v: Double) -> String { SeverityBand.of(v).name }
+}
+
+/// The five named steps of the 0-4 severity axis. Declared HIGHEST first — that is both the
+/// display order of the breakdown card and the order the scale reads on the chart's y-axis, so
+/// there is no sort step anywhere and no way for the two to disagree.
+///
+/// This owns the cut points. `SeverityScale.name` reads them here rather than repeating the
+/// literals, so the word under the Today number and the rows of the breakdown can never drift.
+enum SeverityBand: String, CaseIterable, Identifiable {
+    case strong, moderate, mild, slight, none
+
+    var id: String { rawValue }
+
+    /// Inclusive lower bound; each band runs up to the next one's bound.
+    var lowerBound: Double {
+        switch self {
+        case .strong:   3.5
+        case .moderate: 2.5
+        case .mild:     1.5
+        case .slight:   0.5
+        case .none:     0
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .strong:   "Strong"
+        case .moderate: "Moderate"
+        case .mild:     "Mild"
+        case .slight:   "Slight"
+        case .none:     "None"
+        }
+    }
+
+    static func of(_ v: Double) -> SeverityBand {
+        // allCases is highest-first, so the first match is the right band.
+        allCases.first { v >= $0.lowerBound } ?? .none
+    }
+
+    /// Sequential ramp: ONE hue (the metric's identity color), faint → full as severity rises.
+    /// Not five categorical hues — these bands are ordered magnitude, and a rainbow would imply
+    /// they are unrelated categories. Every row is directly labeled, so nothing rests on color.
+    var fillOpacity: Double {
+        switch self {
+        case .strong:   1.0
+        case .moderate: 0.8
+        case .mild:     0.6
+        case .slight:   0.4
+        case .none:     0.22
         }
     }
 }
 
 // MARK: - Valence (inverted vs HRV: for tremor/dyskinesia, LOWER is better)
 
+/// `text` carries the 10th–90th percentile band the verdict was reached against, parenthesised
+/// inline — "typical" is otherwise a judgement the reader has no way to check.
 struct SeverityComparison { let text: String; let valence: SeverityValence }
 
 enum SeverityValence {
@@ -242,8 +358,18 @@ struct SeverityTrendData {
     let p10: Double?                 // 10th pct of recent daily averages
     let p90: Double?                 // 90th pct of recent daily averages
     private let daily: [TrendPoint]  // one mean per day, ascending
+    /// Minutes at each band for the day on screen; a band absent from the map had none.
+    let bandMinutes: [SeverityBand: Int]
 
-    static func build(samples: [DatedSample], now: Date) -> SeverityTrendData {
+    /// Every band, highest first, with its minutes — always all five, so a day with no Strong
+    /// time reads "—" rather than dropping a row and reflowing the card.
+    var bandRows: [(band: SeverityBand, minutes: Int)] {
+        SeverityBand.allCases.map { ($0, bandMinutes[$0] ?? 0) }
+    }
+
+    var hasBandData: Bool { bandMinutes.values.contains { $0 > 0 } }
+
+    static func build(samples: [DatedSample], now: Date, dayDate: Date) -> SeverityTrendData {
         let cal = Calendar.current
 
         // One mean per calendar day — the unit for the chart + baselines-of-record.
@@ -276,8 +402,20 @@ struct SeverityTrendData {
         let p10 = recentDaily.count >= 8 ? Self.percentile(recentDaily, 0.10) : nil
         let p90 = recentDaily.count >= 8 ? Self.percentile(recentDaily, 0.90) : nil
 
+        // Minutes per band for the day on screen. Readings land ~1/min (measured median gap
+        // 1 min over the last 5 days), so a reading counts as a minute — stated in the caption
+        // rather than implied. Sleep is INCLUDED: the record spans ~22.8 h/day and tremor is
+        // near zero asleep, so "None" carries several hours of sleep. Deliberate (Bhav, Jul 30) —
+        // the chart above makes the sleep stretch obvious, and censoring it would add a sleep
+        // dependency to a card whose job is just to show what the average is made of.
+        let dayStart = cal.startOfDay(for: dayDate)
+        let todays = samples.filter { cal.isDate($0.date, inSameDayAs: dayStart) }
+        var minutes: [SeverityBand: Int] = [:]
+        for s in todays { minutes[SeverityBand.of(s.value), default: 0] += 1 }
+
         return SeverityTrendData(avg7: mean(sinceDaysAgo: 7), avg30: mean(sinceDaysAgo: 30),
-                                 avgAll: avgAll, p10: p10, p90: p90, daily: daily)
+                                 avgAll: avgAll, p10: p10, p90: p90, daily: daily,
+                                 bandMinutes: minutes)
     }
 
     /// Linear-interpolated percentile over an already-sorted array.
@@ -293,9 +431,34 @@ struct SeverityTrendData {
     /// HRV: lower severity = good = green; higher = amber caution; between = typical.
     func comparison(dayValue: Double?) -> SeverityComparison? {
         guard let day = dayValue, let lo = p10, let hi = p90 else { return nil }
-        if day <= lo { return SeverityComparison(text: "Lower than your usual lately - a steadier day.", valence: .better) }
-        if day >= hi { return SeverityComparison(text: "Higher than your usual lately.", valence: .worse) }
-        return SeverityComparison(text: "About typical for you lately.", valence: .typical)
+        let f: (Double) -> String = { String(format: "%.1f", $0) }
+
+        // A verdict the displayed numbers cannot show is noise. When the day and both band edges
+        // round to the same string at card precision there is no difference to report — which is
+        // the case for a record that sits at zero. Measured on Bhav's dyskinesia (0.00 on 84 of 84
+        // days) the card claimed "Lower than your usual - a steadier day", in green, against a
+        // stated range of 0.0 - 0.0. Derived from the display format, so there's no magic constant
+        // and no separate "is this metric interesting" gate to keep in sync.
+        guard !(f(day) == f(lo) && f(lo) == f(hi)) else { return nil }
+
+        // The band rides INSIDE the verdict sentence, not on a second line — the verdict and the
+        // numbers behind it are one statement, and a caption under it crowded the section. Same
+        // %.1f as the headline and the baselines row, so the reader is comparing like with like.
+        let usual = "(\(f(lo)) - \(f(hi)))"
+
+        // STRICT. Sitting exactly AT the 10th/90th percentile is the edge of usual, not evidence
+        // of being outside it — and with a zero-width band `day <= lo` and `day >= hi` are both
+        // true, so the first branch won by ordering alone.
+        if day < lo {
+            return SeverityComparison(text: "Lower than your usual lately \(usual) - a steadier day.",
+                                      valence: .better)
+        }
+        if day > hi {
+            return SeverityComparison(text: "Higher than your usual lately \(usual).",
+                                      valence: .worse)
+        }
+        return SeverityComparison(text: "About typical for you lately \(usual).",
+                                  valence: .typical)
     }
 
     /// The chart series for a range. Short windows filter the daily averages; "All" is every day.

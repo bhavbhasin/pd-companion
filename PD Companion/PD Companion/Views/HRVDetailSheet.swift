@@ -192,6 +192,8 @@ extension Color { static let hrvAccent = Color.purple }
 // Sleep's identity accent (matches the glance tile's indigo `bed.double.fill`).
 extension Color { static let sleepAccent = Color.indigo }
 
+/// `text` carries the 10th–90th percentile band the verdict was reached against, parenthesised
+/// inline — "typical" is otherwise a judgement the reader has no way to check.
 struct HRVComparison { let text: String; let valence: HRVValence }
 
 enum HRVValence {
@@ -294,9 +296,28 @@ struct HRVTrendData {
     /// = neutral) — the same "green means good" language the Insights cards use.
     func comparison(dayValue: Double?) -> HRVComparison? {
         guard let day = dayValue, let lo = p10, let hi = p90 else { return nil }
-        if day >= hi { return HRVComparison(text: "Higher than your usual - a good sign for HRV.", valence: .higher) }
-        if day <= lo { return HRVComparison(text: "Lower than your usual lately.", valence: .lower) }
-        return HRVComparison(text: "About typical for you lately.", valence: .typical)
+        let f: (Double) -> String = { "\(Int($0))" }
+
+        // A verdict the displayed numbers cannot show is noise — see the note on
+        // SeverityTrendData.comparison. Same rule, this sheet's precision (whole ms).
+        guard !(f(day) == f(lo) && f(lo) == f(hi)) else { return nil }
+
+        // The band rides INSIDE the verdict sentence — see the note on SeverityTrendData.
+        // Whole ms, matching the headline and the baselines row.
+        let usual = "(\(f(lo)) - \(f(hi)) ms)"
+
+        // STRICT: sitting exactly AT the 10th/90th percentile is the edge of usual, not evidence
+        // of being outside it.
+        if day > hi {
+            return HRVComparison(text: "Higher than your usual \(usual) - a good sign for HRV.",
+                                 valence: .higher)
+        }
+        if day < lo {
+            return HRVComparison(text: "Lower than your usual lately \(usual).",
+                                 valence: .lower)
+        }
+        return HRVComparison(text: "About typical for you lately \(usual).",
+                             valence: .typical)
     }
 
     /// The chart series for a range: short windows use daily averages; year/all use the
