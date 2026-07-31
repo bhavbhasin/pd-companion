@@ -217,10 +217,6 @@ struct DayAheadPanel: View {
                 }
 
                 legend
-
-                Text("A pattern from your own data - not medical advice.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
