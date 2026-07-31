@@ -97,10 +97,10 @@ instruction, AI answer made forward-looking) · CSV export 92s → 12.4s · name
 
 ### Technical / build-time (per-release, from Distribution-readiness)
 - [x] CloudKit schema deployed Dev→Production (every changed `@Model` additive-only)
-- [ ] Bundle IDs + Watch companion linkage intact — **never rename** `com.bhavbhasin.pdcompanion*` (Movement Disorder entitlement is bound to it)
-- [ ] Entitlements on the right targets (iCloud/CloudKit, aps, Background Modes, Movement Disorder, HealthKit)
-- [ ] Movement Disorder distribution gate (EP5499 addendum)
-- [ ] Watch sync self-heals on a clean device (build 9 fix verified in Release, not just Debug)
+- [x] Bundle IDs + Watch companion linkage intact — **never rename** `com.bhavbhasin.pdcompanion*` (Movement Disorder entitlement is bound to it)
+- [x] Entitlements on the right targets (iCloud/CloudKit, aps, Background Modes, Movement Disorder, HealthKit)
+- [x] Movement Disorder distribution gate (EP5499 addendum)
+- [x] Watch sync self-heals on a clean device (verified Jul 31 on build 15, TestFlight/Release, Bhaani's phone — 3 delete+reinstall cycles, watch dead and live; full record restored with correct spans, zero duplication)
 - [x] Day-ahead forecast verified on a **multi-dose day** (currently gut-checked on 1-dose only)
 - [ ] Stage to yourself on a clean device first
 
