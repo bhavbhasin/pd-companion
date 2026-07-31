@@ -76,7 +76,7 @@ enum HealthKitExporter {
             }
         }
 
-        print(String(format: "[export-timing] TOTAL exportAll %.2fs", CFAbsoluteTimeGetCurrent() - exportStart))
+        logTotal(since: exportStart)
     }
 
     // MARK: - Quantity samples
@@ -396,16 +396,25 @@ enum HealthKitExporter {
 
     private static let bpm = HKUnit.count().unitDivided(by: .minute())
 
-    // MARK: - Export timing (TEMPORARY — Step 0 of the CSV-export performance fix)
-    // Splits each export into fetch / build / write so the fix targets the phase that
-    // actually dominates rather than the one that reads worst. Remove once that lands;
-    // grep `[export-timing]`. Run a RELEASE build — Debug inflates build and write.
+    // MARK: - Export timing (DEBUG only)
+    //
+    // Splits each export into fetch / build / write. Kept rather than deleted because the
+    // export has only ever been measured on one phone, and the device floor is an
+    // iPhone 11 / SE2 — worth re-running there before launch.
+    //
+    // ⚠️ To re-measure for real, remove the `#if DEBUG` and run a RELEASE build. Debug does
+    // not optimise Swift and inflates the build and write phases, so gated numbers are
+    // useful for spotting a regression, not for sizing one.
     //
     // ⚠️ Phase boundaries MOVED when the streaming writer landed: row construction used to
     // sit in `build` and now happens inside the write loop, so `build` is just the
-    // `compactMap` and `write` covers row formatting plus I/O. Don't compare the two runs
+    // `compactMap` and `write` covers row formatting plus I/O. Don't compare old runs
     // phase-by-phase — compare totals. Per-file totals are also no longer additive, since
-    // exports now overlap; `TOTAL exportAll` is the only true wall clock.
+    // exports overlap; `TOTAL exportAll` is the only true wall clock.
+    //
+    // The timestamps themselves are always taken (a `CFAbsoluteTimeGetCurrent` is a few
+    // nanoseconds) so the call sites stay free of conditional compilation and the values
+    // never read as unused in Release.
 
     private static func logPhases(
         _ name: String,
@@ -415,11 +424,19 @@ enum HealthKitExporter {
         build tBuild: CFAbsoluteTime,
         write tWrite: CFAbsoluteTime
     ) {
+        #if DEBUG
         let end = CFAbsoluteTimeGetCurrent()
         let ms = { (seconds: CFAbsoluteTime) in String(format: "%.0f", seconds * 1000) }
         print("[export-timing] \(name): \(count) \(unit) | fetch \(ms(tBuild - tFetch))ms"
             + " | build \(ms(tWrite - tBuild))ms | write \(ms(end - tWrite))ms"
             + " | total \(ms(end - tFetch))ms")
+        #endif
+    }
+
+    private static func logTotal(since start: CFAbsoluteTime) {
+        #if DEBUG
+        print(String(format: "[export-timing] TOTAL exportAll %.2fs", CFAbsoluteTimeGetCurrent() - start))
+        #endif
     }
 
     /// First and last `startDate` of an already-sorted sample array.
