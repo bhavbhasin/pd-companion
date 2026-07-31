@@ -56,7 +56,7 @@ enum ClinicalReportPDF {
                 c.space(20)
 
                 let days = insights.map(\.evidenceDays).max() ?? 0
-                let intro = "A plain-language summary of patterns Kampa detected from passive Apple Watch monitoring over \(days) days, prepared for discussion with your care team. One person's own data (n-of-1) — not a diagnosis or a treatment recommendation."
+                let intro = "A plain-language summary of patterns Kampa detected from passive Apple Watch monitoring over \(days) days, prepared for discussion with your care team. One person's own data (n-of-1) - not a diagnosis or a treatment recommendation."
                 c.text(intro, geist(11), kInk)
                 c.space(16)
 
@@ -65,7 +65,7 @@ enum ClinicalReportPDF {
                     for m in meds {
                         let perDay = m.dayCount > 0 ? Double(m.doseCount) / Double(m.dayCount) : 0
                         let rate = perDay >= 1 ? "~\(Int(perDay.rounded()))/day" : "occasional"
-                        c.bullet("\(m.name) — \(m.doseCount) doses logged, \(rate)")
+                        c.bullet("\(m.name) - \(m.doseCount) doses logged, \(rate)")
                     }
                     c.space(14)
                 }
@@ -161,11 +161,11 @@ enum ClinicalReportPDF {
         "Tremor and dyskinesia are measured passively by Apple Watch using Apple's Movement "
         + "Disorder API (~1 reading/minute while worn), on a 0–4 severity scale (lower tremor = "
         + "better ON). Patterns are found with deterministic statistics on the patient's own "
-        + "timeline — event-aligned dose-response and Kaplan–Meier ON-duration — no machine "
+        + "timeline - event-aligned dose-response and Kaplan–Meier ON-duration - no machine "
         + "learning and no population model. Every figure traces to the underlying readings."
 
     private static let safetyText =
-        "One person's own data (n-of-1), shared for discussion — not a diagnosis or a treatment "
+        "One person's own data (n-of-1), shared for discussion - not a diagnosis or a treatment "
         + "recommendation. Do not change any medication without your neurologist."
 }
 

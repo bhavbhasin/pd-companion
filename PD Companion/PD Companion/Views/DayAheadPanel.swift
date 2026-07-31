@@ -167,7 +167,7 @@ struct DayAheadPanel: View {
                 return "You may be starting to wear off now."
             }
             if let off = forecast.nextOffStart, off > forecast.now {
-                return "You're likely ON (steady) right now — wearing off expected \(whenText)."
+                return "You're likely ON (steady) right now - wearing off expected \(whenText)."
             }
             return "You're likely ON (steady) right now."
         case .off:
@@ -218,7 +218,7 @@ struct DayAheadPanel: View {
 
                 legend
 
-                Text("A pattern from your own data — not medical advice.")
+                Text("A pattern from your own data - not medical advice.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -365,7 +365,7 @@ private struct NowPulse: View {
 }
 
 #if DEBUG
-#Preview("Zero-dose day — flat personal band") {
+#Preview("Zero-dose day - flat personal band") {
     let day = Calendar.current.startOfDay(for: .now)
     func t(_ h: Double) -> Date { day.addingTimeInterval(h * 3600) }
     let now = t(14.5)
@@ -391,7 +391,7 @@ private struct NowPulse: View {
     }
 }
 
-#Preview("Mixed day — one early dose, then substrate") {
+#Preview("Mixed day - one early dose, then substrate") {
     // The Jul 24 2026 shape (Phase 0.5): asleep through the only dose's window, awake into a
     // measured OFF at the envelope's end, then substrate vocabulary for the rest of the day —
     // including one dose-free stretch that ran BELOW the band (the weaning signal).
@@ -421,7 +421,7 @@ private struct NowPulse: View {
     }
 }
 
-#Preview("Today's forecast — mid-afternoon") {
+#Preview("Today's forecast - mid-afternoon") {
     let day = Calendar.current.startOfDay(for: .now)
     func t(_ h: Double) -> Date { day.addingTimeInterval(h * 3600) }
     let now = t(14.5)

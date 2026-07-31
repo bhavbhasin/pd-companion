@@ -138,8 +138,8 @@ struct ObservationEngine {
             out.append(DayObservation(
                 icon: "pill.fill",
                 iconColor: .secondary,
-                headline: "\(doses[di].name.capitalized) and \(w.name.lowercased()) overlapped — tremor \(dir) afterward",
-                detail: "Avg \(fmt(pre)) before → \(fmt(post)) after. The dose and the activity were too close together to credit either one — watch days you do just one.",
+                headline: "\(doses[di].name.capitalized) and \(w.name.lowercased()) overlapped - tremor \(dir) afterward",
+                detail: "Avg \(fmt(pre)) before → \(fmt(post)) after. The dose and the activity were too close together to credit either one - watch days you do just one.",
                 sentiment: .neutral
             ).at(anchor))
         }
@@ -156,7 +156,7 @@ struct ObservationEngine {
                 out.append(DayObservation(
                     icon: "figure.run", iconColor: .green,
                     headline: "Tremor fell \(Int(pct))% after \(w.name.lowercased())",
-                    detail: "Avg \(fmt(pre)) before → \(fmt(post)) in the hour after the session. One day isn't proof — watch whether it holds.",
+                    detail: "Avg \(fmt(pre)) before → \(fmt(post)) in the hour after the session. One day isn't proof - watch whether it holds.",
                     sentiment: .positive
                 ).at(w.start))
             } else if pct <= -15, post >= 1.0, post - pre >= 0.5 {
@@ -216,7 +216,7 @@ struct ObservationEngine {
                 out.append(DayObservation(
                     icon: "pill.fill", iconColor: .orange,
                     headline: "Tremor rose after \(name) at \(timeStr)",
-                    detail: "Avg \(fmt(pre)) before → \(fmt(post)) after — may indicate wearing-off before the next dose.",
+                    detail: "Avg \(fmt(pre)) before → \(fmt(post)) after - may indicate wearing-off before the next dose.",
                     sentiment: .neutral
                 ).at(dose.time))
             }
@@ -259,7 +259,7 @@ struct ObservationEngine {
             return DayObservation(
                 icon: "waveform.path", iconColor: .dyskinesia,
                 headline: "Dyskinesia rose after \(dose.name.capitalized) at \(timeStr)",
-                detail: "Avg \(fmt(pre)) before → \(fmt(post)) in the 30–120 min window after. Involuntary movement that peaks after a dose is typical peak-dose dyskinesia — note whether it eases as the dose wears off.",
+                detail: "Avg \(fmt(pre)) before → \(fmt(post)) in the 30–120 min window after. Involuntary movement that peaks after a dose is typical peak-dose dyskinesia - note whether it eases as the dose wears off.",
                 sentiment: .neutral
             ).at(dose.time)
         }
@@ -351,7 +351,7 @@ struct ObservationEngine {
         // cross-day engine's job (its dose-confound guard drops dose-shadowed food events).
         return DayObservation(
             icon: icon, iconColor: .orange,
-            headline: "Tremor rose at \(timeStr) (+\(Int(delta))%) — \(factorLabel) or wearing-off?",
+            headline: "Tremor rose at \(timeStr) (+\(Int(delta))%) - \(factorLabel) or wearing-off?",
             detail: "\(mechanismNote)Avg \(fmt(pre)) → \(fmt(post)) in the 30–60 min window after. Insights tells them apart.",
             sentiment: .neutral
         ).at(event.timestamp)
@@ -395,7 +395,7 @@ struct ObservationEngine {
         return [DayObservation(
             icon: "bolt.heart.fill", iconColor: .purple,
             headline: "Tremor ran higher when HRV was lower today",
-            detail: "Avg \(fmt(lowT)) on lower-HRV stretches vs \(fmt(highT)) on higher — worth confirming across more days.",
+            detail: "Avg \(fmt(lowT)) on lower-HRV stretches vs \(fmt(highT)) on higher - worth confirming across more days.",
             sentiment: .informational
         ).at(anchor)]
     }
@@ -419,7 +419,7 @@ struct ObservationEngine {
                 out.append(DayObservation(
                     icon: "bed.double.fill", iconColor: .orange,
                     headline: "Low deep sleep (\(formatHours(sleep.deepHours)))",
-                    detail: "Deep sleep supports motor recovery — this may have affected today's tremor baseline.",
+                    detail: "Deep sleep supports motor recovery - this may have affected today's tremor baseline.",
                     sentiment: .negative
                 ).at(anchor))
             }
@@ -501,7 +501,7 @@ struct ObservationsPanel: View {
             if expanded {
                 if observations.isEmpty {
                     Text(readings.isEmpty
-                         ? "No tremor data for this day — observations appear once readings are captured."
+                         ? "No tremor data for this day - observations appear once readings are captured."
                          : "No clear patterns detected today. Log events (medication, food, workouts) to surface correlations.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
