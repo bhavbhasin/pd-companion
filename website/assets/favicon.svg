@@ -1,0 +1,21 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kampa">
+  <title>Kāmpa</title>
+  <!-- Favicon variant of kampa-app-icon.svg. Same squircle, gradient and steady-wave mark,
+       retuned for 16-32px: stroke 32→56 and dot r17→27 so the wave survives at tab size,
+       corner radius 116→96 so the shape still reads as solid rather than as a blurred circle.
+       Brand guide: app-icon gradient #4A8CD6 → #2F5D99 is correct in icon contexts. -->
+  <defs>
+    <linearGradient id="kampaFaviconBg" x1="256" y1="0" x2="256" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4A8CD6"></stop>
+      <stop offset="1" stop-color="#2F5D99"></stop>
+    </linearGradient>
+    <clipPath id="kampaFaviconSquircle">
+      <rect x="0" y="0" width="512" height="512" rx="96" ry="96"></rect>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#kampaFaviconSquircle)">
+    <rect width="512" height="512" fill="url(#kampaFaviconBg)"></rect>
+    <path d="M78 320 C 132 320, 142 150, 200 150 C 258 150, 268 378, 326 332 C 378 290, 392 268, 434 268" stroke="#FFFFFF" stroke-width="56" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+    <circle cx="434" cy="268" r="27" fill="#FFFFFF"></circle>
+  </g>
+</svg>
