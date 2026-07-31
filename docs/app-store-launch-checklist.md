@@ -105,7 +105,7 @@ instruction, AI answer made forward-looking) · CSV export 92s → 12.4s · name
 - [ ] Stage to yourself on a clean device first
 
 ### Data safety (a health app can't ship a one-way door)
-- [ ] **CSV/JSON import / restore path** — export is one-way today; CloudKit is the only restore. Build before public install. (BACKLOG: "build soon")
+- [x] ~~**CSV/JSON import / restore path**~~ — ⛔ **NOT NEEDED, decided Jul 31 2026.** The premise was that CloudKit-as-only-restore is an untested single point of failure. It's now tested: 3 delete+reinstall cycles on a Release/TestFlight build restored the full record with correct spans and zero duplication (watch dead and watch live). Export stays one-way by design — it's for taking data OUT (clinician, analysis), not for getting it back. Don't reopen without a *failed* restore.
 - [ ] In-app account deletion **(verify** — Apple requires it *if* there's account creation; Kampa is CloudKit/on-device with no account, likely N/A — confirm)
 
 ### Claims & regulatory hygiene (the medical-app line)
