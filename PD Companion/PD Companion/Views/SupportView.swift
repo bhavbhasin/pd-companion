@@ -46,7 +46,7 @@ struct SupportView: View {
             } header: {
                 Text("Email us")
             } footer: {
-                Text("Tell us what happened in your own words. If it helps, include the details below — they say which version you're on and how much data you have, and nothing about your health.")
+                Text("Tell us what happened in your own words. The details below say which version you're on and how much data you have - nothing about your health.")
             }
 
             Section {
@@ -68,8 +68,6 @@ struct SupportView: View {
                         Label("Open in email app", systemImage: "envelope")
                     }
                 }
-            } footer: {
-                Text("Copy pastes the details wherever you like. Share sends them through Messages, Mail, or anything else on your phone.")
             }
 
             Section {
