@@ -141,8 +141,10 @@ class HealthKitManager: ObservableObject {
         await requestMedicationAuthorization()
     }
 
-    func exportAllSamples(to folder: URL) async {
-        await HealthKitExporter.exportAll(to: folder, store: store)
+    /// - Parameter kampaRecordStart: start of Kampa's own record, used to clip the
+    ///   high-volume HealthKit streams. `nil` exports full history for everything.
+    func exportAllSamples(to folder: URL, kampaRecordStart: Date?) async {
+        await HealthKitExporter.exportAll(to: folder, store: store, kampaRecordStart: kampaRecordStart)
     }
 
     private func requestMedicationAuthorization() async {

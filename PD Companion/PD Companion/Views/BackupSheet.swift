@@ -77,15 +77,26 @@ struct BackupSheet: View {
         }
     }
 
+    /// Start of Kampa's own record — the earliest thing the app itself logged.
+    ///
+    /// Health samples from before this have nothing in Kampa to be correlated against,
+    /// so the high-volume HealthKit streams are clipped to it. `nil` (no Kampa data yet)
+    /// falls back to full history, preserving the previous behaviour for a case where
+    /// there is nothing to export against anyway.
+    private var kampaRecordStart: Date? {
+        [tremorReadings.first?.timestamp, foodEvents.first?.timestamp].compactMap { $0 }.min()
+    }
+
     private func runExport() {
         guard !isExporting else { return }
         isExporting = true
+        let recordStart = kampaRecordStart
         Task {
             defer { Task { @MainActor in isExporting = false } }
             guard let folder = await CSVBackupExporter.exportAll(
                 container: AppContainer.shared
             ) else { return }
-            await healthKit.exportAllSamples(to: folder)
+            await healthKit.exportAllSamples(to: folder, kampaRecordStart: recordStart)
             let files = (try? FileManager.default.contentsOfDirectory(
                 at: folder, includingPropertiesForKeys: nil
             )) ?? []

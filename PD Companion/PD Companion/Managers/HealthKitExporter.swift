@@ -17,28 +17,41 @@ enum HealthKitExporter {
     /// the iPhone 11 / SE2 device floor. Raise this only with the Xcode memory gauge open.
     private static let maxConcurrentExports = 3
 
-    static func exportAll(to folder: URL, store: HKHealthStore) async {
+    /// - Parameter kampaRecordStart: the beginning of Kampa's own record (earliest tremor
+    ///   reading or logged event). High-volume streams are clipped to this, because a
+    ///   sample with nothing to correlate against is dead weight in the export: measured
+    ///   at 2.9M of 3.57M rows and ~81% of the runtime, for four files that no analysis
+    ///   reads — `analysis/src/loaders.py` defines `load_quantity` and never calls it.
+    ///   Pass `nil` to keep the previous full-history behaviour.
+    ///
+    ///   ⛔ Gait streams are deliberately NOT clipped. Gait cold-start genuinely wants the
+    ///   full multi-year HealthKit history, and they are cheap (walking_speed is 57K rows
+    ///   against active energy's 1.53M), so there is nothing to buy by shortening them.
+    static func exportAll(to folder: URL, store: HKHealthStore, kampaRecordStart: Date?) async {
         let exportStart = CFAbsoluteTimeGetCurrent()
 
-        let quantities: [(id: HKQuantityTypeIdentifier, unit: HKUnit, name: String)] = [
-            (.heartRate, bpm, "heart_rate"),
-            (.heartRateVariabilitySDNN, HKUnit.secondUnit(with: .milli), "hrv_sdnn_ms"),
-            (.restingHeartRate, bpm, "resting_heart_rate"),
-            (.respiratoryRate, bpm, "respiratory_rate"),
-            (.oxygenSaturation, .percent(), "oxygen_saturation"),
-            (.stepCount, .count(), "step_count"),
-            (.appleExerciseTime, .minute(), "exercise_time_minutes"),
-            (.timeInDaylight, .minute(), "daylight_minutes"),
-            (.activeEnergyBurned, .kilocalorie(), "active_energy_kcal"),
-            (.basalEnergyBurned, .kilocalorie(), "basal_energy_kcal"),
-            (.walkingSpeed, HKUnit.meter().unitDivided(by: .second()), "walking_speed_m_s"),
-            (.walkingAsymmetryPercentage, .percent(), "walking_asymmetry_pct"),
-            (.walkingDoubleSupportPercentage, .percent(), "walking_double_support_pct"),
-            (.walkingStepLength, .meter(), "walking_step_length_m")
+        // `clipped` marks the high-volume streams — the ones whose full history costs
+        // minutes and buys nothing. Everything else exports in full.
+        let quantities: [(id: HKQuantityTypeIdentifier, unit: HKUnit, name: String, clipped: Bool)] = [
+            (.heartRate, bpm, "heart_rate", true),
+            (.heartRateVariabilitySDNN, HKUnit.secondUnit(with: .milli), "hrv_sdnn_ms", false),
+            (.restingHeartRate, bpm, "resting_heart_rate", false),
+            (.respiratoryRate, bpm, "respiratory_rate", false),
+            (.oxygenSaturation, .percent(), "oxygen_saturation", false),
+            (.stepCount, .count(), "step_count", true),
+            (.appleExerciseTime, .minute(), "exercise_time_minutes", false),
+            (.timeInDaylight, .minute(), "daylight_minutes", false),
+            (.activeEnergyBurned, .kilocalorie(), "active_energy_kcal", true),
+            (.basalEnergyBurned, .kilocalorie(), "basal_energy_kcal", true),
+            (.walkingSpeed, HKUnit.meter().unitDivided(by: .second()), "walking_speed_m_s", false),
+            (.walkingAsymmetryPercentage, .percent(), "walking_asymmetry_pct", false),
+            (.walkingDoubleSupportPercentage, .percent(), "walking_double_support_pct", false),
+            (.walkingStepLength, .meter(), "walking_step_length_m", false)
         ]
 
         var jobs: [() async -> Void] = quantities.map { quantity in
-            { await exportQuantity(quantity.id, unit: quantity.unit, name: quantity.name, folder: folder, store: store) }
+            let since = quantity.clipped ? kampaRecordStart : nil
+            return { await exportQuantity(quantity.id, unit: quantity.unit, name: quantity.name, since: since, folder: folder, store: store) }
         }
         jobs.append { await exportSleep(folder: folder, store: store) }
         jobs.append { await exportMindfulness(folder: folder, store: store) }
@@ -72,12 +85,13 @@ enum HealthKitExporter {
         _ identifier: HKQuantityTypeIdentifier,
         unit: HKUnit,
         name: String,
+        since: Date?,
         folder: URL,
         store: HKHealthStore
     ) async {
         guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return }
         let tFetch = CFAbsoluteTimeGetCurrent()
-        let samples = await fetchSamples(type: type, store: store)
+        let samples = await fetchSamples(type: type, store: store, since: since)
         let tBuild = CFAbsoluteTimeGetCurrent()
         let quantity = samples.compactMap { $0 as? HKQuantitySample }
         let url = folder.appendingPathComponent(filename(name, range: startDateRange(quantity)))
@@ -357,11 +371,17 @@ enum HealthKitExporter {
 
     // MARK: - Helpers
 
-    private static func fetchSamples(type: HKSampleType, store: HKHealthStore) async -> [HKSample] {
-        await withCheckedContinuation { continuation in
+    /// - Parameter since: clips the query to samples starting at or after this date.
+    ///   `nil` means the user's entire HealthKit history, which for some streams is over
+    ///   a decade — correct for gait, ruinous for heart rate and energy.
+    private static func fetchSamples(type: HKSampleType, store: HKHealthStore, since: Date? = nil) async -> [HKSample] {
+        let predicate = since.map {
+            HKQuery.predicateForSamples(withStart: $0, end: nil, options: .strictStartDate)
+        }
+        return await withCheckedContinuation { continuation in
             let query = HKSampleQuery(
                 sampleType: type,
-                predicate: nil,
+                predicate: predicate,
                 limit: HKObjectQueryNoLimit,
                 sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
             ) { _, results, error in
