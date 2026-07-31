@@ -568,13 +568,21 @@ private struct InsightCard: View {
     private var hypothesisDetail: some View {
         VStack(alignment: .leading, spacing: 12) {
             whyBlock(insight.mechanism)
-            Button {
-                withAnimation(.snappy) { startExperiment() }
-            } label: {
-                Label("Try an experiment", systemImage: "flask")
-                    .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent).tint(Insight.brandBlue)
+            // ⛔ "Try an experiment" is HIDDEN FOR v1 (Bhav, Jul 31 2026). The experiment
+            // loop is a substantial feature in its own right (control arm + card ownership
+            // still open, see the experiment-loop backlog entry) and the App Store listing
+            // should not wait on it. This is the ONLY entry point that sets `.experiment`,
+            // so hiding it makes the stage unreachable for new cards; `experimentDetail`
+            // and stop/start are left intact so anything already mid-experiment still
+            // renders and can be stopped. Restore this block when the loop ships.
+            //
+            // Button {
+            //     withAnimation(.snappy) { startExperiment() }
+            // } label: {
+            //     Label("Try an experiment", systemImage: "flask")
+            //         .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
+            // }
+            // .buttonStyle(.borderedProminent).tint(Insight.brandBlue)
         }
     }
 

@@ -438,7 +438,16 @@ nonisolated enum CorrelationEngine {
     static func foodMechanism(_ attr: FoodAttribute) -> String {
         switch attr {
         case .caffeine:
-            return "Caffeine's effect on Parkinson's tremor is genuinely mixed. It blocks adenosine A2A receptors - the same target as some PD medications - and higher caffeine intake is linked to lower PD risk, which leans toward benefit; but as a stimulant it can also nudge tremor up in some people, and no clear acute effect is established. Servings near a dose are set aside first, so what's left leans toward caffeine on its own - a lead to test, not proof."
+            // ⚠️ The old ending — "so what's left leans toward caffeine on its own" — was
+            // MEASURED FALSE (Jul 31 2026). The guard admits only servings sitting deep in
+            // dose-free stretches, and those windows drift on their own. Matched null for
+            // caffeine-shaped, guard-surviving events = +0.226; the card's own value is
+            // +0.212 (permutation p 0.84). The residual IS the timing, not the caffeine.
+            // Testing against zero is what's wrong, and it is wrong with or without the
+            // guard (unguarded nulls: caffeine +0.008, sugar −0.190, walking +0.177), so a
+            // guard change alone would not have earned that sentence back. Real fix = an
+            // empirical/permutation null; see project memory + docs/design/engine-review-2026-07-30.md.
+            return "Caffeine's effect on Parkinson's tremor is genuinely mixed. It blocks adenosine A2A receptors - the same target as some PD medications - and higher caffeine intake is linked to lower PD risk, which leans toward benefit; but as a stimulant it can also nudge tremor up in some people, and no clear acute effect is established. Servings near a dose are set aside first, but what's left still reflects when in the day you drink it - a lead to test, not proof."
         case .sugar:
             return "A sugar load drives a glucose spike and crash, and glucose swings may track with how steady your symptoms feel. The link is indirect with many other drivers - treat this as a lead to test, not a conclusion."
         default:
