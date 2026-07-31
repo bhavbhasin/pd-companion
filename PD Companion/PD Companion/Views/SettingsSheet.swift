@@ -13,6 +13,7 @@ struct SettingsSheet: View {
     @EnvironmentObject var healthKit: HealthKitManager
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \TremorReading.timestamp, order: .forward) private var tremorReadings: [TremorReading]
+    @Query(sort: \DyskinesiaReading.startDate, order: .forward) private var dyskinesiaReadings: [DyskinesiaReading]
     @Query(sort: \FoodEvent.timestamp, order: .forward) private var foodEvents: [FoodEvent]
     @State private var isExporting = false
 
@@ -63,6 +64,9 @@ struct SettingsSheet: View {
                             tremorCount: tremorReadings.count,
                             tremorFirst: tremorReadings.first?.timestamp,
                             tremorLast: tremorReadings.last?.timestamp,
+                            dyskinesiaCount: dyskinesiaReadings.count,
+                            dyskinesiaFirst: dyskinesiaReadings.first?.startDate,
+                            dyskinesiaLast: dyskinesiaReadings.last?.startDate,
                             foodCount: foodEvents.count,
                             foodFirst: foodEvents.first?.timestamp,
                             foodLast: foodEvents.last?.timestamp

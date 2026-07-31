@@ -16,6 +16,9 @@ struct SupportView: View {
     let tremorCount: Int
     let tremorFirst: Date?
     let tremorLast: Date?
+    let dyskinesiaCount: Int
+    let dyskinesiaFirst: Date?
+    let dyskinesiaLast: Date?
     let foodCount: Int
     let foodFirst: Date?
     let foodLast: Date?
@@ -29,6 +32,9 @@ struct SupportView: View {
             tremorCount: tremorCount,
             tremorFirst: tremorFirst,
             tremorLast: tremorLast,
+            dyskinesiaCount: dyskinesiaCount,
+            dyskinesiaFirst: dyskinesiaFirst,
+            dyskinesiaLast: dyskinesiaLast,
             foodCount: foodCount,
             foodFirst: foodFirst,
             foodLast: foodLast
@@ -105,6 +111,9 @@ enum SupportDiagnostics {
         tremorCount: Int,
         tremorFirst: Date?,
         tremorLast: Date?,
+        dyskinesiaCount: Int,
+        dyskinesiaFirst: Date?,
+        dyskinesiaLast: Date?,
         foodCount: Int,
         foodFirst: Date?,
         foodLast: Date?
@@ -115,6 +124,10 @@ enum SupportDiagnostics {
             "Apple Watch paired: \(isWatchPaired)",
             "Health access: \(healthAuthorized ? "granted" : "not granted")",
             "Tremor readings: \(tremorCount)\(span(tremorFirst, tremorLast))",
+            // Its own line, not folded into tremor: the two are independent one-minute series
+            // and a sync or dedup fault can move one without the other — which is invisible if
+            // only tremor is reported.
+            "Dyskinesia readings: \(dyskinesiaCount)\(span(dyskinesiaFirst, dyskinesiaLast))",
             "Food events: \(foodCount)\(span(foodFirst, foodLast))"
         ]
         lines.append("Sent \(Self.timestampFormatter.string(from: Date()))")

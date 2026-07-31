@@ -28,6 +28,25 @@ enum CSVBackupExporter {
                 to: folder.appendingPathComponent(filename("tremor_readings", range: tremorRange))
             )
 
+            // Its own stream — NOT the `dyskinesiaScore` column written above, which is a legacy
+            // merged field on TremorReading (see SymptomData). Exporting only tremor left the one
+            // model whose duplicates aren't cleaned also without a backup or a restore path.
+            let dyskinesias = try context.fetch(
+                FetchDescriptor<DyskinesiaReading>(sortBy: [SortDescriptor(\.startDate)])
+            )
+            let dyskinesiaRange = dateRange(dyskinesias.map(\.startDate))
+            try writeCSV(
+                header: ["startDate", "endDate", "percentLikely"],
+                rows: dyskinesias.map { [
+                    iso($0.startDate),
+                    iso($0.endDate),
+                    String($0.percentLikely)
+                ] },
+                to: folder.appendingPathComponent(
+                    filename("dyskinesia_readings", range: dyskinesiaRange)
+                )
+            )
+
             let foods = try context.fetch(
                 FetchDescriptor<FoodEvent>(sortBy: [SortDescriptor(\.timestamp)])
             )
@@ -45,7 +64,7 @@ enum CSVBackupExporter {
                 to: folder.appendingPathComponent(filename("food_events", range: foodRange))
             )
 
-            print("CSV backup written to \(folder.path) — tremors=\(tremors.count) foods=\(foods.count)")
+            print("CSV backup written to \(folder.path) — tremors=\(tremors.count) dyskinesias=\(dyskinesias.count) foods=\(foods.count)")
             return folder
         } catch {
             print("CSV export failed: \(error)")

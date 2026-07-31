@@ -242,18 +242,47 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
         return inserted
     }
 
+    /// Drops rows sharing a key date with one already kept — for BOTH streams, not just tremor.
+    /// A reinstall re-syncs the watch's rolling window into an empty store (no stored sample ⇒ no
+    /// `since` ⇒ the watch ships everything back to its 7-day floor) while CloudKit is still
+    /// restoring those same rows, and SwiftData can't carry a uniqueness constraint under CloudKit
+    /// — `@Attribute(.unique)` is unsupported — so the collision lands as real duplicate rows.
+    /// Runs at launch, so it converges over however many launches the restore takes.
     func cleanupDuplicates() {
         guard let context = makeContext() else { return }
-        guard let all = try? context.fetch(FetchDescriptor<TremorReading>()) else { return }
-        var seen: Set<Date> = []
-        for reading in all {
-            if seen.contains(reading.timestamp) {
-                context.delete(reading)
-            } else {
-                seen.insert(reading.timestamp)
-            }
+        let tremors = pruneDuplicates(TremorReading.self, in: context, key: \.timestamp)
+        let dyskinesias = pruneDuplicates(DyskinesiaReading.self, in: context, key: \.startDate)
+        // Logged unconditionally, and BEFORE the save guard: a clean pass has to be
+        // distinguishable from a pass that never ran, or the log can't confirm anything.
+        syncLog("[sync] cleanupDuplicates tremor=\(tremors) dyskinesia=\(dyskinesias)")
+        guard tremors > 0 || dyskinesias > 0 else { return }
+        do {
+            try context.save()
+        } catch {
+            syncLog("[sync] cleanupDuplicates SAVE FAILED tremor=\(tremors) dyskinesia=\(dyskinesias): \(error)")
         }
-        try? context.save()
+    }
+
+    /// Deletes every row past the first for a given key date. Returns how many were deleted;
+    /// the caller saves once for both streams. A failed fetch is logged rather than returned as
+    /// 0 — same reason as above, silence would read identically to "nothing to remove".
+    private func pruneDuplicates<T: PersistentModel>(
+        _ type: T.Type, in context: ModelContext, key: KeyPath<T, Date>
+    ) -> Int {
+        let all: [T]
+        do {
+            all = try context.fetch(FetchDescriptor<T>())
+        } catch {
+            syncLog("[sync] cleanupDuplicates FETCH FAILED for \(T.self): \(error)")
+            return 0
+        }
+        var seen: Set<Date> = []
+        var removed = 0
+        for row in all where !seen.insert(row[keyPath: key]).inserted {
+            context.delete(row)
+            removed += 1
+        }
+        return removed
     }
 }
 
