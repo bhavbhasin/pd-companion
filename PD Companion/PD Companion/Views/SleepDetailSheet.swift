@@ -7,12 +7,15 @@ import Charts
 //   1. Last night — the Kampa sleep score (0–100, no verbal grade) broken into its three
 //      components exactly like Apple's card, minus the "Low/High" verdict. Each component shows
 //      its raw fact next to its points, so the number always shows its work.
-//   2. How it compares — last night's score vs your 7-day / 30-day / all-time typical.
+//   2. Comparison — last night's score vs your 7-day / 30-day / all-time typical.
 //   3. Trend — the nightly score over Week/Month/Year/All, scrubbable to read any night.
 //
 // The score's weights mirror Apple's (Duration 50 / Bedtime 30 / Interruptions 20); the point
 // curves are ours (Apple doesn't publish them) — see `SleepScore`. Sleep clears the trend
 // primitive's history bar the same way HRV does (Watch sleep spans months/years).
+//
+// The chart is a scrollable window over the whole record on the same two axes as HRV's —
+// granularity picks the series, the range picks the window width. See that sheet's header.
 
 struct SleepDetailSheet: View {
     @EnvironmentObject var healthKit: HealthKitManager
@@ -26,6 +29,9 @@ struct SleepDetailSheet: View {
     // still remember and act on. Applies to every detail sheet so they open consistently.
     @State private var range: HRVRange = .week
     @State private var loading = true
+    /// The span the chart currently has on screen, reported back by it as you scroll. Drives the
+    /// chart's header only — the card above stays pinned to the tapped night.
+    @State private var visibleRange: ClosedRange<Date>?
 
     var body: some View {
         NavigationStack {
@@ -39,7 +45,8 @@ struct SleepDetailSheet: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 12)
+                // Top only — a ScrollView already insets its content by the bottom safe area.
+                .padding(.top, 12)
             }
             .navigationTitle("Sleep")
             .navigationBarTitleDisplayMode(.inline)
@@ -77,12 +84,14 @@ struct SleepDetailSheet: View {
                 // what guarantees the two agree.
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 24)
             } else if let score = dayScore {
+                // Same sizing as the other detail sheets' headline number: `.title` with the
+                // glyph a step below it, so the four surfaces read as one family.
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: "bed.double.fill")
-                        .font(.title)
+                        .font(.title2)
                         .foregroundStyle(Color.sleepAccent)
                     Text("\(score.total)")
-                        .font(.largeTitle.weight(.semibold))
+                        .font(.title.weight(.semibold))
                         .foregroundStyle(Color.sleepAccent)
                     Text("/ 100").font(.title3).foregroundStyle(.secondary)
                 }
@@ -137,13 +146,14 @@ struct SleepDetailSheet: View {
         .padding(.vertical, 10)
     }
 
-    // MARK: Section 2 — How it compares
+    // MARK: Section 2 — Comparison
 
     @ViewBuilder
     private var compareSection: some View {
         if let data {
             VStack(alignment: .leading, spacing: 14) {
-                Text("How it compares").font(.headline)
+                // Noun phrase, matching the other three detail sheets.
+                Text("Comparison").font(.headline)
 
                 HStack(spacing: 0) {
                     baselineStat("This night", dayScore.map { Double($0.total) }, accent: true)
@@ -188,20 +198,39 @@ struct SleepDetailSheet: View {
 
     @ViewBuilder
     private func trendChart(_ data: SleepTrendData) -> some View {
-        let series = data.series(for: range)
+        // Series follows granularity, window follows the range — see the note on HRV's chart.
+        let series = data.series(monthly: range.isMonthly)
         if series.count < 2 {
             Text("Not enough history yet for this range.")
                 .font(.caption).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
         } else {
-            ScrubbableTrendChart(
-                points: series,
-                accent: .indigo,
-                yAxisLabel: "Score",
-                valueText: { "\(Int($0.rounded()))" },
-                showPoints: range == .week,
-                monthlyDates: range == .year || range == .all
-            )
+            VStack(alignment: .leading, spacing: 8) {
+                TrendWindowHeader(
+                    visibleRange: visibleRange,
+                    points: series,
+                    accent: .sleepAccent,
+                    valueText: { "\(Int($0.rounded()))" },
+                    label: range.isMonthly ? "monthly median" : "nightly score",
+                    monthlyDates: range.isMonthly
+                )
+                ScrubbableTrendChart(
+                    points: series,
+                    // No axis-unit label. It shares the band above the plot with the scrub
+                    // callout, and "Score" is long enough that a wide callout ("78 May 2024")
+                    // truncated it to a floating "S". Nothing is lost: the header above states
+                    // "nightly score" / "monthly median", and the axis runs 0-100 on a card
+                    // titled Sleep. HRV keeps "ms" because two characters always survive.
+                    accent: .indigo,
+                    yAxisLabel: "",
+                    valueText: { "\(Int($0.rounded()))" },
+                    showPoints: range == .week,
+                    monthlyDates: range.isMonthly,
+                    visibleDomain: range.visibleDomain(
+                        fullSpan: ScrubbableTrendChart.fullSpan(of: series)),
+                    onVisibleRange: { visibleRange = $0 }
+                )
+            }
         }
     }
 }
@@ -289,26 +318,20 @@ struct SleepTrendData {
         return SleepComparison(text: "About typical for you lately.", isAboveUsual: false)
     }
 
-    func series(for range: HRVRange) -> [TrendPoint] {
-        let cal = Calendar.current
-        switch range {
-        case .week:
-            guard let c = cal.date(byAdding: .day, value: -7, to: Date()) else { return daily }
-            return daily.filter { $0.date >= c }
-        case .month:
-            guard let c = cal.date(byAdding: .day, value: -30, to: Date()) else { return daily }
-            return daily.filter { $0.date >= c }
-        case .year:
-            let months = (trend?.months ?? []).map { TrendPoint(date: $0.month, value: $0.median) }
-            return Array(months.suffix(12))
-        case .all:
-            return (trend?.months ?? []).map { TrendPoint(date: $0.month, value: $0.median) }
-        }
+    /// The chart series at one granularity — the WHOLE record either way. Short windows read the
+    /// nightly scores; year/all read the engine's monthly medians. Nothing is trimmed to a
+    /// recency cutoff: the range picks the width of the chart's window and you scroll for the rest.
+    func series(monthly: Bool) -> [TrendPoint] {
+        monthly
+            ? (trend?.months ?? []).map { TrendPoint(date: $0.month, value: $0.median) }
+            : daily
     }
 
-    /// Descriptive drift of the score — shown only under year/all, only when statistically real.
+    /// Descriptive drift of the score — only when statistically real, and "All" ONLY: the slope
+    /// is fitted to the whole record, so on the Year tab it described a line off screen. See the
+    /// note on `HRVTrendData.trendCaption`.
     func trendCaption(for range: HRVRange) -> String? {
-        guard range == .year || range == .all, let t = trend, t.pValue < 0.05 else { return nil }
+        guard range == .all, let t = trend, t.pValue < 0.05 else { return nil }
         let years = max(1, Int(t.spanYears.rounded()))
         let pct = Int(abs(t.pctChange).rounded())
         if t.slopePerYear < 0 { return "Trending down about \(pct)% over the last \(years) year\(years == 1 ? "" : "s")." }

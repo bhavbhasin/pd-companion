@@ -9,12 +9,19 @@ import Charts
 // Same three-section shape as HRVDetailSheet:
 //   1. Today — the day's value + honest context. NOT a within-day curve (that's the Tremor panel
 //      on the Review screen already); this sheet is the CROSS-DAY story.
-//   2. How it compares — the day vs 7-day / 30-day / all-time baselines + a Week/Month/All chart.
+//   2. Comparison — the day vs 7-day / 30-day / all-time baselines + a Week/Month/All chart.
 // Section 3 (engine "pattern") is deferred — it arrives free from the registry.
 //
 // Ranges are Week/Month/All only (no Year): tremor/dyskinesia history is ~2.5 months, too short
-// for the ≥6-month monthly-median trend HRV/Sleep use. "All" = every daily average so far. When
-// history passes ~6 months, Year can join (same call the HRV sheet makes).
+// for the ≥6-month monthly-median trend HRV/Sleep use. When history passes ~6 months, Year can
+// join (same call the HRV sheet makes).
+//
+// A range sets the chart's WINDOW WIDTH, not a cutoff date. The chart plots the whole record and
+// you swipe back through it, as Health's do — "Week" is *a* week, not *the last* seven days. The
+// history was always fully loaded (the loaders below fetch unbounded); the old `series(for:)`
+// filtered all but the newest days away on the way to the chart. Because the cards above the
+// chart stay pinned to the tapped day, the chart carries its own header naming the span on
+// screen — otherwise it could quietly show June while the verdict above argued about today.
 
 /// One (date, value) reading, already mapped onto the 0-4 severity axis. Sendable so the history
 /// fetch can run off the main actor and hand results back.
@@ -39,6 +46,9 @@ struct SeverityTrendSheet: View {
     // still remember and act on. Applies to every detail sheet so they open consistently.
     @State private var range: SeverityRange = .week
     @State private var loading = true
+    /// The span the chart currently has on screen, reported back by it as you scroll. Drives the
+    /// chart's header only — the cards above stay pinned to the tapped day.
+    @State private var visibleRange: ClosedRange<Date>?
 
     var body: some View {
         NavigationStack {
@@ -55,7 +65,10 @@ struct SeverityTrendSheet: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 12)
+                // Top only. A ScrollView already insets its content by the bottom safe area
+                // (~34pt for the home indicator), so a bottom pad here just stacked on top of
+                // that — and it was enough to keep the sheet scrollable by itself.
+                .padding(.top, 12)
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
@@ -77,32 +90,47 @@ struct SeverityTrendSheet: View {
     private var dayLabel: String {
         isToday ? "today" : dayDate.formatted(.dateTime.month(.abbreviated).day())
     }
-    private var todayCaption: String {
-        if dayCount == 0 {
-            return isToday ? "No readings today yet." : "No readings on \(dayLabel)."
-        }
-        return isToday ? "Average for the day so far." : "Average for the day."
+    private var noDataCaption: String {
+        isToday ? "No readings today yet." : "No readings on \(dayLabel)."
     }
 
     private var todaySection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(isToday ? "Today" : dayDate.formatted(.dateTime.weekday(.wide).month().day()))
-                .font(.headline)
+            HStack(alignment: .firstTextBaseline) {
+                Text(isToday ? "Today" : dayDate.formatted(.dateTime.weekday(.wide).month().day()))
+                    .font(.headline)
+                Spacer()
+                // Title left, qualifier right — the same shape as "Time at each level". Saying
+                // the number is a mean and not a peak cost a full line under it, and this row
+                // was empty. Suppressed when there is no number for it to qualify.
+                if dayCount > 0 {
+                    Text(isToday ? "average so far" : "daily average")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 // Same glyph as the glance tile so the sheet reads as "that tile, opened."
+                // A step below the number, so the number still leads the row now that it is
+                // smaller — at equal size the glyph competes with it.
                 Image(systemName: glyph)
-                    .font(.title)
+                    .font(.title2)
                     .foregroundStyle(accent)
+                // `.title`, not `.largeTitle`: the number was set at display scale in a card that
+                // holds nothing else, and the row's height is what pushes the chart off screen.
                 Text(dayValue.map { String(format: "%.1f", $0) } ?? "—")
-                    .font(.largeTitle.weight(.semibold))
+                    .font(.title.weight(.semibold))
                     .foregroundStyle(accent)
                 // Severity word sits where HRV's "ms" unit sits — the label the tile carried.
                 if let v = dayValue {
                     Text(SeverityScale.name(v)).font(.title3).foregroundStyle(.secondary)
                 }
             }
-            Text(todayCaption)
-                .font(.caption).foregroundStyle(.secondary)
+            // An empty record keeps its own line: that sentence is the card's content, not a
+            // qualifier on a number that isn't there.
+            if dayCount == 0 {
+                Text(noDataCaption)
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
@@ -123,11 +151,14 @@ struct SeverityTrendSheet: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text("Time at each level").font(.headline)
                     Spacer()
-                    // Only today needs a qualifier — it says the day is still running. On a past
-                    // day the card above already names the date, so anything here just repeats it.
-                    if isToday {
-                        Text("so far").font(.caption).foregroundStyle(.secondary)
-                    }
+                    // Both qualifiers ride here rather than as a footer line under the rows: the
+                    // footer cost a full line plus its spacing, and this header row was half empty.
+                    // "so far" is today-only — it says the day is still running, and on a past day
+                    // the card above already names the date. "includes sleep" is the shortened
+                    // footer; the reason it gave (tremor is near zero asleep) is dropped, which
+                    // the None row's size makes evident once the reader knows sleep is in there.
+                    Text(isToday ? "so far · includes sleep" : "includes sleep")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
 
                 VStack(spacing: 6) {
@@ -135,9 +166,6 @@ struct SeverityTrendSheet: View {
                         bandRow(row.band, minutes: row.minutes, total: total)
                     }
                 }
-
-                Text("Includes time asleep, when tremor is usually near zero.")
-                    .font(.caption2).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
@@ -177,13 +205,15 @@ struct SeverityTrendSheet: View {
         return m == 0 ? "\(h)h" : "\(h)h \(m)m"
     }
 
-    // MARK: Section 3 — How it compares
+    // MARK: Section 3 — Comparison
 
     @ViewBuilder
     private var compareSection: some View {
         if let data {
             VStack(alignment: .leading, spacing: 14) {
-                Text("How it compares").font(.headline)
+                // Noun phrase, like its siblings ("Today", "Time at each level") — the clause
+                // "How it compares" was the odd one out, and the card explains itself.
+                Text("Comparison").font(.headline)
 
                 // Baselines row — "This day" in the metric's accent to anchor the eye on the
                 // subject of the comparison; the reference windows stay neutral.
@@ -231,21 +261,33 @@ struct SeverityTrendSheet: View {
 
     @ViewBuilder
     private func trendChart(_ data: SeverityTrendData) -> some View {
-        let series = data.series(for: range)
-        if series.count < 2 {
-            Text("Not enough history yet for this range.")
+        if data.daily.count < 2 {
+            Text("Not enough history yet.")
                 .font(.caption).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
         } else {
-            ScrubbableTrendChart(
-                points: series,
-                accent: accent,
-                yAxisLabel: "",
-                valueText: { String(format: "%.1f", $0) },
-                showPoints: range == .week
-            )
+            VStack(alignment: .leading, spacing: 8) {
+                TrendWindowHeader(
+                    visibleRange: visibleRange,
+                    points: data.daily,
+                    accent: accent,
+                    valueText: { String(format: "%.1f", $0) },
+                    label: "daily average"
+                )
+                ScrubbableTrendChart(
+                    points: data.daily,
+                    accent: accent,
+                    yAxisLabel: "",
+                    valueText: { String(format: "%.1f", $0) },
+                    showPoints: range == .week,
+                    visibleDomain: range.visibleDomain(
+                        fullSpan: ScrubbableTrendChart.fullSpan(of: data.daily)),
+                    onVisibleRange: { visibleRange = $0 }
+                )
+            }
         }
     }
+
 }
 
 // MARK: - Range
@@ -258,6 +300,21 @@ enum SeverityRange: String, CaseIterable, Identifiable {
         case .week:  "Week"
         case .month: "Month"
         case .all:   "All"
+        }
+    }
+
+    /// How much of the record is on screen at once. The chart always plots EVERY day and this
+    /// picks the width of the window you look through, so "Week" now means *a* week — the one you
+    /// have scrolled to — rather than *the last* seven days.
+    ///
+    /// "All" is the whole record by definition, so it takes `fullSpan` and simply has nothing left
+    /// to scroll to. It is given a width rather than opting out of windowing, so every range keeps
+    /// the chart on the same code path and switching tabs cannot reset it.
+    func visibleDomain(fullSpan: TimeInterval) -> TimeInterval {
+        switch self {
+        case .week:  7 * 86_400
+        case .month: 30 * 86_400
+        case .all:   fullSpan
         }
     }
 }
@@ -357,7 +414,9 @@ struct SeverityTrendData {
     let avgAll: Double?
     let p10: Double?                 // 10th pct of recent daily averages
     let p90: Double?                 // 90th pct of recent daily averages
-    private let daily: [TrendPoint]  // one mean per day, ascending
+    /// One mean per day, ascending — the WHOLE record. The chart plots all of it and scrolls;
+    /// nothing filters it down to the range picker any more.
+    let daily: [TrendPoint]
     /// Minutes at each band for the day on screen; a band absent from the map had none.
     let bandMinutes: [SeverityBand: Int]
 
@@ -461,20 +520,6 @@ struct SeverityTrendData {
                                   valence: .typical)
     }
 
-    /// The chart series for a range. Short windows filter the daily averages; "All" is every day.
-    func series(for range: SeverityRange) -> [TrendPoint] {
-        let cal = Calendar.current
-        switch range {
-        case .week:
-            guard let c = cal.date(byAdding: .day, value: -7, to: Date()) else { return daily }
-            return daily.filter { $0.date >= c }
-        case .month:
-            guard let c = cal.date(byAdding: .day, value: -30, to: Date()) else { return daily }
-            return daily.filter { $0.date >= c }
-        case .all:
-            return daily
-        }
-    }
 }
 
 // MARK: - History loaders (map each store type onto the shared severity axis, off-main)

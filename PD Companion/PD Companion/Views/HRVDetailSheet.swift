@@ -6,12 +6,19 @@ import Charts
 // Tap the HRV glance tile → this sheet. Two sections only (v1):
 //   1. Today — the day's value + honest context. NOT a within-day curve: the Watch samples
 //      HRV only ~9×/day, so there's no honest intra-day "shape" to draw (same lesson as gait).
-//   2. How it compares — the day vs your 7-day / 30-day / all-time baselines, plus a
+//   2. Comparison — the day vs your 7-day / 30-day / all-time baselines, plus a
 //      Week/Month/Year/All trend chart. This is HRV's real story: a slow multi-month drift.
 // Section 3 (engine "pattern") is intentionally deferred — it arrives free from the registry.
 //
 // HRV clears the ≥6-month bar the trend primitive needs (Watch history spans years), which
 // is why it — not tremor (~2.5 mo) — is the first metric to get a trend surface.
+//
+// A range sets the chart's WINDOW WIDTH, not a cutoff date: the chart plots the whole record and
+// you swipe back through it, as Health's do. Two axes, not one — GRANULARITY (daily averages vs
+// the engine's monthly medians) picks the series, the range picks the window over it. So Week and
+// Month share a series and only resize the window, while Month → Year swaps the series and
+// resets the scroll. The card above stays pinned to the tapped day, so the chart carries its own
+// header naming the span on screen.
 
 struct HRVDetailSheet: View {
     @EnvironmentObject var healthKit: HealthKitManager
@@ -27,6 +34,9 @@ struct HRVDetailSheet: View {
     // still remember and act on. Applies to every detail sheet so they open consistently.
     @State private var range: HRVRange = .week
     @State private var loading = true
+    /// The span the chart currently has on screen, reported back by it as you scroll. Drives the
+    /// chart's header only — the card above stays pinned to the tapped day.
+    @State private var visibleRange: ClosedRange<Date>?
 
     var body: some View {
         NavigationStack {
@@ -40,7 +50,8 @@ struct HRVDetailSheet: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 12)
+                // Top only — a ScrollView already insets its content by the bottom safe area.
+                .padding(.top, 12)
             }
             .navigationTitle("HRV")
             .navigationBarTitleDisplayMode(.inline)
@@ -63,43 +74,55 @@ struct HRVDetailSheet: View {
     private var dayLabel: String {
         isToday ? "today" : dayDate.formatted(.dateTime.month(.abbreviated).day())
     }
-    private var todayCaption: String {
-        if dayCount == 0 {
-            return isToday ? "No readings today yet." : "No readings on \(dayLabel)."
-        }
-        return isToday ? "Average for the day so far." : "Average for the day."
+    private var noDataCaption: String {
+        isToday ? "No readings today yet." : "No readings on \(dayLabel)."
     }
 
     private var todaySection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(isToday ? "Today" : dayDate.formatted(.dateTime.weekday(.wide).month().day()))
-                .font(.headline)
+            HStack(alignment: .firstTextBaseline) {
+                Text(isToday ? "Today" : dayDate.formatted(.dateTime.weekday(.wide).month().day()))
+                    .font(.headline)
+                Spacer()
+                // Title left, qualifier right — the shape every detail-sheet card now uses.
+                // Saying the number is a mean cost a full line under it, and this row was empty.
+                if dayCount > 0 {
+                    Text(isToday ? "average so far" : "daily average")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 // Same glyph as the glance tile (`bolt.heart.fill`) so the sheet reads as
-                // "the HRV tile, opened."
+                // "the HRV tile, opened." A step below the number so the number still leads.
                 Image(systemName: "bolt.heart.fill")
-                    .font(.title)
+                    .font(.title2)
                     .foregroundStyle(Color.hrvAccent)
                 Text(dayValue.map { "\(Int($0))" } ?? "—")
-                    .font(.largeTitle.weight(.semibold))
+                    .font(.title.weight(.semibold))
                     .foregroundStyle(Color.hrvAccent)
                 Text("ms").font(.title3).foregroundStyle(.secondary)
             }
-            Text(todayCaption)
-                .font(.caption).foregroundStyle(.secondary)
+            // An empty record keeps its own line: that sentence is the card's content, not a
+            // qualifier on a number that isn't there.
+            if dayCount == 0 {
+                Text(noDataCaption)
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 
-    // MARK: Section 2 — How it compares
+    // MARK: Section 2 — Comparison
 
     @ViewBuilder
     private var compareSection: some View {
         if let data {
             VStack(alignment: .leading, spacing: 14) {
-                Text("How it compares").font(.headline)
+                // Noun phrase, like its siblings — the clause "How it compares" was the odd one
+                // out across the four detail sheets, and the card explains itself.
+                Text("Comparison").font(.headline)
 
                 // Baselines row — "This day" in HRV's accent to anchor the eye on the subject
                 // of the comparison; the reference windows stay neutral.
@@ -152,21 +175,40 @@ struct HRVDetailSheet: View {
 
     @ViewBuilder
     private func trendChart(_ data: HRVTrendData) -> some View {
-        let series = data.series(for: range)
+        // The series follows GRANULARITY, the window follows the RANGE. Week and Month therefore
+        // share one series and only resize the window; Month → Year swaps daily points for
+        // monthly medians, which legitimately resets the scroll.
+        let series = data.series(monthly: range.isMonthly)
         if series.count < 2 {
+            // Still per-range: Year/All can be empty (too little span for monthly medians) while
+            // Week has plenty.
             Text("Not enough history yet for this range.")
                 .font(.caption).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, minHeight: 160, alignment: .center)
         } else {
-            // Shared scrubbable chart — drag to read any day/month as a number.
-            ScrubbableTrendChart(
-                points: series.map { TrendPoint(date: $0.date, value: $0.value) },
-                accent: .purple,
-                yAxisLabel: "ms",
-                valueText: { "\(Int($0)) ms" },
-                showPoints: range == .week,
-                monthlyDates: range == .year || range == .all
-            )
+            VStack(alignment: .leading, spacing: 8) {
+                TrendWindowHeader(
+                    visibleRange: visibleRange,
+                    points: series,
+                    accent: .hrvAccent,
+                    valueText: { "\(Int($0))" },
+                    unit: "ms",
+                    label: range.isMonthly ? "monthly median" : "daily average",
+                    monthlyDates: range.isMonthly
+                )
+                // Shared scrubbable chart — drag to pan, long-press to read a day as a number.
+                ScrubbableTrendChart(
+                    points: series,
+                    accent: .purple,
+                    yAxisLabel: "ms",
+                    valueText: { "\(Int($0)) ms" },
+                    showPoints: range == .week,
+                    monthlyDates: range.isMonthly,
+                    visibleDomain: range.visibleDomain(
+                        fullSpan: ScrubbableTrendChart.fullSpan(of: series)),
+                    onVisibleRange: { visibleRange = $0 }
+                )
+            }
         }
     }
 }
@@ -182,6 +224,26 @@ enum HRVRange: String, CaseIterable, Identifiable {
         case .month: "Month"
         case .year:  "Year"
         case .all:   "All"
+        }
+    }
+
+    /// Which SERIES the range reads: nightly/daily values for the short windows, the engine's
+    /// monthly medians for the long ones (robust to day-to-day noise over years).
+    var isMonthly: Bool { self == .year || self == .all }
+
+    /// How much of that series is on screen at once. The chart plots all of it and this picks
+    /// the width of the window you look through, so "Week" is *a* week — the one you have
+    /// scrolled to — not *the last* seven days.
+    ///
+    /// "All" is the whole record by definition, so it takes `fullSpan` and simply has nothing
+    /// left to scroll to. It is given a width rather than opting out of windowing, so every
+    /// range stays on the same code path and switching tabs cannot reset the chart.
+    func visibleDomain(fullSpan: TimeInterval) -> TimeInterval {
+        switch self {
+        case .week:  7 * 86_400
+        case .month: 30 * 86_400
+        case .year:  365 * 86_400
+        case .all:   fullSpan
         }
     }
 }
@@ -320,29 +382,25 @@ struct HRVTrendData {
                              valence: .typical)
     }
 
-    /// The chart series for a range: short windows use daily averages; year/all use the
-    /// engine's monthly medians (robust to the day-to-day HRV noise).
-    func series(for range: HRVRange) -> [HRVPoint] {
-        let cal = Calendar.current
-        switch range {
-        case .week:
-            guard let c = cal.date(byAdding: .day, value: -7, to: Date()) else { return daily }
-            return daily.filter { $0.date >= c }
-        case .month:
-            guard let c = cal.date(byAdding: .day, value: -30, to: Date()) else { return daily }
-            return daily.filter { $0.date >= c }
-        case .year:
-            let months = (trend?.months ?? []).map { HRVPoint(date: $0.month, value: $0.median) }
-            return Array(months.suffix(12))
-        case .all:
-            return (trend?.months ?? []).map { HRVPoint(date: $0.month, value: $0.median) }
-        }
+    /// The chart series at one granularity — the WHOLE record either way. Short windows read
+    /// daily averages; year/all read the engine's monthly medians (robust to day-to-day HRV
+    /// noise). Nothing is trimmed to a recency cutoff here any more: the range picks the width
+    /// of the chart's window and you scroll back through the rest.
+    func series(monthly: Bool) -> [TrendPoint] {
+        monthly
+            ? (trend?.months ?? []).map { TrendPoint(date: $0.month, value: $0.median) }
+            : daily.map { TrendPoint(date: $0.date, value: $0.value) }
     }
 
-    /// Descriptive magnitude of the long-term drift — shown only under year/all, only when
-    /// the slope is statistically real. Purely factual; no clinical verdict (that's section 3).
+    /// Descriptive magnitude of the long-term drift — only when the slope is statistically real.
+    /// Purely factual; no clinical verdict (that's section 3).
+    ///
+    /// "All" ONLY. The slope is fitted to the whole record, so on any other tab the caption
+    /// describes a line the reader cannot see: it used to say "over the last 6 years" directly
+    /// under a chart headed "Jul 2025 - Jun 2026". All is the one tab where the line on screen
+    /// is the line the trend was fitted to.
     func trendCaption(for range: HRVRange) -> String? {
-        guard range == .year || range == .all, let t = trend, t.pValue < 0.05 else { return nil }
+        guard range == .all, let t = trend, t.pValue < 0.05 else { return nil }
         let years = max(1, Int(t.spanYears.rounded()))
         let pct = Int(abs(t.pctChange).rounded())
         if t.slopePerYear < 0 { return "Trending down about \(pct)% over the last \(years) year\(years == 1 ? "" : "s")." }
