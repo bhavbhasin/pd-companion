@@ -6,20 +6,61 @@ Two decisions, two bars. **List** = quiet US-first, unmarketed. **Launch** = a p
 
 ---
 
-## 🎯 REMAINING TO LIST — work this order (status Jul 30 2026)
+## 🎯 REMAINING TO LIST — work this order (status Aug 1 2026)
 
-**Next:**
-1. ⬜ **Delete + restore from iCloud on Dad's phone.** Replaces building CSV/JSON import — his call
-   Jul 30, and the cleaner proof anyway. If it passes, the import path moves to post-list.
+⚠️ **Verify each `⬜` against App Store Connect or the repo before working it.** This list goes stale
+the same way BACKLOG.md does — the Jul 31 pass found 9 of 19 "remaining" items already done, and the
+Aug 1 pass found 3 more.
+
+**Open — 3 items** (status Aug 1, mid-session):
+- ⬜ 14 · keywords + description (subtitle DONE) · ⬜ 15 · screenshots ·
+  ⬜ 19 · build → App Review Information → submit
+
+**✅ Closed on screen Aug 1:** 16 · age rating → **13+** (172 regions; 12+ Vietnam/Korea, A12 Brazil) ·
+20 · regulated medical device → **No, in any country or region** · **9 · App Privacy → Data Not
+Collected, PUBLISHED** (+ policy URL added — the ASC field was empty even though the policy was live;
+they are two different things) · subtitle → `Passive Parkinson's tracking` · Content Rights → No ·
+export compliance (no upload needed, `ITSAppUsesNonExemptEncryption = false` verified in both
+plists) · 18 · paid-apps agreement → N/A, free app.
+
+**Distribution settings decided Aug 1:** Public (⚠️ **cannot be changed after approval**) ·
+Apple Silicon Mac availability **OFF** — it is ON by default and would ship a permanently empty app,
+since a Mac has no paired Watch to feed the Movement Disorder API · Vision Pro OFF (1.0 incompatible
+anyway) · Apple School Manager volume-price offer unchecked (inert on a free app, but it declared an
+education offer that was never intended) · Tax category `App Store software` · Last-compatible: All.
+
+**🌍 Territories — GLOBAL MINUS THE EU/EEA (decided Aug 1).** Includes UK, Switzerland, India,
+Australia, NZ, Africa, rest of Asia. **All 27 EU members + Norway + Iceland deselected**, which is
+what keeps the **DSA trader-status declaration** out of scope — that declaration publishes the
+developer's name, address, phone and email publicly on the App Store product page, and requires
+verification that takes days. ⚠️ Adding any single EU country re-triggers it.
+⬜ Website follow-up (batch, not a blocker): `privacy.html` names only CCPA/CPRA. UK/India/AU are now
+in scope, so the rights section should generalise beyond California.
+
+📋 **All six ASC forms are pre-answered in [`app-store-listing-copy.md`](app-store-listing-copy.md)** —
+subtitle options, keyword string, full description, nutrition-label reasoning, age-rating answers,
+screenshot sizes, and the submission notes. Paste from there; don't re-derive.
+
+20. ⬜ ⭐ **Regulated medical device status — NEW HARD GATE, was missing from this list.** Since
+    **March 26 2026**, an app with a **Health & Fitness** primary or secondary category must declare
+    this in ASC to distribute in the US/EEA/UK. Apple: *required for new apps … starting today*
+    (existing apps have until early 2027 — **a new app does not**). **Answer: No** → Save → done; no
+    further fields appear. Consistent with `terms.html:101`, `privacy.html:190`, `faq.html:310`,
+    `index.html:1390`, `SettingsSheet.swift:86`.
+    ⚠️ Answering the age-rating medical question **"Frequent"** would trigger this same requirement
+    independently — answer **Infrequent/Mild**, which is what the app actually does.
+
 2. ✅ **App name was NEVER open** — reserved since the TestFlight launch, confirmed on screen
    Jul 31. Record: name `Kampa`, Apple ID `6781438685`, SKU `kampa-ios-001`, bundle ID
    `com.bhavbhasin.pdcompanion` (verified against the project — entitlement binding intact),
    category Health & Fitness, status *1.0 Prepare for Submission*.
-   ⚠️ It sat here flagged as the one time-critical item. It was done all along. **This list is
-   stale in the same way BACKLOG.md is — verify each `⬜` against App Store Connect or the repo
-   before working it.**
 
-### ✅ CLOSED by the Jul 31 verification pass — evidence, not a tick
+### ✅ CLOSED by the Jul 31 + Aug 1 verification passes — evidence, not a tick
+1. ✅ **Delete + restore from iCloud.** Done Jul 31 on Bhaani's phone, build 15, **Release/TestFlight**,
+   3 cycles (watch dead / live / live + pull-refresh). Full record restored, correct spans, 4,471 →
+   4,474 rows ⇒ zero duplication. Closes item 6 (Watch sync self-heals in Release) by the same test.
+   ⚠️ Residual, **not a listing blocker**: untested at Bhav's ~113k rows (25×), and a user with iCloud
+   off has no restore path at all. Both accepted for a quiet US-first list.
 3. ✅ **CloudKit schema Dev → Production.** All three `@Model` files (`TremorReading`, `FoodEvent`,
    `DyskinesiaReading`) last changed **2026-06-29** (`8724973`, `e15c1e3`) — no schema drift since
    the deploy, so nothing additive is pending.
@@ -40,19 +81,49 @@ Two decisions, two bars. **List** = quiet US-first, unmarketed. **Launch** = a p
 17. ✅ **Export compliance.** `ITSAppUsesNonExemptEncryption = false` in **both**
     `PD-Companion-Info.plist` and `PD-Watch-App-Info.plist` — answered at build time, ASC won't prompt.
 
-11. 🟡 **§1.4.1 medical-accuracy — no violations found, full read still owed.** Pattern search over
-    all shipping Swift found the risk words only inside *disclaimers* (`SettingsSheet.swift:86`
-    "wellness tool, not a medical device… never advises on medication"; the n-of-1 / "not a diagnosis
-    or treatment recommendation" lines in `InsightsView.swift:386` + `ClinicalReportPDF.swift:65,177`)
-    and **zero** dosing-instruction phrasing. A grep is not a copy audit — a human read of card copy
-    is still owed, but nothing flagged.
+11. ✅ **§1.4.1 medical-accuracy — copy read DONE Aug 1.** All 424 sentence-like strings in the
+    shipping targets were extracted and read, not grepped. Two would have failed; **both are
+    unreachable in v1**:
+    - `InsightsView.swift:646` `"Take your 3 PM dose 45 min before lunch, not after."` — a genuine
+      dosing instruction, but `startExperiment()` has **zero live callers** (sole call site commented
+      out at `:580` when "Try an experiment" was hidden Jul 31). ⚠️ It ships as a dead string — if the
+      experiment loop is ever un-hidden, this line is a §1.4.1 violation. Rewrite it then.
+    - `InsightRegistry.swift:511-524` `workoutRationales` — unhedged efficacy claims ("Resistance
+      training improves PD motor scores"). `.rationale` has **zero consumers outside that file**;
+      user-facing exercise copy is the hedged version. Provenance only, as its own comment says.
+
+    Everything that renders hedges ("a lead to test, not a conclusion", "Likely, not proven") and
+    routes to the neurologist ("decisions only your neurologist can make"). **Zero `UPDRS` anywhere**
+    in app or site. Disclaimer live on all five site pages.
 
 ### ⬜ GENUINELY OPEN
-**Device tests (need hardware + people, not a keyboard):**
-1. ⬜ Delete + restore from iCloud on Dad's phone. (Confirmed there is no CSV/JSON import path in the
-   app — `fileImporter`/`importCSV` return nothing — so iCloud restore IS the only restore story.)
-6. ⬜ Watch sync self-heals on a clean device, in **Release** not Debug
+**Device test:**
 19. ⬜ Stage to yourself on a clean device (TestFlight), then submit
+
+### ⬜ POST-APPROVAL — before telling the other testers to switch
+21. ⬜ **TestFlight → App Store transition test, on Bhaani's phone.** The one path never exercised:
+    every restore test so far stayed *within* TestFlight. She is on build **15**, the App Store ships
+    **16**, so iOS should offer a normal in-place update.
+    ⭐ **Try the update BEFORE deleting anything** — that is the only way to learn whether the local
+    container survives, which Apple's docs do not state (their help page 404s; searched Aug 1).
+    Deleting first destroys the experiment and only re-proves the CloudKit restore already verified.
+    1. Baseline: Support → Details row counts; copy her CSV backup folder aside (filenames are
+       date-range based, so the next export overwrites the previous one).
+    2. App Store → Update/Get **without deleting**. Counts intact instantly, no sync wait ⇒ local
+       container survived.
+    3. Only if that misbehaves: delete + reinstall ⇒ falls back to the proven CloudKit path, and
+       confirms App Store builds read the same **Production** container.
+    ⚠️ `syncLog` is `#if DEBUG` ⇒ **no console on an App Store build either**; Support → Details is
+    the only readout. ⚠️ `cleanupDuplicates()` runs from `.task` on the main view = cold launch only;
+    force-quit from the app switcher to re-run it.
+    ⛔ **Do NOT push build 16 to TestFlight** — testers must stay on 15 so the store build is strictly
+    newer. Same build number on both sides can make iOS refuse the in-place update.
+22. ⬜ Tell the other three testers to switch. One-line instruction, plus the one caveat that matters:
+    **check iCloud is on for Kampa before deleting anything** — iCloud off = no restore path.
+    ⚠️ The app cannot currently tell them ([[BACKLOG]] → "Support → Details doesn't report iCloud
+    status"), so this is a manual Settings check until that ships.
+23. ⬜ Website batch deploy: `privacy.html` TestFlight-only wording → released; CCPA-only rights
+    section → generalised for UK/India/AU. One deploy, not two (~15 of 300 monthly credits each).
     ⭐ **At submission: paste the Movement Disorder disclosure into App Review Information → Notes**
     (draft in item 4). Contractually required by EP5499 §4 and there is no repo artifact to remind you.
     ⚠ Budget days, not hours: the Movement Disorder entitlement can draw extra review scrutiny
@@ -75,16 +146,19 @@ Two decisions, two bars. **List** = quiet US-first, unmarketed. **Launch** = a p
    `website/privacy.html`. §3.4's consent/third-party duties are a **human-subject-research** clause;
    Kampa has no participants and no data recipients, so it does not bite (Bhav's call Jul 31, and the
    obligations are incoherent without third parties). ⛔ Don't re-raise it as a blocker.
-   ⬜ **Opt-out paragraph ADDED to `website/privacy.html` Jul 31 — NOT DEPLOYED.** Batch with the other
-   website items before spending a Netlify prod deploy (~15 of 300 monthly credits).
+   ✅ **Opt-out paragraph is LIVE** — verified Aug 1, `kampa.health/privacy.html` serves the "Turning
+   this off" paragraph (committed `3a6448d`, auto-deployed).
+   ⬜ **`privacy.html` still describes Kampa as TestFlight-only** — *"first being made available to a
+   small, invite-only group of testers… may later be released on the App Store."* One-line change at
+   listing time; batch it with the other website edits (~15 of 300 monthly Netlify credits per deploy).
 9. ⬜ App Privacy "nutrition label" **(verify current fields)**
 14. ⬜ Subtitle (confirmed EMPTY Jul 31), keywords, description — claims-clean · Content Rights
 15. ⬜ Screenshots, all required device sizes (⚠ mind the black-void bug from the web deploy)
 16. ⬜ Age rating questionnaire
 18. ⬜ Confirm no paid-apps agreement / banking needed for a free v1
 
-**Tally Jul 31:** 9 of 19 verified done, 1 substantially done, 9 open — of which 3 are device tests
-and 6 are ASC form-filling. The list previously read "19 remaining".
+**Tally Aug 1:** 13 of 19 done, **6 open** — 5 ASC forms + the submit. (Jul 31 read 9 done / 9 open;
+Aug 1 closed the restore test, the Release watch-sync test, and the §1.4.1 copy read.)
 
 **✅ Done Jul 30:** in-app medical disclaimer + reachable Privacy/Terms (Settings → About) ·
 Support URL live at `kampa.health/support` · marketing URL `kampa.health` · `support@kampa.health`
@@ -106,26 +180,32 @@ instruction, AI answer made forward-looking) · CSV export 92s → 12.4s · name
 
 ### Data safety (a health app can't ship a one-way door)
 - [x] ~~**CSV/JSON import / restore path**~~ — ⛔ **NOT NEEDED, decided Jul 31 2026.** The premise was that CloudKit-as-only-restore is an untested single point of failure. It's now tested: 3 delete+reinstall cycles on a Release/TestFlight build restored the full record with correct spans and zero duplication (watch dead and watch live). Export stays one-way by design — it's for taking data OUT (clinician, analysis), not for getting it back. Don't reopen without a *failed* restore.
-- [ ] In-app account deletion **(verify** — Apple requires it *if* there's account creation; Kampa is CloudKit/on-device with no account, likely N/A — confirm)
+- [x] In-app account deletion — **N/A, confirmed Jul 31.** Zero `AuthenticationServices` /
+  `ASAuthorization` / sign-in / account-creation references; Apple's requirement is conditional on
+  account creation.
 
 ### Claims & regulatory hygiene (the medical-app line)
-- [ ] No UPDRS-equivalence claim anywhere (listing, app, FAQ) — "passive 0-4 estimate," not "the UPDRS scale"
-- [ ] No dosing instruction or medication-regimen suggestion, anywhere — observation + refer-to-neurologist only
-- [ ] In-app + listing medical disclaimer ("wellness tool, not a medical device; not a doctor")
-- [ ] App Review Guidelines §1.4.1 (medical accuracy) self-audit **(verify)**
+- [x] No UPDRS-equivalence claim anywhere — **zero occurrences of `UPDRS`** in app or site (Aug 1)
+- [x] No dosing instruction or medication-regimen suggestion — the one imperative is dead code, see item 11
+- [x] In-app + listing medical disclaimer — `SettingsSheet.swift:86` + all five site pages
+- [x] App Review Guidelines §1.4.1 (medical accuracy) self-audit — **full copy read Aug 1, item 11**
 
 ### Privacy (three separate things)
-- [ ] Privacy policy URL live + accurate, incl. cohort export-and-share workflow (BACKLOG item)
+- [x] Privacy policy URL live + accurate — `kampa.health/privacy.html`, incl. the Movement Disorder
+  opt-out paragraph (verified live Aug 1). ⬜ One residual edit: the TestFlight-only wording.
 - [ ] Apple **App Privacy "nutrition label"** in App Store Connect filled out — distinct from the policy **(verify current fields)**
-- [ ] HealthKit App Review rules: no HealthKit data for advertising; policy discloses use §5.1.3 **(verify)**
+- [x] HealthKit App Review rules §5.1.3 — policy states no advertising/marketing use, no third-party disclosure, no analytics or tracking SDKs
 
 ### App Store Connect mechanics
 - [x] Category — Health & Fitness (set Jul 31; Medical deliberately avoided — more scrutiny)
-- [ ] Name, subtitle, keywords, description — claims-clean (see hygiene above)
-- [ ] Screenshots for all required device sizes (reuse website assets; mind the black-void screenshot bug from the web deploy)
-- [ ] Age rating questionnaire
-- [ ] Support URL + marketing URL (kampa.health)
-- [ ] Export-compliance / encryption declaration **(verify — usually "uses standard encryption, exempt")**
+- [ ] Name, subtitle, keywords, description — claims-clean (name reserved; subtitle confirmed EMPTY)
+- [ ] Screenshots — **TWO required classes**: iPhone 6.9" (1320×2868) **and Apple Watch** (mandatory
+  because a Watch app ships; one model size, consistent across localizations). 1–10 each, no alpha.
+  Mind the black-void screenshot bug from the web deploy.
+- [ ] Age rating questionnaire — new 4+/9+/13+/16+/18+ tiers; medical question → **Infrequent/Mild**
+- [ ] ⭐ Regulated medical device status → **No** (new gate for Health & Fitness apps, see item 20)
+- [x] Support URL + marketing URL — `kampa.health/support` + `kampa.health`, both live
+- [x] Export-compliance / encryption declaration — `ITSAppUsesNonExemptEncryption = false` in **both** plists, so ASC won't prompt
 - [ ] Free app: confirm no paid-apps agreement / banking needed for v1
 
 ---

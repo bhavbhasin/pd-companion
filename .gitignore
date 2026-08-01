@@ -48,3 +48,7 @@ website/images/*.mov
 
 # Design doc with personal validation data — keep untracked like BACKLOG
 docs/design/forecast-composition-model.md
+
+# Xcode device container exports — contain real health data, never commit
+*.xcappdata/
+*.xcappdata
