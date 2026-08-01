@@ -97,8 +97,7 @@ Two numbers side by side are already a claim. The control context is what keeps 
 
 **"Therapy," not "Custom."** Not a wording preference — it decides what is being built.
 
-"Custom" is an empty box, so it fills with naps, travel, work stress, arguments. That makes Kampa a
-general life-event logger: more flexible, unbounded, and useless to an engine that needs repeated
+"Custom" is an empty box, so it fills with naps, travel, work stress, arguments. That makes Kampa a general life-event logger: more flexible, unbounded, and useless to an engine that needs repeated
 instances of a defined thing. "Therapy" stays a bounded concept with free-text names inside it,
 which is what an experiment loop can eventually work on. "Custom" is also a developer's word — nobody
 thinks *"I am logging a custom."*
@@ -108,9 +107,7 @@ thinks *"I am logging a custom."*
 ## Why log at all, if no effect answer
 
 Independent of any verdict, these sessions are currently **invisible variance**. If John has
-acupuncture on Tuesdays, his Wednesday readings are already shaped by something the record does not
-contain. Logging makes every *other* insight more honest. That value does not depend on ever
-measuring the therapy itself.
+acupuncture on Tuesdays, his Wednesday readings are already shaped by something the record does not contain. Logging makes every *other* insight more honest. That value does not depend on ever measuring the therapy itself.
 
 ---
 
