@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Kampa social banner — source</title>
+<!--
+  SOURCE for the Kampa social banners. Not a published page.
+
+  Render with scripts/export-banners.sh, which drives headless Chrome at each
+  target size. Do not edit the generated PNGs — edit this file and re-render.
+
+  Targets are keyed off ?target= below. Each declares the pixel size of the
+  final image and the SAFE BOX inside it: the region every platform is
+  guaranteed to show. YouTube is the strict one — it crops a 2048x1152 upload
+  down to roughly 1235x338 on desktop, so anything outside that box disappears.
+  The lockup is scaled to fit its safe box, never the full canvas.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500&display=swap" rel="stylesheet">
+<style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+        --blue: #4A8CD6;
+        --ink: #08090b;
+    }
+
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+
+    body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--ink);
+        font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+        -webkit-font-smoothing: antialiased;
+    }
+
+    /* Dark field with a cool highlight off-centre, so the lockup sits on the
+       lit part rather than dead black. Two layers: a broad navy bloom, then a
+       vignette pulling the corners down. */
+    .field {
+        position: absolute; inset: 0;
+        background:
+            radial-gradient(120% 150% at 62% 34%, #1d2b3c 0%, #131a24 38%, #0b0e13 68%, var(--ink) 100%),
+            linear-gradient(90deg, var(--ink) 0%, transparent 22%, transparent 78%, var(--ink) 100%);
+    }
+
+    /* Scaled as a unit by fit(), so internal sizes are a fixed design space
+       rather than anything responsive. */
+    .lockup {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transform-origin: center center;
+    }
+
+    .row { display: flex; align-items: center; gap: 44px; }
+
+    .wave { width: 176px; height: 106px; color: #fff; flex-shrink: 0; }
+
+    .word {
+        font-weight: 500;
+        font-size: 152px;
+        line-height: 1;
+        letter-spacing: -0.02em;
+        color: #fff;
+        white-space: nowrap;
+        /* Geist's descender on 'p' would otherwise pull the optical centre
+           down relative to the wave. */
+        transform: translateY(-0.055em);
+    }
+    .word .macron { color: var(--blue); }
+
+    .tagline {
+        margin-top: 30px;
+        font-weight: 400;
+        font-size: 40px;
+        letter-spacing: 0.005em;
+        color: rgba(235, 235, 245, 0.62);
+        white-space: nowrap;
+    }
+</style>
+</head>
+<body>
+
+<div class="field"></div>
+
+<div class="lockup" id="lockup">
+    <div class="row">
+        <svg class="wave" viewBox="0 0 240 144" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M8 90 C 28 90, 30 30, 56 30 C 78 30, 80 110, 104 95 C 124 82, 126 60, 150 60 C 168 60, 172 78, 192 78 L 232 78"
+                  stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="232" cy="78" r="5" fill="currentColor"/>
+        </svg>
+        <div class="word">k<span class="macron">ā</span>mpa</div>
+    </div>
+    <div class="tagline">Movement intelligence for Parkinson's</div>
+</div>
+
+<script>
+    // size = the exported PNG. safe = the region the platform always shows.
+    const TARGETS = {
+        youtube:  { w: 2048, h: 1152, safeW: 1235, safeH: 338 },
+        linkedin: { w: 1584, h: 396,  safeW: 1360, safeH: 300 },
+        x:        { w: 1500, h: 500,  safeW: 1300, safeH: 380 },
+        company:  { w: 1128, h: 191,  safeW: 1000, safeH: 150 }
+    };
+
+    const key = new URLSearchParams(location.search).get('target') || 'youtube';
+    const t = TARGETS[key] || TARGETS.youtube;
+
+    function fit() {
+        const el = document.getElementById('lockup');
+        el.style.transform = 'scale(1)';
+        const r = el.getBoundingClientRect();
+        // 0.92 keeps a little air inside the safe box rather than butting the lockup
+        // against its edge, which reads as cramped once a platform draws UI over it.
+        const scale = Math.min(t.safeW / r.width, t.safeH / r.height) * 0.92;
+        el.style.transform = `scale(${scale})`;
+    }
+
+    if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(fit);
+    } else {
+        window.addEventListener('load', fit);
+    }
+    fit();
+</script>
+
+</body>
+</html>

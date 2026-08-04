@@ -41,6 +41,28 @@ For local rasterization/design tools, install Geist: download from Google Fonts 
 **Generated PNGs** (`website/assets/brand/*.png`) — high-res, transparent, dark-theme:
 - `kampa-app-icon.png` · `kampa-wave-white.png` · `kampa-wave-blue.png` · `kampa-wordmark.png` · `kampa-lockup.png`
 
+## Social banners
+
+Composed dark banner — wave mark + `kāmpa` + *Movement intelligence for Parkinson's*.
+Source: `banner.html` (this folder). **Edit that, never the PNGs.**
+
+| File | Size | Where |
+|---|---|---|
+| `kampa-banner-youtube.png` | 2048×1152 | YouTube channel art |
+| `kampa-banner-linkedin.png` | 1584×396 | LinkedIn personal profile |
+| `kampa-banner-x.png` | 1500×500 | X header |
+| `kampa-banner-company.png` | 1128×191 | LinkedIn company page |
+
+Each target declares a **safe box** — the region the platform reliably shows — and the
+lockup is scaled to fit that, not the full canvas. YouTube is the strict one: it crops a
+2048×1152 upload to roughly 1235×338 on desktop, so anything outside that box is lost.
+
+```sh
+bash scripts/export-banners.sh    # headless Chrome, one PNG per target
+```
+
+Needs Geist installed locally (see Font, above) — the script does not warn if it falls back.
+
 ## Regenerating the PNGs
 
 The SVGs are **theme-neutral** — the wave uses `stroke="currentColor"` and the wordmark

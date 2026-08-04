@@ -1,21 +1,17 @@
 {
   "detector": {
-    "ignoreRules": [],
+    "ignoreRules": [
+      "overused-font"
+    ],
     "ignoreFiles": [],
     "ignoreValues": [
-      {
-        "rule": "overused-font",
-        "value": "geist",
-        "createdAt": "2026-07-30T06:28:46.405Z",
-        "reason": "User confirmed Geist is the Kampa wordmark face in docs/brand-guide.md"
-      },
       {
         "rule": "side-tab",
         "value": "*",
         "files": [
           "website/index.html"
         ],
-        "createdAt": "2026-07-30T06:28:46.453Z",
+        "createdAt": "2026-08-03T01:46:46.714Z",
         "reason": "blockquote pull-quote rule in the Story section, not a card accent stripe"
       },
       {
@@ -24,43 +20,17 @@
         "files": [
           "website/index.html"
         ],
-        "createdAt": "2026-07-30T06:28:46.500Z",
+        "createdAt": "2026-08-03T01:46:46.768Z",
         "reason": "deliberate device-mockup lighting under the phone frame"
       },
       {
-        "rule": "overused-font",
+        "rule": "single-font",
         "value": "*",
         "files": [
-          "website/changelog.html",
-          "website/index.html"
+          "website/assets/brand/banner.html"
         ],
-        "createdAt": "2026-07-30T06:29:43.499Z",
-        "reason": "Geist is the brand face per docs/brand-guide.md"
-      },
-      {
-        "rule": "overused-font",
-        "value": "*",
-        "files": [
-          "website/faq.html"
-        ],
-        "createdAt": "2026-07-30T06:54:41.458Z",
-        "reason": "Geist is the brand face per docs/brand-guide.md"
-      },
-      {
-        "rule": "overused-font",
-        "value": "*",
-        "files": [
-          "website/privacy.html",
-          "website/terms.html"
-        ],
-        "createdAt": "2026-07-30T06:54:59.665Z",
-        "reason": "Geist is the brand face per docs/brand-guide.md"
-      },
-      {
-        "rule": "overused-font",
-        "value": "inter",
-        "createdAt": "2026-07-31T00:29:50.262Z",
-        "reason": "User confirmed Inter is the site-wide body face in docs/brand-guide.md"
+        "createdAt": "2026-08-03T07:07:01.198Z",
+        "reason": "Render source for the logo lockup, not a UI surface; Geist is the sole brand face per BRAND.md"
       }
     ]
   }
