@@ -55,8 +55,11 @@ struct SettingsSheet: View {
                 // in here; nothing else on this screen needs to move.
 
                 Section {
+                    // Points at the dedicated setup page, not the FAQ's thinner section:
+                    // /start carries every step in first-run order with a short video each,
+                    // and its anchors are what in-app "Show me how" links will target.
                     externalLink("Getting started", systemImage: "book",
-                                 url: "https://kampa.health/faq.html#getting-started")
+                                 url: "https://kampa.health/start.html")
                     externalLink("FAQ", systemImage: "questionmark.circle",
                                  url: "https://kampa.health/faq.html")
                     NavigationLink {

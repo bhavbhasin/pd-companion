@@ -31,6 +31,10 @@ INCLUDE=(
   "marketing/linkedin/2026-06-17-privacy/post.md=>09 - Example Post - Privacy.md"
   "marketing/linkedin/2026-06-20-three-insights/post.md=>10 - Example Post - Three Insights.md"
   "website/assets/brand/BRAND.md=>11 - Brand Guide.md"
+  "marketing/linkedin/2026-07-26-food-capture/SHOTLIST.md=>12 - Video Shotlist - Food Capture.md"
+  "docs/getting-started-guide.md=>13 - Getting Started Guide.md"
+  "docs/app-store-listing-copy.md=>14 - App Store Listing Copy.md"
+  "docs/design/onboarding.md=>15 - Onboarding Design + Setup Video Spec.md"
 )
 
 # --- EXCLUDED ON PURPOSE: repo-relative paths to NOT flag in the audit ------

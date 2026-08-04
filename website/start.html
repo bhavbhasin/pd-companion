@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Getting started — Kampa</title>
+    <meta name="description" content="Set up Kampa step by step: the Apple Watch app, Health and Motion permissions, iCloud backup, logging medications, and what your first week looks like. Short videos for each step.">
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png">
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;1,14..32,400&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0a0a0a;
+            --surface-1: #111113;
+            --surface-2: #1c1c1e;
+            --border: #2c2c2e;
+            --blue: #4A8CD6;
+            --blue-dim: rgba(74, 140, 214, 0.12);
+            --blue-border: rgba(74, 140, 214, 0.30);
+            --text-1: #ffffff;
+            --text-2: rgba(235, 235, 245, 0.76);
+            --text-3: rgba(235, 235, 245, 0.36);
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-geist: 'Geist', 'Inter', sans-serif;
+            --max-w: 760px;
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            background: var(--bg);
+            color: var(--text-1);
+            font-family: var(--font);
+            -webkit-font-smoothing: antialiased;
+            line-height: 1.7;
+            font-weight: 300;
+        }
+        nav {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 32px;
+            background: rgba(10, 10, 10, 0.72);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .wordmark { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+        .wordmark .name {
+            font-family: var(--font-geist); font-weight: 500; font-size: 18px;
+            letter-spacing: -0.02em; color: #fff;
+        }
+        .wordmark .name .a-blue { color: var(--blue); }
+        .nav-back { color: var(--text-2); text-decoration: none; font-size: 14px; transition: color 0.18s; }
+        .nav-back:hover { color: var(--text-1); }
+        .container { max-width: var(--max-w); margin: 0 auto; padding: 72px 32px 96px; }
+        .eyebrow {
+            font-size: 11.5px; font-weight: 650; letter-spacing: 0.11em;
+            text-transform: uppercase; color: var(--blue); margin-bottom: 14px;
+        }
+        h1 {
+            font-size: clamp(30px, 4vw, 42px); font-weight: 700;
+            letter-spacing: -0.03em; line-height: 1.1; margin-bottom: 12px;
+        }
+        .meta { font-size: 13.5px; color: var(--text-3); margin-bottom: 40px; }
+        .intro {
+            background: var(--surface-1); border: 1px solid var(--border);
+            border-radius: 14px; padding: 24px 26px; margin-bottom: 36px;
+            font-size: 16px; color: var(--text-2); line-height: 1.75;
+        }
+        .intro p { font-size: 16px; margin-bottom: 12px; }
+        .intro p:last-child { margin-bottom: 0; }
+        section { scroll-margin-top: 80px; }
+        h2 {
+            font-size: 20px; font-weight: 600; letter-spacing: -0.02em;
+            color: var(--text-1); margin: 48px 0 8px;
+            padding-bottom: 12px; border-bottom: 1px solid var(--border);
+        }
+        h3 { font-size: 15.5px; font-weight: 600; color: var(--text-1); margin: 28px 0 8px; }
+        p { color: var(--text-2); margin-bottom: 14px; font-size: 15.5px; }
+        ul, ol { color: var(--text-2); margin: 0 0 14px 20px; font-size: 15.5px; }
+        li { margin-bottom: 8px; }
+        strong { font-weight: 500; color: var(--text-1); }
+        a { color: var(--blue); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s; }
+        a:hover { border-bottom-color: var(--blue); }
+        .callout {
+            background: var(--blue-dim); border: 1px solid var(--blue-border);
+            border-radius: 10px; padding: 16px 20px; margin: 22px 0;
+        }
+        .callout p { margin: 0; color: var(--text-1); font-weight: 400; font-size: 15px; }
+        .links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+        .links a {
+            font-size: 13px; color: var(--text-2); text-decoration: none;
+            background: var(--surface-2); border: 1px solid var(--border);
+            border-radius: 999px; padding: 7px 14px; transition: border-color 0.18s, color 0.18s;
+        }
+        .links a:hover { border-color: var(--blue); color: var(--text-1); }
+        footer {
+            border-top: 1px solid var(--border); padding: 32px;
+            text-align: center; font-size: 12.5px; color: var(--text-3);
+        }
+        footer a { color: var(--text-2); }
+
+        /* ---- page-specific ---- */
+
+        /* Jump list. Numbers are the first-run order, so the list doubles as the map. */
+        .toc { list-style: none; margin: 0 0 8px; padding: 0; }
+        .toc li { margin-bottom: 0; border-bottom: 1px solid var(--border); }
+        .toc li:last-child { border-bottom: none; }
+        .toc a {
+            display: flex; align-items: baseline; gap: 12px;
+            padding: 11px 2px; font-size: 15px; color: var(--text-2);
+            border-bottom: none;
+        }
+        .toc a:hover { color: var(--text-1); border-bottom: none; }
+        .toc .n {
+            font-variant-numeric: tabular-nums; font-size: 12.5px;
+            color: var(--text-3); min-width: 16px; flex-shrink: 0;
+        }
+        .toc a:hover .n { color: var(--blue); }
+
+        .group-label {
+            font-size: 11.5px; font-weight: 650; letter-spacing: 0.11em;
+            text-transform: uppercase; color: var(--text-3);
+            margin: 56px 0 -30px; padding-top: 8px;
+        }
+
+        /* The step heading carries its own number so a deep-linked visitor
+           landing mid-page still knows where they are in the sequence. */
+        .step-n {
+            display: inline-block; font-size: 12.5px; font-weight: 600;
+            color: var(--blue); letter-spacing: 0.04em;
+            margin-bottom: 2px;
+        }
+        h2.step { margin-top: 6px; }
+
+        /* Tap paths. Set in the UI's own words so they can be followed literally. */
+        .path {
+            display: block; background: var(--surface-2); border: 1px solid var(--border);
+            border-radius: 8px; padding: 11px 14px; margin: 14px 0;
+            font-size: 14.5px; color: var(--text-1); line-height: 1.6;
+        }
+        .path .lead {
+            display: block; font-size: 11.5px; font-weight: 600; letter-spacing: 0.08em;
+            text-transform: uppercase; color: var(--text-3); margin-bottom: 3px;
+        }
+
+        /* Video slot. Portrait, because every clip is a phone screen recording.
+           Swap the placeholder for the unlisted YouTube iframe when the clip exists —
+           see the HTML comment above the first one. */
+        .video { margin: 20px 0 6px; }
+        .video-frame {
+            position: relative; width: 100%; max-width: 260px;
+            aspect-ratio: 9 / 16; border-radius: 14px; overflow: hidden;
+            background: var(--surface-1); border: 1px solid var(--border);
+        }
+        .video-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+        .video-ph {
+            position: absolute; inset: 0;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 8px; text-align: center; padding: 20px;
+            font-size: 13px; color: var(--text-3);
+        }
+        .video-ph svg { opacity: 0.32; }
+        .video-cap { font-size: 12.5px; color: var(--text-3); margin-top: 8px; max-width: 260px; }
+
+        .note { font-size: 14.5px; color: var(--text-3); }
+
+        @media (max-width: 600px) {
+            .container { padding: 56px 22px 80px; }
+            nav { padding: 14px 22px; }
+        }
+    </style>
+</head>
+<body>
+
+<nav>
+    <a href="index.html" class="wordmark" aria-label="Kampa home">
+        <svg width="38" height="23" viewBox="0 0 240 144" fill="none" xmlns="http://www.w3.org/2000/svg" style="color:#fff; flex-shrink:0;">
+            <path d="M8 90 C 28 90, 30 30, 56 30 C 78 30, 80 110, 104 95 C 124 82, 126 60, 150 60 C 168 60, 172 78, 192 78 L 232 78" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="232" cy="78" r="5" fill="currentColor"/>
+        </svg>
+        <span class="name">k<span class="a-blue">ā</span>mpa</span>
+    </a>
+    <a href="index.html" class="nav-back">← Back to site</a>
+</nav>
+
+<div class="container">
+
+    <p class="eyebrow">Getting started</p>
+    <h1>Set up Kampa</h1>
+    <p class="meta">About five minutes, once. After that Kampa runs on its own. Not medical advice.</p>
+
+    <div class="intro">
+        <p><strong>The one idea:</strong> Kampa works while you do nothing. You give it permission to read your Apple Health data and you wear your Apple Watch. It notices your tremor, your sleep, how you walk and your medication timing, and looks for patterns across days and weeks.</p>
+        <p><strong>What you need:</strong> an iPhone 11 or newer running iOS 26, and an Apple Watch Series 4 or newer running watchOS 10. The Watch is essential - it is where tremor and dyskinesia are sensed. It does not need to be a recent one.</p>
+    </div>
+
+    <p>Steps 1 to 4 are the ones that matter. Everything after them is optional and can wait until you want it. Each step has a short video if you would rather watch than read.</p>
+
+    <ul class="toc">
+        <li><a href="#watch"><span class="n">1</span><span>Set up the Apple Watch app - and pick the right wrist</span></a></li>
+        <li><a href="#health"><span class="n">2</span><span>Allow Health data</span></a></li>
+        <li><a href="#motion"><span class="n">3</span><span>Turn on Motion &amp; Fitness</span></a></li>
+        <li><a href="#icloud"><span class="n">4</span><span>Turn on iCloud for Kampa</span></a></li>
+        <li><a href="#medications"><span class="n">5</span><span>Log medications in the Health app</span></a></li>
+        <li><a href="#voice"><span class="n">6</span><span>Log by voice</span></a></li>
+        <li><a href="#workouts"><span class="n">7</span><span>Workouts</span></a></li>
+        <li><a href="#data-sources"><span class="n">8</span><span>Fix duplicate sleep data</span></a></li>
+        <li><a href="#barcode"><span class="n">9</span><span>Scan a packaged food</span></a></li>
+        <li><a href="#week-one"><span class="n">10</span><span>What your first week looks like</span></a></li>
+    </ul>
+
+    <p class="group-label">The four that matter</p>
+
+    <!--
+        VIDEO SLOTS
+        ===========
+        Each step has one .video-frame holding a placeholder. When a clip exists,
+        replace the whole <div class="video-ph"> ... </div> with:
+
+            <iframe src="https://www.youtube.com/embed/VIDEO_ID?rel=0&modestbranding=1"
+                    title="Same words as the step heading"
+                    loading="lazy"
+                    allowfullscreen></iframe>
+
+        Keep the surrounding .video-frame - it holds the 9:16 portrait shape.
+        Clips are 20-40s, silent, captioned. Do not autoplay.
+        Shooting notes and the "do not shoot" list live in
+        marketing/linkedin/2026-07-26-food-capture/SHOTLIST.md.
+    -->
+
+    <section id="watch">
+        <p class="step-n">STEP 1</p>
+        <h2 class="step">Set up the Apple Watch app - and pick the right wrist</h2>
+        <p>Tremor sensing runs on the Watch, so this is the step everything else depends on. Install Kampa on the Watch from the <strong>Watch</strong> app on your iPhone if it is not already there, then <strong>open Kampa on the Watch once</strong>. Background transfer will not start until the app has been opened at least once.</p>
+        <p>Then wear the Watch during the day, and overnight if you want sleep tracked.</p>
+        <div class="callout">
+            <p><strong>Wear it on your more-affected side.</strong> Kampa senses tremor from one wrist. If the Watch is on your steadier arm, the readings describe that arm - and everything built on top of them describes it too. If both sides are similar, pick either and stay consistent.</p>
+        </div>
+        <div class="video">
+            <div class="video-frame">
+                <iframe src="https://www.youtube.com/embed/YFGB_yA9WnQ?rel=0&amp;modestbranding=1&amp;playsinline=1"
+                        title="Set up the Apple Watch app - and pick the right wrist"
+                        loading="lazy"
+                        referrerpolicy="strict-origin-when-cross-origin"
+                        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowfullscreen></iframe>
+            </div>
+            <p class="video-cap">Installing the Watch app and choosing a wrist.</p>
+        </div>
+    </section>
+
+    <section id="health">
+        <p class="step-n">STEP 2</p>
+        <h2 class="step">Allow Health data</h2>
+        <p>The first time you open Kampa it asks for access to Apple Health. Tap <strong>Turn On All</strong>, then <strong>Allow</strong>.</p>
+        <p>iOS presents these as a long list of individual switches, and it is easy to grant some and miss others. Kampa reads sleep, heart rate, walking measures, workouts and medication times - a missed switch means that part of the picture is quietly absent.</p>
+        <span class="path"><span class="lead">To change it later</span>iPhone <strong>Settings → Apps → Health → Data Access &amp; Devices → Kampa</strong></span>
+        <div class="callout">
+            <p><strong>Worth knowing:</strong> for privacy reasons, Apple does not tell an app which health categories were denied - a refused category looks exactly like one with no data in it. So Kampa cannot warn you that something is switched off. If a chart stays empty, this screen is the first place to check.</p>
+        </div>
+        <div class="video">
+            <div class="video-frame">
+                <iframe src="https://www.youtube.com/embed/XsDtTO_0i20?rel=0&amp;modestbranding=1&amp;playsinline=1"
+                        title="Allow Health data"
+                        loading="lazy"
+                        referrerpolicy="strict-origin-when-cross-origin"
+                        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowfullscreen></iframe>
+            </div>
+            <p class="video-cap">The Health permission sheet, and what each category feeds.</p>
+        </div>
+    </section>
+
+    <section id="motion">
+        <p class="step-n">STEP 3</p>
+        <h2 class="step">Turn on Motion &amp; Fitness</h2>
+        <p>This one powers tremor and dyskinesia tracking. Without it there is no motion data at all - not less of it, none - and the tremor chart stays empty however long you wear the Watch.</p>
+        <p>Kampa asks for it on first run. It is needed on <strong>both</strong> the iPhone and the Watch.</p>
+        <span class="path"><span class="lead">iPhone</span><strong>Settings → Privacy &amp; Security → Motion &amp; Fitness → Kampa</strong></span>
+        <span class="path"><span class="lead">Apple Watch</span><strong>Settings → Privacy &amp; Security → Motion &amp; Fitness</strong></span>
+        <div class="video">
+            <div class="video-frame">
+                <div class="video-ph">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <span>Video coming soon</span>
+                </div>
+            </div>
+            <p class="video-cap">Motion &amp; Fitness on the phone and on the Watch.</p>
+        </div>
+    </section>
+
+    <section id="icloud">
+        <p class="step-n">STEP 4</p>
+        <h2 class="step">Turn on iCloud for Kampa</h2>
+        <p>iCloud is how your Kampa data survives a lost or replaced phone. It is a switch in iOS Settings rather than a prompt inside the app, so it is easy to never notice.</p>
+        <span class="path"><span class="lead">Where it lives</span>iPhone <strong>Settings → [your name] → iCloud → Saved to iCloud → See All → Kampa</strong></span>
+        <div class="callout">
+            <p>This is the only way to restore your history. If iCloud is off, or your iCloud storage is full, there is no second copy - and nothing will announce that. Worth thirty seconds now rather than finding out later.</p>
+        </div>
+        <div class="video">
+            <div class="video-frame">
+                <div class="video-ph">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <span>Video coming soon</span>
+                </div>
+            </div>
+            <p class="video-cap">Finding Kampa in the iCloud app list.</p>
+        </div>
+    </section>
+
+    <p class="group-label">When you are ready</p>
+
+    <section id="medications">
+        <p class="step-n">STEP 5</p>
+        <h2 class="step">Log medications in the Health app</h2>
+        <p>This is the step people find most confusing, and it is worth getting right - medication timing is what most of Kampa's useful patterns are built on.</p>
+        <p><strong>You log doses in Apple Health, not in Kampa.</strong> Apple does not permit other apps to write medication records, so Kampa reads what Health holds rather than keeping its own copy. Set each medication up once, then mark each dose as taken.</p>
+        <span class="path"><span class="lead">Set up a medication</span>iPhone <strong>Health → Browse → Medications → Add a Medication</strong></span>
+        <span class="path"><span class="lead">Then, for each dose</span><strong>Health → Medications → Log</strong>, or tap the reminder Health sends you</span>
+        <p class="note">Kampa picks up your dose times automatically and lines them up against your symptoms. You do not enter anything twice.</p>
+        <div class="video">
+            <div class="video-frame">
+                <div class="video-ph">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <span>Video coming soon</span>
+                </div>
+            </div>
+            <p class="video-cap">Creating a medication in Health, then marking a dose taken.</p>
+        </div>
+    </section>
+
+    <section id="voice">
+        <p class="step-n">STEP 6</p>
+        <h2 class="step">Log by voice</h2>
+        <p>Typing is not always easy. Anything you can log in Kampa you can say out loud instead - tap the <strong>+</strong> button, then the microphone, and speak normally: <em>"chai, almonds and a date."</em> Kampa turns that into the entry, and you can correct the text before saving.</p>
+        <p>The first time you use it, iOS asks for the microphone and for speech recognition, one after the other. Both are needed.</p>
+        <div class="video">
+            <div class="video-frame">
+                <div class="video-ph">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <span>Video coming soon</span>
+                </div>
+            </div>
+            <p class="video-cap">Speaking an entry, and editing it before it saves.</p>
+        </div>
+    </section>
+
+    <section id="workouts">
+        <p class="step-n">STEP 7</p>
+        <h2 class="step">Workouts</h2>
+        <p>There is nothing to do in Kampa. Start a workout on your Apple Watch the way you normally would, using Apple's <strong>Workout</strong> app, and it reaches Kampa through Health.</p>
+        <p>People often assume Kampa reads the Watch directly and wonder why a walk did not appear. It arrives via Health, which means the Health permission in step 2 has to include workouts.</p>
+        <div class="video">
+            <div class="video-frame">
+                <div class="video-ph">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <span>Video coming soon</span>
+                </div>
+            </div>
+            <p class="video-cap">How a Watch workout reaches Kampa.</p>
+        </div>
+    </section>
+
+    <p class="group-label">Only if it applies to you</p>
+
+    <section id="data-sources">
+        <p class="step-n">STEP 8</p>
+        <h2 class="step">Fix duplicate sleep data</h2>
+        <p>If more than one app or device writes sleep to Health - a second watch, or a dedicated sleep app - the same night can be recorded twice, and sleep totals come out wrong.</p>
+        <span class="path"><span class="lead">In Kampa</span><strong>Settings → Data sources</strong>, and switch off the source you do not want counted</span>
+        <p class="note">Switching a source off there excludes it everywhere in Kampa, deliberately. Most people never need this screen.</p>
+        <div class="video">
+            <div class="video-frame">
+                <div class="video-ph">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <span>Video coming soon</span>
+                </div>
+            </div>
+            <p class="video-cap">Excluding a duplicate sleep source.</p>
+        </div>
+    </section>
+
+    <section id="barcode">
+        <p class="step-n">STEP 9</p>
+        <h2 class="step">Scan a packaged food</h2>
+        <p>For packaged items you can scan the barcode instead of describing them. Tap <strong>+ → Food → Scan a package barcode</strong> and hold the code in frame - there is no shutter button to press, it captures on its own.</p>
+        <p class="note">Recognition covers packaged products. Fresh and home-cooked food is better described in words, which Kampa handles well.</p>
+        <div class="video">
+            <div class="video-frame">
+                <div class="video-ph">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <span>Video coming soon</span>
+                </div>
+            </div>
+            <p class="video-cap">Scanning a barcode.</p>
+        </div>
+    </section>
+
+    <p class="group-label">What to expect</p>
+
+    <section id="week-one">
+        <p class="step-n">STEP 10</p>
+        <h2 class="step">What your first week looks like</h2>
+        <p>Kampa is quiet at the start, on purpose. It will not offer a pattern it cannot yet support.</p>
+        <ul>
+            <li><strong>Day 1.</strong> Tremor and dyskinesia begin recording once the Watch app has been opened. Data arrives in batches, so a gap of an hour or two is normal, not a fault.</li>
+            <li><strong>The first few days.</strong> Your day view fills in - sleep, heart rate, tremor through the day, and any medications, food or workouts on the same timeline.</li>
+            <li><strong>Within the first week or two.</strong> Walking and gait patterns can appear early, because your iPhone has often been recording those for years already.</li>
+            <li><strong>After several weeks.</strong> Tremor and medication patterns need repetition before they mean anything. This is where Kampa becomes useful, and it is worth the wait.</li>
+        </ul>
+        <div class="callout">
+            <p><strong>"Nothing found" is a real answer.</strong> A quiet week, or "no clear pattern yet", is information rather than a failure. Kampa is built to say what it sees and stay silent about what it does not.</p>
+        </div>
+        <div class="video">
+            <div class="video-frame">
+                <div class="video-ph">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <span>Video coming soon</span>
+                </div>
+            </div>
+            <p class="video-cap">What the app shows on day 1, day 3 and week 2.</p>
+        </div>
+    </section>
+
+    <section id="stuck">
+        <h2>If something is not working</h2>
+        <p>Nearly everything comes down to one of three things: the Watch app has never been opened, Motion &amp; Fitness is off, or a Health category was missed. Steps 1 to 3 cover all three.</p>
+        <p>If that does not resolve it, write to us - it reaches us directly, not a queue.</p>
+        <div class="links">
+            <a href="support.html">Support</a>
+            <a href="faq.html">FAQ</a>
+            <a href="changelog.html">What's new</a>
+            <a href="privacy.html">Privacy Policy</a>
+        </div>
+    </section>
+
+    <section id="medical">
+        <h2>One thing to keep in mind</h2>
+        <p>Kampa is a wellness tool, not a medical device. It does not diagnose or treat any condition, and it never tells you to change your medication. Anything it shows you is a starting point for a conversation with your doctor or neurologist, not a substitute for one.</p>
+    </section>
+
+</div>
+
+<footer>
+    © 2026 Kampa Health · <a href="index.html">kampa.health</a> · <a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Use</a>
+</footer>
+
+</body>
+</html>
