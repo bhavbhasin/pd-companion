@@ -11,6 +11,7 @@ import SwiftData
 /// actually needs them. `@Query` is kept here only to feed that block.
 struct SettingsSheet: View {
     @EnvironmentObject var healthKit: HealthKitManager
+    @StateObject private var cloudAccount = CloudAccountMonitor.shared
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \TremorReading.timestamp, order: .forward) private var tremorReadings: [TremorReading]
     @Query(sort: \DyskinesiaReading.startDate, order: .forward) private var dyskinesiaReadings: [DyskinesiaReading]
@@ -42,7 +43,10 @@ struct SettingsSheet: View {
                 } header: {
                     Text("Your data")
                 } footer: {
-                    Text("Backed up automatically to your private iCloud.")
+                    // Was a flat assertion that backup was happening, with nothing checking it.
+                    // This is the standing surface: the banner on Day in Review is dismissible,
+                    // this line keeps telling the truth for as long as it stays true.
+                    Text(cloudAccount.settingsFooterText)
                 }
 
                 // MARK: - Medications (not built yet)

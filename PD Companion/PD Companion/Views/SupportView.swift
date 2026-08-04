@@ -24,11 +24,13 @@ struct SupportView: View {
     let foodLast: Date?
 
     @EnvironmentObject private var healthKit: HealthKitManager
+    @StateObject private var cloudAccount = CloudAccountMonitor.shared
     @State private var didCopy = false
 
     private var diagnostics: String {
         SupportDiagnostics.text(
             healthAuthorized: healthKit.isAuthorized,
+            iCloudStatus: cloudAccount.diagnosticDescription,
             tremorCount: tremorCount,
             tremorFirst: tremorFirst,
             tremorLast: tremorLast,
@@ -108,6 +110,9 @@ enum SupportDiagnostics {
 
     static func text(
         healthAuthorized: Bool,
+        /// Passed in rather than fetched here: `accountStatus()` is async and `text()` is a
+        /// pure string builder the view reads synchronously — same shape as the counts.
+        iCloudStatus: String,
         tremorCount: Int,
         tremorFirst: Date?,
         tremorLast: Date?,
@@ -123,6 +128,9 @@ enum SupportDiagnostics {
             "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion), \(deviceModel)",
             "Apple Watch paired: \(isWatchPaired)",
             "Health access: \(healthAuthorized ? "granted" : "not granted")",
+            // The third of the three things that silently break a user's record — and the
+            // one with no recovery, since CloudKit is the only restore path.
+            "iCloud: \(iCloudStatus)",
             "Tremor readings: \(tremorCount)\(span(tremorFirst, tremorLast))",
             // Its own line, not folded into tremor: the two are independent one-minute series
             // and a sync or dedup fault can move one without the other — which is invisible if

@@ -69,6 +69,8 @@ struct PD_CompanionApp: App {
                     // corrected classifier — runs off the main thread on its own context.
                     FoodAttributeBackfill.runIfNeeded(container: AppContainer.shared)
                     connectivity.cleanupDuplicates()
+                    // Before any surface claims the data is (or isn't) backed up.
+                    await CloudAccountMonitor.shared.refresh()
                     await healthKit.requestAuthorization()
                     await healthKit.fetchTodaySnapshot()
                     Self.scheduleTremorSync()
@@ -82,6 +84,9 @@ struct PD_CompanionApp: App {
                         connectivity.launchWatchAppForSync()
                         // Banner only while in-app; the notification fires from the BG task.
                         connectivity.evaluateSyncFreshness()
+                        // Catches an iCloud sign-in made while Kampa was backgrounded, for the
+                        // case where CKAccountChanged didn't reach a suspended app.
+                        Task { await CloudAccountMonitor.shared.refresh() }
                     case .background:
                         Self.scheduleTremorSync()
                     default:

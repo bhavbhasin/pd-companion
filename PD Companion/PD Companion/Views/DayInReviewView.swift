@@ -234,6 +234,14 @@ private struct DayReviewContent: View {
     @EnvironmentObject var healthKit: HealthKitManager
     @EnvironmentObject var connectivity: PhoneConnectivityManager
     @Environment(\.modelContext) private var modelContext
+    @StateObject private var cloudAccount = CloudAccountMonitor.shared
+
+    // Which iCloud state the user dismissed the backup banner for, as a CKAccountStatus
+    // rawValue (-1 = never dismissed). Keyed to the STATE rather than a date on purpose:
+    // someone who has decided not to use iCloud never sees it again, but if the situation
+    // changes — they sign out later, or it goes from available to restricted — it returns.
+    // A timer would need a re-show interval neither defensible nor felt as anything but nagging.
+    @AppStorage("icloud.backupBannerDismissedStatus") private var dismissedCloudStatus: Int = -1
 
     private let dayStart: Date
     private let dayEnd: Date
@@ -301,6 +309,26 @@ private struct DayReviewContent: View {
         ((try? modelContext.fetchCount(FetchDescriptor<TremorReading>())) ?? 0) > 0
     }
 
+    /// Is there a record worth protecting yet? Fetches only the earliest reading (limit 1),
+    /// not a count — a day-one user has nothing to lose, and warning them about backup
+    /// before their first real number is noise at the worst moment.
+    private var recordIsOlderThanTwoDays: Bool {
+        var descriptor = FetchDescriptor<TremorReading>(
+            sortBy: [SortDescriptor(\.timestamp, order: .forward)]
+        )
+        descriptor.fetchLimit = 1
+        guard let earliest = (try? modelContext.fetch(descriptor))?.first else { return false }
+        return Date().timeIntervalSince(earliest.timestamp) >= 2 * 86_400
+    }
+
+    /// Show the backup warning only on a DEFINITE, user-fixable failure, and only once there
+    /// is data to lose — and not after the user has acknowledged this exact situation.
+    private var showsBackupBanner: Bool {
+        cloudAccount.isDefinitelyNotBackingUp
+            && cloudAccount.statusToken != dismissedCloudStatus
+            && recordIsOlderThanTwoDays
+    }
+
     private var allDayEvents: [DayEvent] {
         let food = dayFoodEvents.map {
             DayEvent.food(id: $0.id, time: $0.timestamp,
@@ -323,6 +351,45 @@ private struct DayReviewContent: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    // Shown when iCloud is definitely off and there is a record to lose. CloudKit is the only
+    // restore path (CSV import retired Jul 31 2026), so this is the one warning standing between
+    // a user and total data loss. Dismissible — a user who has chosen not to use iCloud should
+    // not have the top of their screen taken by something they've already decided about; the
+    // Settings → Your data footer keeps saying it for as long as it stays true.
+    private var backupBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "icloud.slash")
+                .foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Your data isn't backed up")
+                    .font(.subheadline.weight(.semibold))
+                Text("Without iCloud, losing this iPhone loses your record.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                // Points at /start, never YouTube directly — the destination stays ours and can
+                // be re-hosted without an app update (docs/design/onboarding.md).
+                Link("Show me how →", destination: URL(string: "https://kampa.health/start.html#icloud")!)
+                    .font(.caption.weight(.medium))
+                    .padding(.top, 2)
+            }
+            Spacer(minLength: 0)
+            Button {
+                dismissedCloudStatus = cloudAccount.statusToken
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(6)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss backup warning")
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -384,6 +451,9 @@ private struct DayReviewContent: View {
             VStack(spacing: 10) {
                 if connectivity.syncIsStale {
                     staleWatchBanner
+                }
+                if showsBackupBanner {
+                    backupBanner
                 }
                 GlanceCard(
                     sleep: healthKit.daySleep,
@@ -1457,6 +1527,47 @@ private struct SleepStagesPanel: View {
     // it's the one sleep datum not surfaced elsewhere.
     @AppStorage("dayReview.expanded.sleep") private var expanded = false
 
+    // A denied Health READ is invisible to us — Apple returns .notDetermined for reads whether
+    // or not they were granted, so we can never ask the system whether sleep is readable. The
+    // only evidence is that no sample has EVER arrived, which is why this escalates on the
+    // record rather than on a permission check. Same shape as the tremor empty state.
+    @AppStorage("sleep.everHadData") private var everHadSleepData = false
+    @AppStorage("sleep.firstEmptyEpoch") private var firstEmptyEpoch: Double = 0
+
+    private var daysSinceFirstEmpty: Double {
+        guard firstEmptyEpoch > 0 else { return 0 }
+        return Date().timeIntervalSince(Date(timeIntervalSince1970: firstEmptyEpoch)) / 86_400
+    }
+
+    private var hasSleepData: Bool {
+        #if DEBUG
+        // `-KampaDebugSleepHint YES` also forces the day to read as sleepless, so the empty
+        // state and its header badge can be seen on any day instead of hunting the record for
+        // a night the Watch wasn't worn. Compiled out of Release.
+        if UserDefaults.standard.bool(forKey: "KampaDebugSleepHint") { return false }
+        #endif
+        guard let s = sleep, s.hasData, !s.stages.isEmpty else { return false }
+        return true
+    }
+
+    /// One night without sleep data is ordinary — the Watch was charging. Never having had a
+    /// single night, two days in, is the signature of a denied read.
+    private var showsHealthAccessHint: Bool {
+        #if DEBUG
+        // Scheme argument `-KampaDebugSleepHint YES` skips the "never had sleep, 2 days running"
+        // wait so the escalated copy can be seen on a record that already has years of sleep in
+        // it. Still requires a day with no sleep — navigate to one. Compiled out of Release.
+        if UserDefaults.standard.bool(forKey: "KampaDebugSleepHint") { return !hasSleepData }
+        #endif
+        return !hasSleepData && !everHadSleepData && daysSinceFirstEmpty >= 2
+    }
+
+    private var emptyMessage: String {
+        showsHealthAccessHint
+            ? "Still no sleep data. Check that Kampa can read Sleep in the Health app → your profile → Apps → Kampa."
+            : "No sleep recorded for this night."
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
@@ -1466,9 +1577,17 @@ private struct SleepStagesPanel: View {
                     Image(systemName: "bed.double.fill").foregroundStyle(.indigo)
                     Text("Sleep").font(.headline).foregroundStyle(.primary)
                     Spacer()
-                    if let s = sleep, s.interruptions > 0 {
+                    // Gated on hasSleepData, not just the count: a day with an interruptions
+                    // figure but nothing to draw would otherwise badge "10 interruptions" over
+                    // a panel whose body says there is no sleep data at all.
+                    if hasSleepData, let s = sleep, s.interruptions > 0 {
                         Label("\(s.interruptions) interruption\(s.interruptions == 1 ? "" : "s")",
                               systemImage: "exclamationmark.circle")
+                            .font(.caption).foregroundStyle(.orange).labelStyle(.titleAndIcon)
+                    } else if showsHealthAccessHint {
+                        // Visible while COLLAPSED, like the interruptions badge — this panel
+                        // defaults closed, and a warning nobody opens is not a warning.
+                        Label("Check Health access", systemImage: "exclamationmark.circle")
                             .font(.caption).foregroundStyle(.orange).labelStyle(.titleAndIcon)
                     }
                     Image(systemName: expanded ? "chevron.up" : "chevron.down")
@@ -1479,7 +1598,9 @@ private struct SleepStagesPanel: View {
             .buttonStyle(.plain)
 
             if expanded {
-            if let s = sleep, s.hasData, !s.stages.isEmpty {
+            // Single source of truth for "is there sleep to draw" — the header badge and this
+            // branch must never disagree about it.
+            if hasSleepData, let s = sleep {
                 Chart {
                     ForEach(s.stages) { seg in
                         BarMark(
@@ -1518,7 +1639,7 @@ private struct SleepStagesPanel: View {
                 }
                 .font(.caption)
             } else {
-                Text("No sleep recorded for this night.")
+                Text(emptyMessage)
                     .font(.subheadline).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
             }
@@ -1537,6 +1658,18 @@ private struct SleepStagesPanel: View {
         .padding()
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        // `initial: true` because sleep arrives asynchronously — the panel is often built
+        // before HealthKit answers, so waiting only for a change would miss the first load.
+        // One night of real sleep anywhere in the record clears the stamp permanently: the
+        // hint is about a read that never worked, not about a night the Watch was charging.
+        .onChange(of: hasSleepData, initial: true) { _, hasData in
+            if hasData {
+                everHadSleepData = true
+                firstEmptyEpoch = 0
+            } else if !everHadSleepData, firstEmptyEpoch == 0 {
+                firstEmptyEpoch = Date().timeIntervalSince1970
+            }
+        }
     }
 
     private func daylightText(_ mins: Double) -> String {
