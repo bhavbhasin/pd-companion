@@ -64,7 +64,30 @@ enum CSVBackupExporter {
                 to: folder.appendingPathComponent(filename("food_events", range: foodRange))
             )
 
-            print("CSV backup written to \(folder.path) — tremors=\(tremors.count) dyskinesias=\(dyskinesias.count) foods=\(foods.count)")
+            // Therapy has no HealthKit type, so this CSV is the ONLY copy of it outside
+            // CloudKit — the one stream with no second home to recover from.
+            let therapies = try context.fetch(
+                FetchDescriptor<TherapySession>(sortBy: [SortDescriptor(\.start)])
+            )
+            let therapyRange = dateRange(therapies.map(\.start))
+            try writeCSV(
+                header: ["id", "name", "start", "end", "durationMinutes", "notes"],
+                rows: therapies.map { [
+                    $0.id.uuidString,
+                    // The RESOLVED name, not the relationship — a CSV has to stand alone, and a
+                    // therapy ID would make the backup unreadable without the catalog beside it.
+                    $0.displayName,
+                    iso($0.start),
+                    iso($0.end),
+                    String(Int($0.duration / 60)),
+                    $0.notes ?? ""
+                ] },
+                to: folder.appendingPathComponent(
+                    filename("therapy_sessions", range: therapyRange)
+                )
+            )
+
+            print("CSV backup written to \(folder.path) — tremors=\(tremors.count) dyskinesias=\(dyskinesias.count) foods=\(foods.count) therapies=\(therapies.count)")
             return folder
         } catch {
             print("CSV export failed: \(error)")

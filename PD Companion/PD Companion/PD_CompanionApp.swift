@@ -11,12 +11,16 @@ enum AppContainer {
     static let shared: ModelContainer = {
         do {
             // .automatic resolves the app's CloudKit container from the iCloud
-            // entitlement, syncing TremorReading + DyskinesiaReading + FoodEvent to the
-            // user's private database for backup + cross-device restore. Requires the iCloud
-            // (CloudKit) capability on the iPhone target; the store fails to init
-            // without it, so add the capability before running on device.
+            // entitlement, syncing TremorReading + DyskinesiaReading + FoodEvent +
+            // TherapySession to the user's private database for backup + cross-device
+            // restore. Requires the iCloud (CloudKit) capability on the iPhone target; the
+            // store fails to init without it, so add the capability before running on device.
+            // ⚠️ Adding a model here needs an ADDITIVE Production schema deploy in the
+            // CloudKit console before it reaches anyone on a release build.
             let config = ModelConfiguration(cloudKitDatabase: .automatic)
-            return try ModelContainer(for: TremorReading.self, DyskinesiaReading.self, FoodEvent.self, configurations: config)
+            return try ModelContainer(for: TremorReading.self, DyskinesiaReading.self,
+                                      FoodEvent.self, Therapy.self, TherapySession.self,
+                                      configurations: config)
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }

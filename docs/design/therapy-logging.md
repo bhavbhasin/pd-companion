@@ -1,8 +1,49 @@
 # Therapy logging: record the session, report the facts, never the verdict
 
-**Status:** DESIGNED Jul 31 2026, not built. Originated with tester John S, who wants Kampa to
+**Status: ✅ v1 BUILT Aug 4 2026** (logging only, engine silent). Build + 115 tests green; **not
+device-verified**, and ⚠️ **the additive CloudKit Production schema deploy is still outstanding** — do
+it before any build carrying `TherapySession` reaches a tester. Safe to deploy while 1.0 (build 17) is
+in review: an additive record type is invisible to a build that does not know it.
+Designed Jul 31 2026. Originated with tester John S, who wants Kampa to
 measure whether home therapies (ozone, CO₂, PEMF) and clinical ones (TPS, bodywork, acupuncture)
 help his tremor and his non-motor symptoms.
+
+**Built:** `Models/TherapySession.swift` (`Therapy` + `TherapySession` + `TherapyStyle`) ·
+`DayEvent.therapy` + its five switches · `+ → Therapy` (`LogTherapyScreen`, a picker) ·
+`TherapyManagementScreen` (Settings → Therapies) · timeline marker, legend row, detail sheet with edit
+and delete · `CSVBackupExporter` · `SupportDiagnostics`.
+
+### ⭐ Revised Aug 4 2026: a CATALOG, not a name per session (Bhav)
+
+The first build put the name on each session. **That was wrong, and the defect is a rename:** fixing a
+typo fixed one row and left every other session spelled the old way — ten "PEMF" and one "Pemf". Case
+folding on entry caught casing and nothing else.
+
+⇒ **`Therapy` is now its own model** — the type — and `TherapySession` points at it. Renaming in
+Settings → Therapies renames the whole history, because there is only one place the name lives.
+Logging is a **pick**, not typing, which is the difference that matters when a tremor makes typing the
+expensive part.
+
+⛔ **Archive, never delete, once a therapy has sessions.** `Therapy.canBeDeleted` is `sessionCount == 0`.
+The type is the only thing naming those sessions, so deleting it takes logged health events with it and
+the tremor record around them cannot be refetched. Attempting it routes to an alert that names the
+count, says what would be lost, and offers Archive — which leaves the picker and keeps the history
+readable. ⛔ Not a soft rule to relax later.
+
+⚠️ `TherapySession.nameSnapshot` is a **fallback only** — written once at insert, never updated. It
+covers the window where CloudKit has delivered a session but not yet its `Therapy`, so an unnamed
+marker never reaches the timeline. Anything that "fixes" it by keeping it in sync has reintroduced the
+per-session-name defect.
+
+⚠️ **Schema changed after the first device test.** `TherapySession` lost `name` and gained
+`therapy` + `nameSnapshot`, so sessions logged against the first build migrate with no name and read
+"Therapy". Delete those test rows. Doing this **before** the Production deploy is what makes it free —
+after, it would be a migration on live data.
+⛔ **`cleanupDuplicates` deliberately EXCLUDED, documented at the call site.** It prunes rows sharing a
+key date because the *watch* re-ships a rolling window that collides with CloudKit — a machine writing
+the same sample twice. Therapy is user-logged and the watch never touches it, so the same rule would be
+destructive, not corrective: two therapies genuinely logged at one start time are two real rows and the
+second would be silently deleted. `FoodEvent` was already excluded for the same reason.
 
 **One line:** users log therapy sessions as timed events; Kampa shows what its data actually holds
 around those sessions — each session, a fixed window, and the usual range beside it — and never
@@ -54,7 +95,8 @@ through passive correlation.**
 
 `+ → Therapy` (**not** "Custom" — see [Naming](#naming)). The screen lists previously logged
 therapies and offers a free-text field to add a new one. Selecting one logs a session with a start
-and an end time, the same shape as Mindfulness.
+and an end time, the same shape as Mindfulness. **End time is optional and defaults to start + 30 min**
+(decided Aug 4 2026; see [Open](#open)).
 
 New SwiftData `@Model`, CloudKit-synced. Unlike Mindfulness, there is **no HealthKit type for this**,
 so it lives entirely in Kampa's own store — always editable, no `source`, no `isEditable` rule.
@@ -113,8 +155,9 @@ acupuncture on Tuesdays, his Wednesday readings are already shaped by something 
 
 ## Open
 
-- **Duration vs point-in-time.** Bodywork and acupuncture have a clear start/end; "took an ozone
-  sauna this morning" may not. Does end time stay required, or optional with a default?
+- ✅ **Duration vs point-in-time — DECIDED Aug 4 2026: end time is OPTIONAL, defaulting to 30 min
+  after the start.** Bodywork and acupuncture have a clear start/end; "took an ozone sauna this
+  morning" does not, and a required end time would block the log on a number the user is guessing at.
 - **Voice path.** The in-app "+" mic is the reliable logging route
   (`project_kampa_voice_logging`). "Log PEMF for 20 minutes" needs a parse rule, and the therapy
   name is open-vocabulary — unlike food, there is no corpus to match against.

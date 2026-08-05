@@ -109,6 +109,10 @@ enum DayEvent: Identifiable {
     // A logged GI symptom (constipation/nausea/…) at a point in time. isEditable is true
     // only when Kampa authored the HealthKit sample (same delete rule as mindfulness).
     case giSymptom(id: UUID, time: Date, symptom: GISymptom, severity: GISeverity, isEditable: Bool)
+    // A logged therapy session (ozone, PEMF, acupuncture…). No HealthKit type exists, so
+    // Kampa authored every one of these and all of them are editable — hence no `isEditable`
+    // and no `source`, unlike mindfulness. `name` is the user's own spelling.
+    case therapy(id: UUID, start: Date, duration: TimeInterval, name: String)
 
     var id: UUID {
         switch self {
@@ -117,6 +121,7 @@ enum DayEvent: Identifiable {
         case .mindfulness(let id, _, _, _, _): return id
         case .food(let id, _, _, _):        return id
         case .giSymptom(let id, _, _, _, _): return id
+        case .therapy(let id, _, _, _):     return id
         }
     }
 
@@ -127,6 +132,7 @@ enum DayEvent: Identifiable {
         case .mindfulness(_, let start, _, _, _): return start
         case .food(_, let time, _, _):         return time
         case .giSymptom(_, let time, _, _, _): return time
+        case .therapy(_, let start, _, _):     return start
         }
     }
 
@@ -136,6 +142,7 @@ enum DayEvent: Identifiable {
         case .mindfulness:                 return "figure.mind.and.body"
         case .food:                        return "fork.knife"
         case .giSymptom:                   return GISymptom.timelineSymbol
+        case .therapy:                     return TherapyStyle.timelineSymbol
         case .workout(_, _, _, let type):
             switch type {
             case .yoga:                    return "figure.yoga"
@@ -164,6 +171,7 @@ enum DayEvent: Identifiable {
         case .workout:     return .green
         case .food:        return .brown
         case .giSymptom:   return GISymptom.tint
+        case .therapy:     return TherapyStyle.tint
         }
     }
 
@@ -183,6 +191,11 @@ enum DayEvent: Identifiable {
             }
             return severity == .present ? symptom.displayName
                                         : "\(symptom.displayName) · \(severity.displayName)"
+        // The ONE case that returns the user's own words rather than a constant — every
+        // therapy is named by the person who logged it, so "PEMF" and "Acupuncture" are
+        // distinguishable on a timeline where they share a glyph.
+        case .therapy(_, _, _, let name):
+            return name.isEmpty ? "Therapy" : String(name.prefix(40))
         }
     }
 }

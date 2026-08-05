@@ -11,7 +11,7 @@ struct LogEntrySheet: View {
     let defaultDate: Date
     let onLogged: (Date) -> Void
 
-    enum Destination: Hashable { case food, mindfulness, symptom }
+    enum Destination: Hashable { case food, mindfulness, symptom, therapy }
     @State private var path: [Destination] = []
     @State private var showMedInfo = false
     @State private var showVoice = false
@@ -36,6 +36,15 @@ struct LogEntrySheet: View {
                     icon: GISymptom.timelineSymbol, iconBg: GISymptom.tint.opacity(0.15), iconColor: GISymptom.tint,
                     title: "Symptoms", subtitle: "Bowel, mood, etc."
                 ) { path.append(.symptom) }
+                // "Therapy", never "Custom" — see docs/design/therapy-logging.md. "Custom" is an
+                // empty box that fills with naps, travel and arguments, which makes Kampa a general
+                // life-event logger and gives an engine nothing repeatable to work on. It is also a
+                // developer's word: nobody thinks "I am logging a custom."
+                menuRow(
+                    icon: TherapyStyle.timelineSymbol, iconBg: TherapyStyle.tint.opacity(0.15),
+                    iconColor: TherapyStyle.tint,
+                    title: "Therapy", subtitle: "Acupuncture, PEMF, bodywork, etc."
+                ) { path.append(.therapy) }
             }
             .listStyle(.insetGrouped)
             .alert("Logging your medications", isPresented: $showMedInfo) {
@@ -65,6 +74,8 @@ struct LogEntrySheet: View {
                     LogMindfulnessScreen(defaultDate: defaultDate) { date in onLogged(date); dismiss() }
                 case .symptom:
                     LogSymptomScreen(defaultDate: defaultDate) { date in onLogged(date); dismiss() }
+                case .therapy:
+                    LogTherapyScreen(defaultDate: defaultDate) { date in onLogged(date); dismiss() }
                 }
             }
         }
@@ -354,6 +365,225 @@ struct LogMindfulnessScreen: View {
                 isSaving = false
             }
         }
+    }
+}
+
+// MARK: - Log therapy screen
+//
+// Sessions the user is trying: ozone, PEMF, TPS, acupuncture, bodywork. Kampa records them
+// and says nothing about whether they worked — see docs/design/therapy-logging.md for why
+// that silence is the feature and not a gap.
+//
+// No HealthKit type exists for any of this, so unlike mindfulness there is nothing to write
+// out to Health; the session lives in Kampa's own store and is always the user's to edit.
+
+struct LogTherapyScreen: View {
+    @Environment(\.modelContext) private var modelContext
+    /// The catalog, not the history: logging is a PICK. Archived therapies are filtered out
+    /// below rather than in the query, so restoring one takes effect without a refetch.
+    @Query(sort: \Therapy.name) private var catalog: [Therapy]
+    let onSaved: (Date) -> Void
+
+    @State private var selected: Therapy?
+    @State private var starts: Date
+    @State private var ends: Date
+    /// Until the user touches the end time, it follows the start and keeps the 30-minute
+    /// default. Once they set it deliberately, moving the start must not overwrite their number.
+    @State private var endEdited = false
+    @State private var showingAdd = false
+    @State private var showingManage = false
+
+    init(defaultDate: Date, onSaved: @escaping (Date) -> Void) {
+        self.onSaved = onSaved
+        // Anchor to the viewed day at the current time of day, never the future — same rule
+        // as food, mindfulness and symptoms.
+        let now = Date.now
+        let cal = Calendar.current
+        let t = cal.dateComponents([.hour, .minute], from: now)
+        let onViewedDay = cal.date(bySettingHour: t.hour ?? 12, minute: t.minute ?? 0,
+                                   second: 0, of: defaultDate) ?? defaultDate
+        let start = min(onViewedDay, now)
+        _starts = State(initialValue: start)
+        _ends = State(initialValue: start.addingTimeInterval(TherapyStyle.defaultDuration))
+    }
+
+    private var active: [Therapy] { catalog.filter { !$0.isArchived } }
+
+    private var canSave: Bool { selected != nil && ends >= starts }
+
+    var body: some View {
+        Form {
+            Section {
+                if active.isEmpty {
+                    Text("No therapies yet. Add the first one below.")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 8) {
+                        ForEach(active) { therapy in chip(therapy) }
+                    }
+                    .padding(.vertical, 4)
+                }
+                Button {
+                    showingAdd = true
+                } label: {
+                    Label("Add a therapy", systemImage: "plus.circle")
+                }
+                // The ONE entry point to the catalog, and it is here rather than in Settings:
+                // this is where the user already is when they notice a name is wrong.
+                Button {
+                    showingManage = true
+                } label: {
+                    Label("Edit my therapies", systemImage: "slider.horizontal.3")
+                }
+            } header: {
+                Text("Which therapy?")
+            }
+
+            // ⛔ No explanatory footers here. The prefilled end time explains itself — the two
+            // pickers are on screen showing 2:57 and 3:30 — and "Edit my therapies" says what it
+            // does. Permanent copy on a screen the user sees every week has to earn its place;
+            // only the error state does. The engine's no-verdict rule is enforced in the ENGINE
+            // (`docs/design/therapy-logging.md`), not by a disclaimer the user reads every time.
+            Section {
+                DatePicker("Starts", selection: $starts, in: ...Date.now,
+                           displayedComponents: [.date, .hourAndMinute])
+                DatePicker("Ends", selection: $ends, in: starts...,
+                           displayedComponents: [.date, .hourAndMinute])
+            } footer: {
+                if ends < starts {
+                    Text("End time must be after the start time.").foregroundStyle(.orange)
+                }
+            }
+        }
+        // The end follows the start until the user takes ownership of it.
+        .onChange(of: starts) { _, newStart in
+            guard !endEdited else { return }
+            ends = newStart.addingTimeInterval(TherapyStyle.defaultDuration)
+        }
+        .onChange(of: ends) { _, new in
+            // Ignore the programmatic move above; only a user edit counts.
+            if abs(new.timeIntervalSince(starts) - TherapyStyle.defaultDuration) > 1 { endEdited = true }
+        }
+        // Selecting the therapy the user just created saves them a second tap, and makes the
+        // add-then-log path read as one action.
+        .sheet(isPresented: $showingAdd) {
+            AddTherapySheet(existing: catalog) { created in selected = created }
+        }
+        .sheet(isPresented: $showingManage) {
+            TherapyManagementScreen()
+        }
+        // A therapy archived or removed while managing must not stay selected underneath —
+        // Save would then log a session against something no longer in the list.
+        .onChange(of: showingManage) { _, isShowing in
+            guard !isShowing, let current = selected else { return }
+            if current.isArchived || !catalog.contains(where: { $0.id == current.id }) {
+                selected = nil
+            }
+        }
+        .navigationTitle("Log therapy")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { save() }
+                    .fontWeight(.semibold)
+                    .disabled(!canSave)
+            }
+        }
+    }
+
+    private func chip(_ therapy: Therapy) -> some View {
+        let isSelected = selected?.id == therapy.id
+        return Button { selected = therapy } label: {
+            Text(therapy.name)
+                .font(.subheadline)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .multilineTextAlignment(.leading)
+                .padding(.vertical, 8).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity)
+                .background(isSelected ? TherapyStyle.tint.opacity(0.18) : Color.secondary.opacity(0.12),
+                            in: Capsule())
+                .foregroundStyle(isSelected ? TherapyStyle.tint : .primary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
+    private func save() {
+        guard let selected else { return }
+        let session = TherapySession(therapy: selected, start: starts, end: ends)
+        modelContext.insert(session)
+        // Commit explicitly, matching the food path: the day's @Query observes the save, so the
+        // timeline shows the new marker without waiting on autosave timing.
+        try? modelContext.save()
+        onSaved(starts)
+    }
+}
+
+/// Adding a therapy to the catalog. Shared by the log flow and the maintenance screen so the
+/// duplicate check lives in exactly one place.
+struct AddTherapySheet: View {
+    let existing: [Therapy]
+    let onCreated: (Therapy) -> Void
+
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+
+    private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var match: Therapy? { TherapyStyle.match(trimmed, in: existing) }
+    /// Only an ACTIVE match blocks. An archived one is offered back instead — see `match`.
+    private var blocked: Bool { match.map { !$0.isArchived } ?? false }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("e.g. Acupuncture", text: $name)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                } footer: {
+                    if let match, match.isArchived {
+                        // Names the stored spelling, so restoring "Pemf" after typing "PEMF"
+                        // isn't a surprise.
+                        Text("You archived a therapy called \"\(match.name)\". Restore it and keep its \(match.sessionCount) logged \(match.sessionCount == 1 ? "session" : "sessions").")
+                    } else if blocked {
+                        Text("You already have a therapy with this name.")
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+            .navigationTitle("New therapy")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(match?.isArchived == true ? "Restore" : "Add") { add() }
+                        .fontWeight(.semibold)
+                        .disabled(trimmed.isEmpty || blocked)
+                }
+            }
+        }
+    }
+
+    private func add() {
+        // Restoring keeps the therapy's OWN spelling rather than adopting what was just typed:
+        // it is the same therapy with the same history, and silently renaming it on the way back
+        // would be a change the user didn't ask for. Rename is one tap away if they want it.
+        if let match, match.isArchived {
+            match.isArchived = false
+            try? modelContext.save()
+            onCreated(match)
+            dismiss()
+            return
+        }
+        let therapy = Therapy(name: trimmed)
+        modelContext.insert(therapy)
+        try? modelContext.save()
+        onCreated(therapy)
+        dismiss()
     }
 }
 

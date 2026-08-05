@@ -274,6 +274,7 @@ private struct DayReviewContent: View {
     @Query private var dayReadings: [TremorReading]
     @Query private var dayDyskinesia: [DyskinesiaReading]
     @Query private var dayFoodEvents: [FoodEvent]
+    @Query private var dayTherapies: [TherapySession]
 
     init(selectedDate: Date,
          onEventTap: @escaping (DayEvent) -> Void,
@@ -301,6 +302,13 @@ private struct DayReviewContent: View {
         _dayFoodEvents = Query(
             filter: #Predicate<FoodEvent> { $0.timestamp >= start && $0.timestamp < end },
             sort: \FoodEvent.timestamp, order: .forward
+        )
+        // Filtered on `start`, matching the day definition every other stream uses
+        // (Calendar.startOfDay). A session that runs past midnight belongs to the day it
+        // began on — the same rule the timeline already applies to workouts.
+        _dayTherapies = Query(
+            filter: #Predicate<TherapySession> { $0.start >= start && $0.start < end },
+            sort: \TherapySession.start, order: .forward
         )
     }
 
@@ -334,7 +342,12 @@ private struct DayReviewContent: View {
             DayEvent.food(id: $0.id, time: $0.timestamp,
                           userDescription: $0.userDescription ?? "", attributes: $0.attributes)
         }
-        return (healthKit.dayEvents + food).sorted { $0.time < $1.time }
+        let therapies = dayTherapies.map {
+            // `displayName` resolves through the catalog, so a rename in Settings reaches
+            // every session on every past day without touching a stored row.
+            DayEvent.therapy(id: $0.id, start: $0.start, duration: $0.duration, name: $0.displayName)
+        }
+        return (healthKit.dayEvents + food + therapies).sorted { $0.time < $1.time }
     }
 
     // Shown when watch data has gone stale (paired watch, has synced before, silent >8h). One
@@ -966,6 +979,12 @@ private struct TremorTimelinePanel: View {
             Image(systemName: GISymptom.timelineSymbol)
                 .foregroundStyle(GISymptom.tint)
                 .font(.system(size: 16))
+        case .therapy:
+            // One glyph for every therapy, whatever the modality — the name carries the
+            // specificity (see TherapyStyle).
+            Image(systemName: TherapyStyle.timelineSymbol)
+                .foregroundStyle(TherapyStyle.tint)
+                .font(.system(size: 16))
         }
     }
 
@@ -1077,6 +1096,10 @@ private struct TremorTimelinePanel: View {
             return LegendEntry(icon: event.iconName, label: type.displayName, palette: false, color: .green)
         case .giSymptom:
             return LegendEntry(icon: GISymptom.timelineSymbol, label: "Symptom", palette: false, color: GISymptom.tint)
+        // One legend row for the category, not one per therapy name: the legend explains the
+        // glyph, and every therapy shares it.
+        case .therapy:
+            return LegendEntry(icon: TherapyStyle.timelineSymbol, label: "Therapy", palette: false, color: TherapyStyle.tint)
         }
     }
 

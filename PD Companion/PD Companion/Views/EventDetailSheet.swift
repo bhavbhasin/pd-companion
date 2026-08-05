@@ -138,6 +138,28 @@ struct EventDetailSheet: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.large)
+                    } else if case .therapy = event {
+                        // No isEditable check: there is no HealthKit type for therapy, so Kampa
+                        // authored every session and all of them are the user's to change.
+                        HStack(spacing: 12) {
+                            Button {
+                                showEditScreen = true
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.large)
+
+                            Button(role: .destructive) {
+                                showDeleteAlert = true
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.large)
+                        }
                     }
 
                     Button("Done") { dismiss() }
@@ -153,6 +175,13 @@ struct EventDetailSheet: View {
                         foodId: id,
                         initialDescription: desc,
                         initialTimestamp: event.time,
+                        onSaved: { dismiss() }
+                    )
+                } else if case .therapy(let id, let start, let duration, _) = event {
+                    EditTherapyScreen(
+                        sessionId: id,
+                        initialStart: start,
+                        initialEnd: start.addingTimeInterval(duration),
                         onSaved: { dismiss() }
                     )
                 }
@@ -232,6 +261,15 @@ struct EventDetailSheet: View {
                 }
             }
 
+        case .therapy(let id, _, _, _):
+            let therapyId = id
+            let descriptor = FetchDescriptor<TherapySession>(predicate: #Predicate { $0.id == therapyId })
+            if let record = try? modelContext.fetch(descriptor).first {
+                modelContext.delete(record)
+                try? modelContext.save()
+            }
+            dismiss()
+
         case .giSymptom(let id, _, let symptom, _, _):
             // id IS the HealthKit sample UUID (set in fetchGISymptomsInRange).
             Task {
@@ -261,6 +299,7 @@ struct EventDetailSheet: View {
         case .mindfulness: return "Mindfulness"
         case .food:        return "Food"
         case .giSymptom:   return "Symptom"
+        case .therapy:     return "Therapy"
         }
     }
 
@@ -282,7 +321,91 @@ struct EventDetailSheet: View {
             return time.formatted(.dateTime.hour().minute())
         case .giSymptom(_, let time, _, _, _):
             return "Logged at \(time.formatted(.dateTime.hour().minute()))"
+        case .therapy(_, let start, let duration, _):
+            return "\(Int(duration / 60)) min · \(start.formatted(.dateTime.hour().minute()))"
         }
+    }
+}
+
+// MARK: - Edit therapy screen
+
+/// Editing one SESSION: which therapy it was, and when. ⛔ Not where a therapy is renamed —
+/// that is `Edit my therapies`, and it deliberately applies to the whole history. Offering a
+/// free-text name here would recreate the per-session-name defect the catalog removed.
+struct EditTherapyScreen: View {
+    let sessionId: UUID
+    let onSaved: () -> Void
+
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Therapy.name) private var catalog: [Therapy]
+    @State private var selected: Therapy?
+    @State private var starts: Date
+    @State private var ends: Date
+
+    init(sessionId: UUID, initialStart: Date, initialEnd: Date,
+         onSaved: @escaping () -> Void) {
+        self.sessionId = sessionId
+        self.onSaved = onSaved
+        _starts = State(initialValue: initialStart)
+        _ends = State(initialValue: initialEnd)
+    }
+
+    /// An archived therapy still appears here when it is the one this session used — otherwise
+    /// editing the time of an old session would silently reassign it to something else.
+    private var choices: [Therapy] {
+        catalog.filter { !$0.isArchived || $0.id == selected?.id }
+    }
+
+    var body: some View {
+        Form {
+            Section("Therapy") {
+                Picker("Therapy", selection: $selected) {
+                    ForEach(choices) { therapy in
+                        Text(therapy.name).tag(Optional(therapy))
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.inline)
+            }
+            Section {
+                DatePicker("Starts", selection: $starts, in: ...Date.now,
+                           displayedComponents: [.date, .hourAndMinute])
+                DatePicker("Ends", selection: $ends, in: starts...,
+                           displayedComponents: [.date, .hourAndMinute])
+            } footer: {
+                if ends < starts {
+                    Text("End time must be after the start time.").foregroundStyle(.orange)
+                }
+            }
+        }
+        .navigationTitle("Edit session")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { if selected == nil { selected = currentSession()?.therapy } }
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { save() }
+                    .fontWeight(.semibold)
+                    .disabled(selected == nil || ends < starts)
+            }
+        }
+    }
+
+    private func currentSession() -> TherapySession? {
+        let id = sessionId
+        let descriptor = FetchDescriptor<TherapySession>(predicate: #Predicate { $0.id == id })
+        return try? modelContext.fetch(descriptor).first
+    }
+
+    private func save() {
+        guard let record = currentSession(), let selected else { return }
+        record.therapy = selected
+        record.nameSnapshot = selected.name
+        record.start = starts
+        record.end = ends
+        // Explicit commit for the same reason as EditFoodScreen: an in-place edit is not a
+        // collection change, so autosave would leave the day's @Query on the pre-edit snapshot.
+        try? modelContext.save()
+        onSaved()
     }
 }
 
