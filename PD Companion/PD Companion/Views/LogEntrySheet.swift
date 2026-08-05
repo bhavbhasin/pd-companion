@@ -43,7 +43,9 @@ struct LogEntrySheet: View {
                 menuRow(
                     icon: TherapyStyle.timelineSymbol, iconBg: TherapyStyle.tint.opacity(0.15),
                     iconColor: TherapyStyle.tint,
-                    title: "Therapy", subtitle: "Acupuncture, PEMF, bodywork, etc."
+                    // One line, deliberately. "bodywork" dropped so the subtitle never wraps —
+                    // the examples are a hint at the category, not an inventory of it.
+                    title: "Therapy", subtitle: "Acupuncture, PEMF, etc."
                 ) { path.append(.therapy) }
             }
             .listStyle(.insetGrouped)
@@ -122,12 +124,13 @@ struct LogEntrySheet: View {
                     .frame(width: 64, height: 64)
                     .background(Color.accentColor, in: Circle())
                     .shadow(color: Color.accentColor.opacity(0.4), radius: 6, y: 2)
+                // ⛔ The "Food, medication, mindfulness, or a symptom" subline was DELETED
+                // Aug 5 2026. "Tap to log by voice" already says what the button does, and the
+                // list was an inventory nobody needs to read before speaking — it was also
+                // drifting out of date (it named medication, and never named therapy).
                 Text("Tap to log by voice")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
-                Text("Food, medication, mindfulness, or a symptom")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .buttonStyle(.plain)
