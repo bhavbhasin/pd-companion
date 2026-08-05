@@ -498,6 +498,13 @@ private struct DayReviewContent: View {
                     DayAheadPanel(forecast: forecast, dayStart: dayStart, dayEnd: dayEnd,
                                   scrollX: $chartScrollX, selectedTime: $selectedTime)
                 }
+                // ⛔ The Doses panel lived here until Aug 5 2026. Its per-dose sentences moved
+                // into the dose's own detail sheet (tap the pill glyph on the chart above):
+                // a per-dose fact belongs on the per-dose object, the glyph is already sitting
+                // at the dose time, and this removes a permanent block of small grey text from
+                // the day's main scroll. `CorrelationEngine.dosePanelRows` is unchanged — only
+                // the display moved. See dose-onset-coverage-surfaces.md.
+                //
                 // Day-gated: only for a CGM (Lingo) user, and only when this day has a
                 // curve (else a quiet note). Sits directly under Tremor with a matched
                 // x-domain and shared scroll so meals/doses read straight down across panels.
@@ -1285,16 +1292,6 @@ private struct TremorTimelinePanel: View {
         }
     }
 }
-
-// MARK: - Glucose (CGM)
-
-/// Continuous-glucose panel — sits directly under Tremor with a matched x-domain so a
-/// meal or dose reads straight down across both charts. Display-only (step 1 of the CGM
-/// slice): the curve, the 70–180 mg/dL target band shaded, and the same event RuleMarks
-/// as the tremor panel. The vertical read across panels IS the gastric-emptying →
-/// absorption chain. Collapsible; default expanded (observing it by eye is the whole point
-/// right now). Scroll is matched-but-independent (Option A) — the two panels align at the
-/// initial position; locking their scroll together is a later iteration.
 private struct GlucosePanel: View {
     let samples: [GlucoseSample]
     let events: [DayEvent]

@@ -1,20 +1,146 @@
 import SwiftUI
 import SwiftData
 
+// MARK: - Per-dose onset + coverage, in words
+//
+// docs/design/dose-onset-coverage-surfaces.md. Lived in a dedicated Doses panel on Day in
+// Review until Aug 5 2026; moved here because a per-dose fact belongs on the per-dose object,
+// and the glyph is already sitting on the chart at the dose time. The engine side
+// (`CorrelationEngine.dosePanelRows`) is unchanged — only the display moved.
+//
+// ⛔ No verdict, no badge, no comparison with another dose. The moment this says one dose beat
+// another it is the retired afternoon-dose card again at a smaller scale.
+enum DoseRowCopy {
+
+    /// "40 min" / "2h 52m" / "3h". Minutes below an hour stay minutes: "0h 40m" reads as a
+    /// precision the measurement doesn't have.
+    static func dur(_ minutes: Double) -> String {
+        let m = Int(minutes.rounded())
+        if m < 60 { return "\(m) min" }
+        let h = m / 60, r = m % 60
+        return r == 0 ? "\(h)h" : "\(h)h \(r)m"
+    }
+
+    /// Clause 1. A missing onset is INFORMATION, not a blank — render the reason, never an
+    /// em dash.
+    ///
+    /// ⛔ "taken while still covered" was RETIRED Aug 5 2026. Bhav killed it with the right
+    /// question: *"do we really mean covered, or do we mean I'm in the ON state?"* We mean the
+    /// second. "Covered" claims the previous dose was still working; the engine only knows
+    /// tremor sat below threshold. Jul 11 22:44 proves the difference — baseline 0.82 read as
+    /// "covered" while the previous dose was 376 min earlier and had been observed to hold
+    /// 1h 3m.
+    static func onsetClause(_ o: CorrelationEngine.DoseOnset) -> String {
+        switch o {
+        case .measured(let m):    return "on in \(dur(m))"
+        case .tremorAlreadyLow:   return "tremor was already low"
+        // ⛔ Was "no clear reading before it" — BACKWARDS. This state has TWO causes and that
+        // copy named only one: Jul 9 11:01 had a baseline of 1.64 over 29 readings and an empty
+        // POST-dose window (watch off 11:00-12:00). Names our observation, never the drug.
+        case .notSeen:            return "we couldn't see it take hold"
+        }
+    }
+
+    /// Clause 2. ⭐ Every censored case NAMES WHAT ENDED THE WATCHING, because the number is
+    /// the length of the observation window, not a fact about the drug. A bare "coverage 1 min"
+    /// next to a real "172 min" reads as a dose that failed, when all it records is that the
+    /// next dose arrived a minute later.
+    static func coverageClause(_ c: CorrelationEngine.DoseCoverage, endedBy: String?) -> String? {
+        switch c {
+        case .held(let m):
+            return "held \(dur(m))"
+        case .endedByNextDose(let m):
+            let who = endedBy.map { "when you took \($0)" } ?? "when your next dose came"
+            return "still working \(dur(m)) later, \(who)"
+        case .endedBySleep(let m):
+            return "watched \(dur(m)), then you slept"
+        case .watchedToEnd(let m):
+            return "watched \(dur(m)) without seeing it wear off"
+        case .endedByLostReading(let m):
+            return "watched \(dur(m)), then we lost the reading"
+        case .learnedNothing, .noReading, .asleepAtDose:
+            return nil
+        }
+    }
+
+    /// The cases that replace the two-clause line entirely.
+    static func blankSentence(_ c: CorrelationEngine.DoseCoverage) -> String? {
+        switch c {
+        case .learnedNothing:
+            return "Your tremor was already quiet and you fell asleep soon after, so we never "
+                 + "saw what it did."
+        // ⛔ Never a flat "you were asleep": measured Aug 5 2026, ALL asleep-at-dose doses in the
+        // record come from AutoSleep and most are contradicted by the tremor itself. Attribute
+        // the claim to the RECORD, which stays true even when the record is wrong.
+        case .asleepAtDose:
+            return "Your sleep record says you were asleep here, so there was nothing to watch."
+        case .noReading:
+            return "No tremor readings around this dose, so there was nothing to watch."
+        default:
+            return nil
+        }
+    }
+
+    /// The whole line, however it is composed.
+    static func sentence(for row: CorrelationEngine.DoseRow) -> String {
+        blankSentence(row.coverage)
+            ?? (onsetClause(row.onset)
+                + (coverageClause(row.coverage, endedBy: row.endedBy).map { " · \($0)" } ?? ""))
+    }
+}
+
 struct EventDetailSheet: View {
     let event: DayEvent
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject var healthKit: HealthKitManager
 
     @State private var showDeleteAlert = false
     @State private var isDeleting = false
     @State private var showEditScreen = false
     @State private var deleteError: String?
+    /// nil until the engine answers, or permanently if this dose has no row (no dose record).
+    @State private var doseRow: CorrelationEngine.DoseRow?
+    @State private var doseRowLoaded = false
 
     /// Food is the one detail with extra content and an edit-screen push, so its actions
     /// pin to the bottom of the sheet; every other event hugs its content.
     private var isFood: Bool { if case .food = event { true } else { false } }
+
+    /// This dose's own onset + coverage. Computed here rather than passed in: the sheet is
+    /// presented from the OUTER Day-in-Review view, which never held the rows, and threading
+    /// them through two view layers to serve one tap is more plumbing than the work costs.
+    ///
+    /// ⭐ Bounded ~25 h window, not the all-history fetch. A dose needs its own baseline
+    /// (30 min before) and its observation horizon (the next dose, or the 24 h ceiling), so the
+    /// doses and sleep are fetched over the same span — without the NEXT dose present, an
+    /// evening dose would be watched to the ceiling and print a floor it never earned.
+    private func loadDoseRow(at time: Date) async {
+        defer { doseRowLoaded = true }
+        let cal = Calendar.current
+        let ds = cal.startOfDay(for: time)
+        let de = cal.date(byAdding: .day, value: 1, to: ds) ?? ds.addingTimeInterval(86400)
+        let lo = ds.addingTimeInterval(-CorrelationEngine.preMin * 60)
+        let hi = de.addingTimeInterval(CorrelationEngine.observationCeilingMin * 60)
+
+        let samples = ((try? modelContext.fetch(FetchDescriptor<TremorReading>(
+            predicate: #Predicate { $0.timestamp >= lo && $0.timestamp < hi },
+            sortBy: [SortDescriptor(\.timestamp)]))) ?? [])
+            .map { TremorPoint(timestamp: $0.timestamp, tremorScore: $0.tremorScore) }
+
+        let doses = await healthKit.fetchMedicationDoses(since: lo).filter { $0.timestamp < hi }
+        guard !doses.isEmpty else { return }
+        let sleep = await healthKit.fetchSleepIntervals(from: lo, to: hi)
+
+        let rows = await Task.detached(priority: .userInitiated) {
+            CorrelationEngine.dosePanelRows(dayStart: ds, dayEnd: de,
+                                            samples: samples, allDoses: doses, sleep: sleep)
+        }.value
+        // Match on the timestamp, with a second of slack for any round-tripping through
+        // HealthKit. Never by index — the row set is the DAY's doses, not this one.
+        doseRow = rows.first { abs($0.t0.timeIntervalSince(time)) < 1 }
+    }
 
     var body: some View {
         NavigationStack {
@@ -45,11 +171,10 @@ struct EventDetailSheet: View {
 
                     Spacer()
 
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(.secondary)
-                    }
+                    // ⛔ The ✕ was REMOVED Aug 5 2026. This sheet already had three ways out —
+                    // the grabber, this button, and the always-present "Done" below — and the ✕
+                    // was the smallest target of the three. Fewer, larger targets is the right
+                    // trade for a tremor user. `dismiss()` is unchanged everywhere else.
                 }
                 .padding()
 
@@ -80,6 +205,30 @@ struct EventDetailSheet: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
+                }
+
+                // What this dose did, in words. Only for medication, and only once the engine
+                // has answered — a placeholder that resolves into a sentence is worse than a
+                // sentence that simply appears.
+                if case .medication(_, let time, _) = event {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("What this dose did")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if let row = doseRow {
+                            Text(DoseRowCopy.sentence(for: row))
+                                .font(.subheadline)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else if doseRowLoaded {
+                            Text("We couldn't measure this dose.")
+                                .font(.subheadline).foregroundStyle(.secondary)
+                        } else {
+                            ProgressView().controlSize(.small)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .task { await loadDoseRow(at: time) }
                 }
 
                 // Health app note for workout (read-only)
@@ -215,16 +364,54 @@ struct EventDetailSheet: View {
         .disabled(isDeleting)
     }
 
+    /// ⚠️ Shown for workouts, medication, and non-editable mindfulness / GI entries — so the
+    /// deep link is **medication-only**. `x-apple-health://Medications` is the one screen we can
+    /// land on accurately; sending a workout tap there would be worse than the plain sentence.
     private var healthAppNote: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "info.circle")
-                .foregroundStyle(.secondary)
-            Text("To edit or delete, open the Health app.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        Group {
+            if case .medication = event {
+                Button(action: openMedications) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle")
+                        Text("Edit or delete in the Health app")
+                            .font(.caption)
+                        Spacer()
+                        // ⭐ `arrow.up.forward.app`, not a chevron — the same symbol the Log
+                        // screen's Medication row uses. A chevron promises a screen pushed
+                        // inside Kampa; this leaves the app entirely. One meaning, one glyph.
+                        Image(systemName: "arrow.up.forward.app")
+                            .font(.subheadline)
+                    }
+                    .foregroundStyle(Insight.brandBlue)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.secondary)
+                    Text("To edit or delete, open the Health app.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .padding(.horizontal)
         .padding(.vertical, 6)
+    }
+
+    /// Straight to the Health app's Medications screen. Lifted verbatim from `LogEntrySheet` so
+    /// there is one behaviour, not two: the scheme is undocumented but device-verified, and it
+    /// falls back to Health's home if the path ever stops resolving, so the row never dead-ends.
+    private func openMedications() {
+        let medications = URL(string: "x-apple-health://Medications")!
+        openURL(medications) { accepted in
+            if !accepted, let health = URL(string: "x-apple-health://") {
+                openURL(health) { _ in dismiss() }
+            } else {
+                dismiss()
+            }
+        }
     }
 
     private func performDelete() {

@@ -4,7 +4,45 @@
 (the reference user's Day-in-Review panel). Written as one doc because the same two numbers appear at three
 altitudes and it was already unclear which existed.
 **Aug 4 2026 — the panel's last two open decisions are closed and its row copy is approved.** All
-four decisions below are now settled; see [Row states](#row-states). Not built.
+four decisions below are now settled; see [Row states](#row-states).
+
+**✅ BUILT Aug 5 2026** — `CorrelationEngine.dosePanelRows`, 11 tests in `DosePanelRowTests`.
+
+⭐ **RELOCATED the same day: there is NO Doses panel.** It shipped as a panel on Day in Review,
+was device-tested across five days, and Bhav moved it: *"instead of a Doses panel separately, can
+that be added to the dose detail card we show when we click on the dose glyph?"* It now lives in
+`EventDetailSheet` under **"What this dose did"**, rendered by `DoseRowCopy`. Three reasons, in order:
+1. A per-dose fact belongs on the per-dose object, and the glyph already sits on the chart at the
+   dose time — so the sentence appears next to the tremor curve it describes.
+2. It removes a permanent block of small grey text from the day's main scroll (the panel was six-plus
+   lines every day, and legibility was the complaint that started this).
+3. ⚠️ These sentences are still wrong in places while AutoSleep and the baseline window are unfixed.
+   On the main screen a wrong sentence is asserted at the user daily; behind a tap it is seen by
+   someone who went looking. The quieter placement is the honest one until Layer 1 is fixed.
+⇒ **The engine is untouched.** `dosePanelRows` still returns one row per dose for a day; the sheet
+looks up the tapped one. Only the display moved.
+⛔ Cost, accepted: the within-day sequence (the Jul 21 "22 → 42 → 52" argument for this surface) is
+no longer visible at a glance. It was already in tension with decision 4's ban on row-vs-row
+comparison, and the chart shows the day's shape anyway.
+
+⚠️ **One row state SPLIT IN TWO during the build, and the reason is a measurement.** The spec's
+"reading lost (watch off)" row assumed `durationMin` was a watched span. It is not: `offReturn`
+returns the **horizon** when it never sees a sustained return (`CorrelationEngine.swift:1579/1584/1596`),
+so a dose with no next dose and no sleep reports the **24 h observation ceiling**. Rendering that as
+*"watched 24h, then we lost the reading"* would have been a fabrication. Now two states, separated by
+whether readings actually reached the end of the window:
+- `watchedToEnd` → *"watched 5h without seeing it wear off"* (real span, bounded by the ceiling)
+- `endedByLostReading` → *"watched 40 min, then we lost the reading"* (span measured from the **last
+  real sample**, not the horizon)
+
+⚠️ Also added: `noReading`, for a dose with no tremor record around it at all. ⛔ It must not reuse the
+`learnedNothing` sentence — that copy asserts tremor was already quiet, which we never observed.
+⇒ A logged dose is **never dropped** from the panel; a dose the user logged and cannot find reads as
+data loss.
+
+⚠️ The panel does **not** ride `recomputeForecast` — that returns early for any day that is not
+today. It has its own `recomputeDoseRows` over a bounded ~25 h window (day ± baseline/ceiling) rather
+than the all-history fetch, so navigating to a past day does not hydrate the whole tremor record.
 
 **The two quantities, both computed PER DOSE and then usually averaged away:**
 
@@ -66,9 +104,27 @@ because night doses land while already covered or asleep. Richest on a full dayt
 
 ### Four decisions, each forced by the real data
 
-1. ⭐ **"Already covered" is INFORMATION, not a blank.** It is the single most common reason onset is
-   missing (82 of 279) and it means *you dosed while the previous one was still working* — arguably
-   the most actionable row on the panel. Render the reason; never an em dash.
+1. ⛔ **AMENDED Aug 5 2026 — this decision was WRONG, and it shipped before anyone checked it.**
+   Original text: *"'Already covered' is INFORMATION, not a blank. It is the single most common reason
+   onset is missing (82 of 279) and it means you dosed while the previous one was still working —
+   arguably the most actionable row on the panel."*
+
+   **The first clause holds; the rest does not.** The engine's test is `baseline < onThreshold` —
+   tremor sat low in the 30 min before the dose. That is a **state** observation. "Still covered by
+   the previous dose" is an **attribution**, and nothing in the estimator supports it.
+
+   Measured counter-example, Jul 11 22:44 (07-30 dump): baseline **0.82** ⇒ classified "covered".
+   But the previous dose was **376 min** earlier, the panel's own row above said that dose held
+   **1h 3m**, and tremor ran **1.15-2.14 for the two hours before**. He was OFF in a quiet patch.
+   ⇒ The panel contradicted itself four lines apart, and the wrong claim came from THIS decision.
+
+   ⇒ **Render the state, never the cause: "tremor was already low".** Engine case renamed
+   `alreadyCovered` → `tremorAlreadyLow` so the conflation cannot re-enter through the type.
+   ⇒ **It is NOT "the most actionable row."** We cannot distinguish *still covered* from *OFF in a
+   low patch*, and on the worked example it was the second.
+   ⚠️ **The same wrong claim still ships on the medication card** (`CorrelationEngine.swift` ~:2160,
+   ~:2218: *"you were still covered from…"*, *"taken while still covered by the previous one"*).
+   Not fixed here — flagged, and it must move with this or the two surfaces will disagree.
 2. ✅ **The at-least floors — DECIDED Aug 4 2026. Name what ended the watching; never print a floor
    as if it were coverage.** The 07-27 01:13 dose read *"coverage at least 1 min"*. The defect isn't
    the wording: **a floor is the length of the observation window, not a fact about the drug.** That

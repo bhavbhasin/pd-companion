@@ -1731,6 +1731,218 @@ nonisolated extension CorrelationEngine {
     ///    falling back asleep; carried as "still ON at t" they inflated the duration from ~48
     ///    to ~92 min. ⚠️ The intuitive alternative — dropping observations shorter than the
     ///    onset — was measured as an exact NO-OP and would have added a constant for nothing.
+    // ─────────────────────────────────────────────────────────────────────────────
+    // MARK: - Per-dose rows (Day in Review → Doses panel)
+    //
+    // docs/design/dose-onset-coverage-surfaces.md. The engine already computes onset and
+    // coverage PER DOSE and every shipped surface averages them away; this exposes the rows
+    // themselves. A measurement of one dose is not a statistical claim needing n, so there is
+    // no gate here and no verdict — the panel states what happened and stops.
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /// A dose we could learn nothing from: tremor was ALREADY quiet when it was taken, and
+    /// watching ended at sleep onset within a bin. It takes BOTH facts — see the long note in
+    /// `medicationInsight`, which this was extracted from. A low baseline alone is not
+    /// disqualifying (still-covered + watched to the next dose is a genuine coverage floor),
+    /// and censoring alone is not either.
+    static func learnedNothing(_ r: DoseDuration, onThreshold: Double,
+                               sleep: [SleepInterval]) -> Bool {
+        guard r.baseline.isFinite, r.baseline < onThreshold, !r.observed else { return false }
+        guard let onset = sleepOnset(after: r.t0, sleep: sleep) else { return false }
+        return abs(onset.timeIntervalSince(r.t0) / 60 - r.durationMin) <= binMin
+    }
+
+    /// How a dose's onset read. ⭐ Gated by `fellFrom` — a dose taken while tremor was already
+    /// low has nowhere to fall from, so it has no onset. That is INFORMATION, not a blank: it
+    /// is the most common reason onset is missing (82 of 279 measured doses).
+    ///
+    /// ⛔ **RENAMED from `alreadyCovered` Aug 5 2026, and the name was the bug.** "Covered"
+    /// asserts the previous dose was still working; all this measures is that tremor sat below
+    /// `onThreshold`. Those are different claims and the engine has evidence only for the
+    /// second. Worked example, Jul 11 22:44: baseline 0.82 ⇒ "covered" — but the previous dose
+    /// was **376 min** earlier and held 1h 3m by the panel's own row, and tremor ran 1.15-2.14
+    /// for the two hours before. He was OFF in a quiet patch, not covered.
+    /// ⇒ `dose-onset-coverage-surfaces.md` decision 1 carried this conflation and is amended.
+    enum DoseOnset: Equatable {
+        case measured(minutes: Double)
+        /// Tremor was below `onThreshold` just before the dose. A STATE observation — it says
+        /// nothing about why, and must never be rendered as a claim about the previous dose.
+        case tremorAlreadyLow
+        /// Tremor was readable but never fell halfway — or there was no pre-dose reading.
+        case notSeen
+    }
+
+    /// How a dose's coverage ended. ⛔ A censored row is NOT a failed dose: the number is the
+    /// length of the observation window, not a fact about the drug. Every case that carries
+    /// minutes therefore names what ENDED the watching, so a 1-minute floor reads as the
+    /// dosing schedule it is rather than as a dose that did nothing.
+    enum DoseCoverage: Equatable {
+        /// We watched tremor return. The only case that is a statement about the drug.
+        case held(minutes: Double)
+        case endedByNextDose(minutes: Double)
+        case endedBySleep(minutes: Double)
+        /// We watched the whole window and never saw tremor return. `minutes` is a real
+        /// watched span, but it is bounded by the observation ceiling, not by the drug.
+        case watchedToEnd(minutes: Double)
+        /// Readings stopped well before the window closed (watch off the wrist, or the record
+        /// simply ending). `minutes` is how long we ACTUALLY had a reading for.
+        case endedByLostReading(minutes: Double)
+        /// Already quiet, then asleep. The one genuine blank.
+        case learnedNothing
+        /// Taken while ALREADY asleep, so the observation window was zero from the start.
+        /// ⚠️ Measured Aug 5 2026 on the 07-30 dump: the Jul 6 02:43 dose has 240 tremor
+        /// readings around it and still landed here, because he was asleep 02:14-02:55.
+        /// Reporting "no readings" for it was simply false — the readings exist, the
+        /// observability does not.
+        case asleepAtDose
+        /// No tremor readings around the dose at all, so nothing was ever watched. Distinct
+        /// from `learnedNothing`, which is a statement about the dose landing on quiet tremor
+        /// — printing that copy for a dose with no data would invent a reason we never saw.
+        case noReading
+    }
+
+    /// One dose, as the panel shows it. `onset` and `coverage` are chosen INDEPENDENTLY —
+    /// applying one exclusion to both is the bug documented at the top of `medicationInsight`.
+    struct DoseRow: Equatable {
+        let t0: Date
+        /// The user's own spelling, trimmed. Never the canonical key re-cased.
+        let name: String
+        let onset: DoseOnset
+        let coverage: DoseCoverage
+        /// The substance whose dose ended this one's watching, when that is what happened.
+        /// Lets the row name it ("when you took Sinemet") instead of saying "the next dose".
+        let endedBy: String?
+    }
+
+    /// Every dose taken on `day`, with its own onset and coverage.
+    ///
+    /// ⚠️ Takes the WHOLE record, not the day's slice: a dose's observation window is bounded
+    /// by the next dose of ANY substance and by sleep, both of which routinely cross midnight.
+    /// Passing one day's doses would silently let the evening's last dose run to the ceiling.
+    /// The day filter is applied to the ROWS, at the end.
+    ///
+    /// Day boundaries come from the caller so this matches Day in Review's existing definition
+    /// (`Calendar.current.startOfDay`) rather than inventing a second one. Consequence, accepted
+    /// rather than fixed: a 00:47 dose belongs to the next calendar day, split from the evening
+    /// run it is part of.
+    static func dosePanelRows(
+        dayStart: Date, dayEnd: Date,
+        samples: [TremorPoint], allDoses: [Dose],
+        onThreshold: Double = CorrelationEngine.offThreshold,
+        sleep rawSleep: [SleepInterval] = [], cache: SurvivalCache? = nil
+    ) -> [DoseRow] {
+        guard !allDoses.isEmpty else { return [] }
+        let sorted = allDoses.sorted { $0.timestamp < $1.timestamp }
+        // ⚠️ Deliberately NOT gated on `samples` being non-empty. A day with logged doses and no
+        // tremor record still lists every dose, each reading "no tremor readings around it" —
+        // a dose the user logged and cannot find on the panel reads as data loss, which is a
+        // worse failure than an uninformative row.
+        guard !samples.isEmpty else {
+            return sorted
+                .filter { $0.timestamp >= dayStart && $0.timestamp < dayEnd }
+                .map { DoseRow(t0: $0.timestamp,
+                               name: $0.name.trimmingCharacters(in: .whitespacesAndNewlines),
+                               onset: .notSeen, coverage: .noReading, endedBy: nil) }
+        }
+        let sig = samples.map { (time: $0.timestamp, value: $0.tremorScore) }
+
+        // Same sleep treatment as every other surface reading a duration: an uncensored
+        // duration is inflated by hours we could not observe.
+        let measuredSleep = mergeSleep(rawSleep)
+        let censorSleep: [SleepInterval]
+        if let lo = samples.map(\.timestamp).min(), let hi = samples.map(\.timestamp).max() {
+            censorSleep = censoringSleep(recorded: measuredSleep,
+                                         doses: sorted.map(\.timestamp), covering: lo...hi)
+        } else {
+            censorSleep = measuredSleep
+        }
+
+        let surv = survivalDuration(signal: sig, events: sorted.map(\.timestamp),
+                                    onThreshold: onThreshold, sleep: censorSleep, cache: cache)
+        // Onset comes from the response primitive, keyed by dose time. Both primitives can
+        // silently drop a dose with no usable window, so neither is a reliable index of the
+        // other — look up, never zip.
+        let traces = Dictionary(
+            doseResponseByTimeOfDay(signal: sig, events: sorted.map(\.timestamp),
+                                    preMin: preMin, postMin: postMin).traces
+                .map { ($0.t0, $0) },
+            uniquingKeysWith: { a, _ in a })
+        let byTime = Dictionary(surv.durations.map { ($0.t0, $0) }, uniquingKeysWith: { a, _ in a })
+        let nameAt = Dictionary(sorted.map {
+            ($0.timestamp, $0.name.trimmingCharacters(in: .whitespacesAndNewlines))
+        }, uniquingKeysWith: { a, _ in a })
+
+        var rows: [DoseRow] = []
+        for dose in sorted where dose.timestamp >= dayStart && dose.timestamp < dayEnd {
+            let label = nameAt[dose.timestamp] ?? dose.name
+            guard let r = byTime[dose.timestamp] else {
+                // `survivalDuration` dropped this dose: either no usable readings, or the
+                // horizon closed before any arrived. Say WHICH — the two look identical from
+                // here and read completely differently to the user. ⭐ `sleepOnset` returns
+                // `t` itself when already asleep, which is exactly the zero-window case.
+                // ⛔ Never `.learnedNothing`: that copy asserts tremor was already quiet, which
+                // we did not observe here.
+                let asleep = sleepOnset(after: dose.timestamp, sleep: censorSleep) == dose.timestamp
+                rows.append(DoseRow(t0: dose.timestamp, name: label, onset: .notSeen,
+                                    coverage: asleep ? .asleepAtDose : .noReading, endedBy: nil))
+                continue
+            }
+
+            if learnedNothing(r, onThreshold: onThreshold, sleep: censorSleep) {
+                rows.append(DoseRow(t0: dose.timestamp, name: label,
+                                    onset: .tremorAlreadyLow, coverage: .learnedNothing,
+                                    endedBy: nil))
+                continue
+            }
+
+            // ── Onset: gated on having somewhere to fall FROM (`fellFrom`).
+            let onset: DoseOnset
+            if r.baseline.isFinite && r.baseline < onThreshold {
+                onset = .tremorAlreadyLow
+            } else if let tr = traces[dose.timestamp], !tr.tHalf.isNaN {
+                onset = .measured(minutes: tr.tHalf)
+            } else {
+                onset = .notSeen
+            }
+
+            // ── Coverage: gated on `readable` only, which the row already is.
+            let coverage: DoseCoverage
+            var endedBy: String?
+            if r.observed {
+                coverage = .held(minutes: r.durationMin)
+            } else if r.intervalMin.isFinite && r.durationMin >= r.intervalMin - binMin {
+                coverage = .endedByNextDose(minutes: r.durationMin)
+                // The next dose in time of ANY substance — that is what bounded the window.
+                endedBy = sorted.first { $0.timestamp > dose.timestamp }
+                    .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
+            } else if let onsetAt = sleepOnset(after: r.t0, sleep: censorSleep),
+                      abs(onsetAt.timeIntervalSince(r.t0) / 60 - r.durationMin) <= binMin {
+                coverage = .endedBySleep(minutes: r.durationMin)
+            } else {
+                // ⚠️ Not "asleep" by default. Measured on the real record: 11 of 14 lost-sight
+                // floors were sleep, which was only knowable by checking — so the remainder
+                // gets the honest reason (watch off the wrist, or the record ending) rather
+                // than an invented one.
+                //
+                // ⛔ `durationMin` is NOT a watched span here. `offReturn` returns the HORIZON
+                // when it never sees a sustained return (`CorrelationEngine.swift:1579/1584/1596`),
+                // so on a dose with no next dose and no sleep this is the 24 h observation
+                // ceiling. Rendering it as "watched 24h" would be a fabrication — the watch may
+                // have come off an hour in. Measure what we actually had a reading for.
+                let windowEnd = r.t0.addingTimeInterval(r.durationMin * 60)
+                let watched = (sig.last { $0.time <= windowEnd && $0.time > r.t0 })
+                    .map { $0.time.timeIntervalSince(r.t0) / 60 } ?? 0
+                coverage = watched >= r.durationMin - binMin
+                    ? .watchedToEnd(minutes: watched)
+                    : .endedByLostReading(minutes: watched)
+            }
+
+            rows.append(DoseRow(t0: dose.timestamp, name: label,
+                                onset: onset, coverage: coverage, endedBy: endedBy))
+        }
+        return rows
+    }
+
     static func medicationInsight(
         key: String, samples: [TremorPoint], allDoses: [Dose],
         onThreshold: Double = CorrelationEngine.offThreshold,
@@ -1794,13 +2006,12 @@ nonisolated extension CorrelationEngine {
         // and doses at 04:45, so his pre-dose window is awake and the night doses sailed through,
         // putting the duration back to 93 min. What disqualifies them is sleep arriving AFTER,
         // ending the watching within minutes.
-        func learnedNothing(_ r: DoseDuration) -> Bool {
-            guard r.baseline.isFinite, r.baseline < onThreshold, !r.observed else { return false }
-            guard let onset = sleepOnset(after: r.t0, sleep: censorSleep) else { return false }
-            return abs(onset.timeIntervalSince(r.t0) / 60 - r.durationMin) <= binMin
-        }
+        // ⭐ `learnedNothing` was a local closure here until Aug 5 2026. It is now a shared static
+        // so the Day-in-Review Doses panel classifies its rows with the SAME rule rather than
+        // re-deriving it — the panel and this card must never disagree about which doses taught
+        // us nothing. Behaviour unchanged; this is a move, not an edit.
         // Duration + floors: everything we learned anything from.
-        let readable = mine.filter { !learnedNothing($0) }
+        let readable = mine.filter { !learnedNothing($0, onThreshold: onThreshold, sleep: censorSleep) }
         // How far tremor falls, and how fast: only doses with somewhere to fall FROM.
         let fellFrom = readable.filter { $0.baseline.isFinite && $0.baseline >= onThreshold }
         let alreadyCovered = readable.count - fellFrom.count
@@ -1896,9 +2107,15 @@ nonisolated extension CorrelationEngine {
         // when watching stopped is a measurement, and for a long-acting substance on a tight
         // schedule it is the ONLY measurement, so it must never be dropped for brevity.
         if !censoredRows.isEmpty {
+            // ⭐ TWIN FIX Aug 5 2026 (dose-onset-coverage-surfaces.md, decision 2). These maxima
+            // are the longest we WATCHED, not the longest the drug HELD — `durationMin` on a
+            // censored row is the observation window, bounded by the next dose or by sleep.
+            // "up to about 3h" read as a ceiling on the substance; it is a fact about the
+            // schedule. Same defect the Doses panel had to solve per row, fixed here in the
+            // same commit so the two surfaces cannot contradict each other.
             var why: [String] = []
             if let m = nextDoseFloors.map(\.durationMin).max() {
-                why.append("\(nextDoseFloors.count) at your next dose (up to \(hm(m)))")
+                why.append("\(nextDoseFloors.count) at your next dose (watched \(hm(m)) at the longest)")
             }
             if let m = lostSightFloors.map(\.durationMin).max() {
                 // "usually" claims a majority, so it cannot narrate a single dose. The test
@@ -1907,7 +2124,7 @@ nonisolated extension CorrelationEngine {
                     : lostSightFloors.count == 1 ? ", because you fell asleep"
                     : ", usually because you fell asleep"
                 why.append("\(lostSightFloors.count) when we lost a clear reading\(because) "
-                           + "(up to \(hm(m)))")
+                           + "(watched \(hm(m)) at the longest)")
             }
             let n = censoredRows.count
             lines.append("\(n) \(n == 1 ? "was" : "were") still working when watching stopped: "
@@ -1947,10 +2164,16 @@ nonisolated extension CorrelationEngine {
                                     + "level we treat as OFF.", base, onThreshold))
             }
         } else if alreadyCovered > 0 {
-            // The well-controlled case: nothing to fall FROM, which is itself worth knowing.
+            // Nothing to fall FROM, which is itself worth knowing.
+            // ⛔ Was "you were still covered from the one before" — an ATTRIBUTION the estimator
+            // cannot make. All `alreadyCovered` counts is `baseline < onThreshold`: tremor was
+            // low. Whether the previous dose was responsible is unknown, and measurably often
+            // false (Jul 11 22:44: baseline 0.82, previous dose 376 min earlier and observed to
+            // hold only 1h 3m). Same fix as the Doses panel's `tremorAlreadyLow`, same commit,
+            // so the two surfaces cannot describe one dose two different ways.
             lines.append("We can't say how far it brings your tremor down. On \(alreadyCovered) "
-                         + "\(alreadyCovered == 1 ? "dose" : "doses") you were still covered from "
-                         + "the one before, so there was nothing to fall from.")
+                         + "\(alreadyCovered == 1 ? "dose" : "doses") your tremor was already low "
+                         + "when you took it, so there was nothing to fall from.")
         } else if !readableTraces.isEmpty || sleepBlind > 0 {
             lines.append("We can't yet say how far it brings your tremor down. That needs at "
                          + "least two doses taken while your tremor was up.")
@@ -2006,8 +2229,10 @@ nonisolated extension CorrelationEngine {
                     sleepBlind > 0
                         ? "\(sleepBlind) doses excluded: tremor already quiet and asleep soon after"
                         : "No doses excluded for being unobservable",
+                    // ⛔ Was "still covered by the previous one" — attribution, not measurement.
+                    // See the Statement-3 note above; this line reports the same count.
                     alreadyCovered > 0
-                        ? "\(alreadyCovered) further doses taken while still covered by the previous one"
+                        ? "\(alreadyCovered) further doses taken with tremor already below the OFF threshold"
                         : "Every measurable dose was taken with tremor above the OFF threshold",
                     falls.count >= 2
                         ? "Tremor fall measured on \(falls.count) doses, onset on \(onsets.count)"

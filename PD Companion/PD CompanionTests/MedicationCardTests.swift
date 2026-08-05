@@ -311,8 +311,15 @@ struct MedicationCardTests {
                 "the floor is this patient's only measurement: \(card.finding)")
         #expect(card.finding.contains("at your next dose"),
                 "and it must say the watching ended at the next dose: \(card.finding)")
-        #expect(card.finding.contains("still covered from the one before"),
+        // ⛔ Was pinned to "still covered from the one before". That copy was RETIRED Aug 5 2026:
+        // it attributed a low baseline to the previous dose, which the estimator cannot know and
+        // which is measurably often false. The test's INTENT — explain why the fall is
+        // unmeasurable rather than going silent — is unchanged; only the claim is narrowed to
+        // what was actually measured. See dose-onset-coverage-surfaces.md decision 1 (amended).
+        #expect(card.finding.contains("tremor was already low"),
                 "…and explain why the fall is unmeasurable, rather than going silent")
+        #expect(!card.finding.contains("still covered"),
+                "must not attribute the low baseline to the previous dose: \(card.finding)")
     }
 
     /// A substance that does nothing must not be described as though it did. "Falls from 1.90
