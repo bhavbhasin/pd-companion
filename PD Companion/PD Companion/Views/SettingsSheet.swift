@@ -13,9 +13,7 @@ struct SettingsSheet: View {
     @EnvironmentObject var healthKit: HealthKitManager
     @StateObject private var cloudAccount = CloudAccountMonitor.shared
     @Environment(\.dismiss) private var dismiss
-    @Query(sort: \TremorReading.timestamp, order: .forward) private var tremorReadings: [TremorReading]
-    @Query(sort: \DyskinesiaReading.startDate, order: .forward) private var dyskinesiaReadings: [DyskinesiaReading]
-    @Query(sort: \FoodEvent.timestamp, order: .forward) private var foodEvents: [FoodEvent]
+    @Environment(\.modelContext) private var modelContext
     @State private var isExporting = false
 
     var body: some View {
@@ -67,17 +65,8 @@ struct SettingsSheet: View {
                     externalLink("FAQ", systemImage: "questionmark.circle",
                                  url: "https://kampa.health/faq.html")
                     NavigationLink {
-                        SupportView(
-                            tremorCount: tremorReadings.count,
-                            tremorFirst: tremorReadings.first?.timestamp,
-                            tremorLast: tremorReadings.last?.timestamp,
-                            dyskinesiaCount: dyskinesiaReadings.count,
-                            dyskinesiaFirst: dyskinesiaReadings.first?.startDate,
-                            dyskinesiaLast: dyskinesiaReadings.last?.startDate,
-                            foodCount: foodEvents.count,
-                            foodFirst: foodEvents.first?.timestamp,
-                            foodLast: foodEvents.last?.timestamp
-                        )
+                        // Counts itself, on open. See the ⛔ in SupportView.RecordStats.
+                        SupportView()
                     } label: {
                         Label("Contact support", systemImage: "envelope")
                     }
@@ -136,14 +125,26 @@ struct SettingsSheet: View {
     /// so the high-volume HealthKit streams are clipped to it. `nil` (no Kampa data yet)
     /// falls back to full history, preserving the previous behaviour for a case where
     /// there is nothing to export against anyway.
-    private var kampaRecordStart: Date? {
-        [tremorReadings.first?.timestamp, foodEvents.first?.timestamp].compactMap { $0 }.min()
+    /// Two `fetchLimit = 1` fetches, not a `@Query`. This used to read `.first` off live queries
+    /// over every reading and every food event, which meant Settings hydrated ~157k SwiftData
+    /// objects to learn two dates — and re-hydrated them on every save anywhere in the store.
+    private func earliestRecordDate() -> Date? {
+        func earliest<T: PersistentModel>(_ type: T.Type, key: KeyPath<T, Date>,
+                                          sortBy: KeyPath<T, Date> & Sendable) -> Date? {
+            var descriptor = FetchDescriptor<T>(sortBy: [SortDescriptor(sortBy, order: .forward)])
+            descriptor.fetchLimit = 1
+            return (try? modelContext.fetch(descriptor))?.first?[keyPath: key]
+        }
+        return [
+            earliest(TremorReading.self, key: \.timestamp, sortBy: \.timestamp),
+            earliest(FoodEvent.self, key: \.timestamp, sortBy: \.timestamp)
+        ].compactMap { $0 }.min()
     }
 
     private func runExport() {
         guard !isExporting else { return }
         isExporting = true
-        let recordStart = kampaRecordStart
+        let recordStart = earliestRecordDate()
         Task {
             defer { Task { @MainActor in isExporting = false } }
             guard let folder = await CSVBackupExporter.exportAll(

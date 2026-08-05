@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import WatchConnectivity
 
 /// Contact-support screen.
@@ -13,34 +14,71 @@ import WatchConnectivity
 /// should be able to read exactly what they are about to send, and confirm for themselves
 /// that it contains no health values.
 struct SupportView: View {
-    let tremorCount: Int
-    let tremorFirst: Date?
-    let tremorLast: Date?
-    let dyskinesiaCount: Int
-    let dyskinesiaFirst: Date?
-    let dyskinesiaLast: Date?
-    let foodCount: Int
-    let foodFirst: Date?
-    let foodLast: Date?
-
+    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var healthKit: HealthKitManager
     @StateObject private var cloudAccount = CloudAccountMonitor.shared
     @State private var didCopy = false
+    @State private var stats: RecordStats?
+
+    /// Count + span for one stream. Deliberately NOT `@Query`.
+    ///
+    /// ⛔ **Never hold a `@Query` over a reading stream to compute a count.** `SettingsSheet` did
+    /// exactly that (added `eea4104`, Jul 30) and materialized every `TremorReading` and
+    /// `DyskinesiaReading` — ~157k SwiftData objects on the reference record — to display four
+    /// numbers on a screen one level deeper. Worse, a `@Query` re-runs whenever anything saves to
+    /// the store, so once the therapy screens started writing, opening or leaving Settings paid
+    /// that fetch again each time. A count is `fetchCount`, and a span is two `fetchLimit = 1`
+    /// fetches: twelve cheap queries instead of a full hydration. Same pattern
+    /// `DayInReviewView.hasEverHadData` already uses.
+    struct RecordStats {
+        var tremor: (count: Int, first: Date?, last: Date?) = (0, nil, nil)
+        var dyskinesia: (count: Int, first: Date?, last: Date?) = (0, nil, nil)
+        var food: (count: Int, first: Date?, last: Date?) = (0, nil, nil)
+        var therapy: (count: Int, first: Date?, last: Date?) = (0, nil, nil)
+    }
 
     private var diagnostics: String {
-        SupportDiagnostics.text(
+        let s = stats ?? RecordStats()
+        return SupportDiagnostics.text(
             healthAuthorized: healthKit.isAuthorized,
             iCloudStatus: cloudAccount.diagnosticDescription,
-            tremorCount: tremorCount,
-            tremorFirst: tremorFirst,
-            tremorLast: tremorLast,
-            dyskinesiaCount: dyskinesiaCount,
-            dyskinesiaFirst: dyskinesiaFirst,
-            dyskinesiaLast: dyskinesiaLast,
-            foodCount: foodCount,
-            foodFirst: foodFirst,
-            foodLast: foodLast
+            tremorCount: s.tremor.count,
+            tremorFirst: s.tremor.first,
+            tremorLast: s.tremor.last,
+            dyskinesiaCount: s.dyskinesia.count,
+            dyskinesiaFirst: s.dyskinesia.first,
+            dyskinesiaLast: s.dyskinesia.last,
+            foodCount: s.food.count,
+            foodFirst: s.food.first,
+            foodLast: s.food.last,
+            therapyCount: s.therapy.count,
+            therapyFirst: s.therapy.first,
+            therapyLast: s.therapy.last
         )
+    }
+
+    /// Cheapest possible span: the earliest and latest row, one each, never the rows between.
+    private func span<T: PersistentModel>(
+        _ type: T.Type, key: KeyPath<T, Date>, sortBy: KeyPath<T, Date> & Sendable
+    ) -> (count: Int, first: Date?, last: Date?) {
+        let count = (try? modelContext.fetchCount(FetchDescriptor<T>())) ?? 0
+        guard count > 0 else { return (0, nil, nil) }
+        var ascending = FetchDescriptor<T>(sortBy: [SortDescriptor(sortBy, order: .forward)])
+        ascending.fetchLimit = 1
+        var descending = FetchDescriptor<T>(sortBy: [SortDescriptor(sortBy, order: .reverse)])
+        descending.fetchLimit = 1
+        let first = (try? modelContext.fetch(ascending))?.first?[keyPath: key]
+        let last = (try? modelContext.fetch(descending))?.first?[keyPath: key]
+        return (count, first, last)
+    }
+
+    private func loadStats() {
+        var s = RecordStats()
+        s.tremor = span(TremorReading.self, key: \.timestamp, sortBy: \.timestamp)
+        s.dyskinesia = span(DyskinesiaReading.self, key: \.startDate, sortBy: \.startDate)
+        s.food = span(FoodEvent.self, key: \.timestamp, sortBy: \.timestamp)
+        s.therapy = span(TherapySession.self, key: \.start, sortBy: \.start)
+        stats = s
     }
 
     var body: some View {
@@ -88,6 +126,9 @@ struct SupportView: View {
         }
         .navigationTitle("Contact support")
         .navigationBarTitleDisplayMode(.inline)
+        // Counted when this screen opens — the only place the numbers are read — instead of
+        // being held live by the screen above it.
+        .task { loadStats() }
     }
 }
 
@@ -121,7 +162,10 @@ enum SupportDiagnostics {
         dyskinesiaLast: Date?,
         foodCount: Int,
         foodFirst: Date?,
-        foodLast: Date?
+        foodLast: Date?,
+        therapyCount: Int,
+        therapyFirst: Date?,
+        therapyLast: Date?
     ) -> String {
         var lines = [
             "Kampa \(versionAndBuild)",
@@ -136,7 +180,10 @@ enum SupportDiagnostics {
             // and a sync or dedup fault can move one without the other — which is invisible if
             // only tremor is reported.
             "Dyskinesia readings: \(dyskinesiaCount)\(span(dyskinesiaFirst, dyskinesiaLast))",
-            "Food events: \(foodCount)\(span(foodFirst, foodLast))"
+            "Food events: \(foodCount)\(span(foodFirst, foodLast))",
+            // Its own line for the same reason dyskinesia has one: therapy is the only stream
+            // with no HealthKit copy, so if it goes missing this count is the only evidence.
+            "Therapy sessions: \(therapyCount)\(span(therapyFirst, therapyLast))"
         ]
         lines.append("Sent \(Self.timestampFormatter.string(from: Date()))")
         return lines.joined(separator: "\n")
