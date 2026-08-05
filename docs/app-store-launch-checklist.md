@@ -6,15 +6,16 @@ Two decisions, two bars. **List** = quiet US-first, unmarketed. **Launch** = a p
 
 ---
 
-## 🎯 REMAINING TO LIST — work this order (status Aug 1 2026)
+## ✅ SUBMITTED Aug 1 2026, 5:00 PM — 1.0 (build 17), *Waiting for Review*
+
+Submission ID `dd990eb9-925d-40be-8246-aa94b91a2d2d`. Commits `31e7f91` + `055fb9f`.
+**All 19 listing items are closed.** 14 (keywords + description), 15 (screenshots) and 19 (submit)
+were finished on screen after this doc was last written — it read "3 open" until Aug 4.
+⚠️ **Release is MANUAL** — approval does not publish; Bhav clicks Release.
 
 ⚠️ **Verify each `⬜` against App Store Connect or the repo before working it.** This list goes stale
-the same way BACKLOG.md does — the Jul 31 pass found 9 of 19 "remaining" items already done, and the
-Aug 1 pass found 3 more.
-
-**Open — 3 items** (status Aug 1, mid-session):
-- ⬜ 14 · keywords + description (subtitle DONE) · ⬜ 15 · screenshots ·
-  ⬜ 19 · build → App Review Information → submit
+the same way BACKLOG.md does — the Jul 31 pass found 9 of 19 "remaining" items already done, the
+Aug 1 pass found 3 more, and the header above was itself stale for three days.
 
 **✅ Closed on screen Aug 1:** 16 · age rating → **13+** (172 regions; 12+ Vietnam/Korea, A12 Brazil) ·
 20 · regulated medical device → **No, in any country or region** · **9 · App Privacy → Data Not
@@ -96,14 +97,19 @@ screenshot sizes, and the submission notes. Paste from there; don't re-derive.
     routes to the neurologist ("decisions only your neurologist can make"). **Zero `UPDRS` anywhere**
     in app or site. Disclaimer live on all five site pages.
 
-### ⬜ GENUINELY OPEN
-**Device test:**
-19. ⬜ Stage to yourself on a clean device (TestFlight), then submit
+### ✅ CLOSED Aug 1
+19. ✅ Staged and submitted — build 17, *Waiting for Review*.
 
 ### ⬜ POST-APPROVAL — before telling the other testers to switch
 21. ⬜ **TestFlight → App Store transition test, on Bhaani's phone.** The one path never exercised:
     every restore test so far stayed *within* TestFlight. She is on build **15**, the App Store ships
-    **16**, so iOS should offer a normal in-place update.
+    **17**, so iOS should offer a normal in-place update.
+    ⛔ **Do NOT distribute build 17 (or higher) on TestFlight before release.** The store build must be
+    strictly newer than what is installed, or the App Store shows *Open* instead of *Update* — which
+    kills this test and forces a delete/reinstall.
+    ⭐ **Build 16 is safe and carries the same features.** 16→17 is two settings, zero source
+    (`TARGETED_DEVICE_FAMILY`, build number); `3530adc` is already in 16. 15 < 16 < 17 holds.
+    ⚠️ Confirm 16 was uploaded/processed in ASC, and note **16 still declares iPad** — iPhone only.
     ⭐ **Try the update BEFORE deleting anything** — that is the only way to learn whether the local
     container survives, which Apple's docs do not state (their help page 404s; searched Aug 1).
     Deleting first destroys the experiment and only re-proves the CloudKit restore already verified.
@@ -152,13 +158,13 @@ screenshot sizes, and the submission notes. Paste from there; don't re-derive.
    small, invite-only group of testers… may later be released on the App Store."* One-line change at
    listing time; batch it with the other website edits (~15 of 300 monthly Netlify credits per deploy).
 9. ⬜ App Privacy "nutrition label" **(verify current fields)**
-14. ⬜ Subtitle (confirmed EMPTY Jul 31), keywords, description — claims-clean · Content Rights
-15. ⬜ Screenshots, all required device sizes (⚠ mind the black-void bug from the web deploy)
-16. ⬜ Age rating questionnaire
-18. ⬜ Confirm no paid-apps agreement / banking needed for a free v1
+14. ✅ Subtitle `Passive Parkinson's tracking`, keywords, description — claims-clean · Content Rights
+15. ✅ Screenshots, all required device sizes (⚠ iPhone Air captures **1260×2736**, not 1320×2868)
+16. ✅ Age rating questionnaire → 13+
+18. ✅ N/A — free app, no paid-apps agreement needed
 
-**Tally Aug 1:** 13 of 19 done, **6 open** — 5 ASC forms + the submit. (Jul 31 read 9 done / 9 open;
-Aug 1 closed the restore test, the Release watch-sync test, and the §1.4.1 copy read.)
+**Tally Aug 4:** **19 of 19 done, 0 open.** Submitted Aug 1. Only post-approval item 21 remains.
+(Jul 31 read 9 done / 9 open; Aug 1 read 13/6 mid-session and then closed the rest on screen.)
 
 **✅ Done Jul 30:** in-app medical disclaimer + reachable Privacy/Terms (Settings → About) ·
 Support URL live at `kampa.health/support` · marketing URL `kampa.health` · `support@kampa.health`
@@ -193,20 +199,20 @@ instruction, AI answer made forward-looking) · CSV export 92s → 12.4s · name
 ### Privacy (three separate things)
 - [x] Privacy policy URL live + accurate — `kampa.health/privacy.html`, incl. the Movement Disorder
   opt-out paragraph (verified live Aug 1). ⬜ One residual edit: the TestFlight-only wording.
-- [ ] Apple **App Privacy "nutrition label"** in App Store Connect filled out — distinct from the policy **(verify current fields)**
+- [x] Apple **App Privacy "nutrition label"** in App Store Connect — **Data Not Collected**, published Aug 1
 - [x] HealthKit App Review rules §5.1.3 — policy states no advertising/marketing use, no third-party disclosure, no analytics or tracking SDKs
 
 ### App Store Connect mechanics
 - [x] Category — Health & Fitness (set Jul 31; Medical deliberately avoided — more scrutiny)
-- [ ] Name, subtitle, keywords, description — claims-clean (name reserved; subtitle confirmed EMPTY)
-- [ ] Screenshots — **TWO required classes**: iPhone 6.9" (1320×2868) **and Apple Watch** (mandatory
-  because a Watch app ships; one model size, consistent across localizations). 1–10 each, no alpha.
-  Mind the black-void screenshot bug from the web deploy.
-- [ ] Age rating questionnaire — new 4+/9+/13+/16+/18+ tiers; medical question → **Infrequent/Mild**
-- [ ] ⭐ Regulated medical device status → **No** (new gate for Health & Fitness apps, see item 20)
+- [x] Name, subtitle, keywords, description — subtitle `Passive Parkinson's tracking`
+- [x] Screenshots — **TWO required classes**: iPhone 6.9" **and Apple Watch** (mandatory because a
+  Watch app ships). ⚠️ iPhone Air captures **1260×2736** and the 6.9" slot accepts it natively —
+  upload originals, never upscale.
+- [x] Age rating questionnaire → **13+**; medical question → **Infrequent**
+- [x] ⭐ Regulated medical device status → **No** (new gate for Health & Fitness apps, see item 20)
 - [x] Support URL + marketing URL — `kampa.health/support` + `kampa.health`, both live
 - [x] Export-compliance / encryption declaration — `ITSAppUsesNonExemptEncryption = false` in **both** plists, so ASC won't prompt
-- [ ] Free app: confirm no paid-apps agreement / banking needed for v1
+- [x] Free app: no paid-apps agreement / banking needed for v1
 
 ---
 

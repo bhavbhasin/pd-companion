@@ -1,0 +1,217 @@
+# Movement checks: a standardized measurement the passive record cannot take
+
+**Status:** DESIGNED Aug 4 2026, not built. Originated with tester John S, who asked for bradykinesia
+measurement and pointed at the SteadyHands app and "hand rotation, typical neurologist tests."
+
+**One line:** a short, user-initiated movement trial behind the `+` sheet, reporting raw physical
+quantities against the user's own usual range — never a score, never a verdict, never a clinical grade.
+
+---
+
+## Why this earns an exception to the no-active-tests rule
+
+BACKLOG's bradykinesia entry carries a hard line: **"NO active assessment tasks — collides with the
+ambient/zero-burden principle."** This design narrows that line rather than deleting it. The principle
+was always that Kampa must never *require* effort; it was never that a user may not reach for a tool.
+Behind `+`, nothing nags: no streak, no badge, no daily prompt. A user who never taps it never learns
+it exists.
+
+⇒ **Amend the BACKLOG line to: no active task may be required, scheduled, streaked, or scored.**
+
+### Why only bradykinesia, and ⛔ never tremor
+
+SteadyHands' four tests (virtual glass of water, shape tracing, photo of a drawing, dot touching) are
+**all tremor**, and Kampa already measures tremor ~1,351×/day passively. A once-daily 30-second sample
+is a worse instrument for something already held continuously — and worse than redundant, it builds a
+**contradiction surface**: the test reads steady, the passive record shows the hand shaking, and the
+user has to decide which to believe. The Parkinson's UK panel reported exactly that failure (a
+reviewer scored 10/10 "perfect" while visibly shaking). ⛔ Do not build a tremor check.
+
+Bradykinesia is the opposite case: **no passive stream exists.** Apple's Movement Disorder API does not
+provide it, and gait only reaches lower-limb slowness. Redundancy is the objection to an active test,
+and here the objection does not apply.
+
+---
+
+## What ships
+
+### Naming: **"Movement check"**
+
+Not a preference — it decides what is built, the same way "Therapy" did in `therapy-logging.md`.
+
+- ⛔ **"Test"** implies a grade and something to fail. The first question it invites is *"did I pass?"*,
+  which is the question this surface must never answer.
+- ⛔ **"Tap test"** locks the category to one instrument before the second one is designed.
+- ✅ **"Check"** implies a reading taken, not a grade awarded. **"Movement"** is the honest category
+  and the patient-facing word — it also matches the vocabulary Apple already put on screen.
+
+### The `+` sheet
+
+One new `LogEntrySheet.Destination` case beside `.food` / `.mindfulness` / `.symptom` (and `.therapy`).
+
+### The tests — ⭐ ONE in v1
+
+| test | neurologist analogue | instrument | ships |
+|---|---|---|---|
+| **Alternating tap** — two targets, 10 s | UPDRS 3.4 finger tapping | screen touch timestamps | ✅ **v1** |
+| **Hand rotation** — hold the phone, rotate the wrist, 10 s | UPDRS 3.6 pronation/supination | gyroscope | ⬜ later |
+
+**Start with the tap alone.** Touch timing is exact and needs no sensor calibration; rotation amplitude
+needs a defensible unit and is the harder measurement to make honest. One test also keeps the
+practice-effect baseline (below) readable while it is being established.
+
+#### ⏸ Hand rotation — PARKED Aug 4 2026, and the reason is a decision rule, not a preference
+
+⭐ **One watch measures one wrist.** The Watch is the better instrument in principle — it sits on the
+rotating segment, it is already worn, and nothing has to be gripped. But Kampa's onboarding puts it on
+the **more-affected** wrist, so a Watch-based rotation check can never produce the less-affected
+control arm that the both-hands decision above depends on. The phone version can (hold and rotate each
+hand in turn) but changes the movement it measures: added mass, a grip, and a real drop risk for
+someone rotating fast with a tremor. ⛔ Mixing them — watch on one wrist, phone in the other hand — is
+two instruments and not comparable.
+
+⇒ **The choice is settled by an empirical question that cannot be answered yet:** does the
+**gap between hands** carry signal in the tap data? If it does, both hands are mandatory and the Watch
+is disqualified for this test. If it does not, the Watch wins outright. **Ship the tap, look at the
+gap, then design rotation.**
+
+⚠️ **Two facts to verify on-device before any rotation design, not to assume:**
+1. The watchOS floor is **10.0** (`project.pbxproj`) ⇒ Series 4 and later, all of which carry
+   gyroscope hardware. But raw gyro access on watchOS is not a given — a developer report has
+   `isGyroAvailable` returning **false** on a Series 6 while the accelerometer returned true. The
+   supported path is `CMDeviceMotion` (`rotationRate` + `attitude`), **not** `startGyroUpdates`. A
+   20-minute device check settles it.
+2. The Watch app today uses **only** `CMMovementDisorderManager` — no raw motion anywhere in the
+   target. This is new ground there, and it adds an interactive Watch surface plus a new
+   WatchConnectivity stream. ⚠️ The last new stream (build 6's full tremor distribution) is what
+   caused the build-9 sync failure — see `watch-sync-payload-options.md`.
+
+### ⭐ Both hands, every session — DECIDED Aug 4 2026
+
+PD bradykinesia is **asymmetric**, so the two hands are the comparison. Bhav's call, and it matches the
+validated protocol, which tested each hand separately. **The less-affected hand is the control arm** —
+the one thing this design otherwise lacks. A slow day shows in both hands; disease progression or a
+dose wearing off shows as the *gap between them* widening. That comparison is free, needs no
+population norm, and is the only internal control available.
+
+Every trial stores which hand; usual range, history and trend are all **per hand**. Same class of
+decision as picking the more-affected wrist at onboarding — get it wrong and everything downstream is
+quietly wrong.
+
+### ⚠️ Posture is fixed and stated once
+
+Phone flat on a table, tap with the index finger, same every time. A trial taken with the phone in the
+other hand is not comparable to one taken on a table, and the app cannot tell the difference. The
+instruction line is part of the measurement, not UI copy.
+
+### Protocol — taken from the validated study, not invented
+
+⚠️ **Corrected Aug 4 2026 after reading the literature.** The first draft of this doc asserted "10 s is
+the common digital-tapping convention" as an assumption and starred **decrement** as the quantity that
+mattered. Both needed checking; one was wrong.
+
+| | this design | source |
+|---|---|---|
+| duration | **10 s** | [Lee et al., PLOS One 2016](https://journals.plos.org/plosone/article?id=10.1371%2Fjournal.pone.0158852) — validated against UPDRS. ⚠️ [mPower](https://www.nature.com/articles/s41598-022-06572-2) uses **20 s**; both exist, 10 s is the one validated against bradykinesia subscores |
+| targets | two rectangles, 30 × 45 mm, 15 mm apart | same |
+| finger | single index finger | same (mPower uses two fingers of one hand) |
+| phone | flat on a surface | mPower states it explicitly |
+| hands | **both, separately** | same — and it is what gives the asymmetry baseline |
+| trials | **1 per hand** (study used 3, averaged) | ⚠️ **declared deviation** — 3 per hand is 6 trials a session and becomes the burden this design exists to avoid. Costs precision; say so rather than hide it |
+
+### What a trial reports — no score
+
+⛔ **Decrement is NOT the headline. Corrected.** The validation study *"failed to find parameters that
+reflected fatigue (decrement response)"* — their variance measures did not separate PD from controls on
+a phone. Decrement is what a neurologist watches for by eye, and it is apparently the thing a
+touchscreen is worst at. It is free to store once the timestamps exist, so **store it, don't lead with
+it, and claim nothing for it.**
+
+| quantity | why |
+|---|---|
+| ⭐ **taps in 10 s** | *"correlated highest with bradykinesia"* of every measure tested. The simplest number is the one that works |
+| **total finger travel** | AUC **0.92** — the strongest discriminator in the study after tap count |
+| **inter-tap dwelling time** | significant discriminative power; the pause, not the movement |
+| *(decrement, stored only)* | no evidence it works on a phone. Recorded for later, shown nowhere |
+
+Each sits beside **the user's own usual range**, reusing the `p10`/`p90` band shipped in `e0ec548`,
+and every range is **per hand**:
+
+```
+LEFT     42 taps          your usual lately 38 - 47
+         travel 1.9 m     your usual lately 1.7 - 2.2 m
+         pause 41 ms      your usual lately 33 - 52 ms
+
+RIGHT    51 taps          your usual lately 47 - 55
+         travel 2.3 m     your usual lately 2.1 - 2.5 m
+         pause 28 ms      your usual lately 24 - 33 ms
+```
+
+⛔ **No 1-10 score, no cross-person norm, no UPDRS number, no verdict.** Same grammar as every other
+surface in the app. Cold start: withhold the range and say what is still needed, per
+`insights-card-confidence-redesign.md` — never print a range built on two trials.
+
+### Where medication shows up
+
+**v1: as a fact on the row, never a comparison.** Each result and history row prints the trial's
+position in the dose cycle, which the record already knows:
+
+```
+14:47   left hand   4.2 taps/sec   ·   2h 10m after your 12:37 Sinemet
+```
+
+Trials also appear as events on the day timeline, so they sit against the same dose markers as
+everything else and the eye can do the work.
+
+⛔ **No before/after verdict in v1**, inheriting the rule from `therapy-logging.md` verbatim: no effect
+answer, no confidence tier, no recommendation. The confounds here are *worse* than therapy's, and there
+are two:
+
+1. **Selection.** This is the first Kampa surface where a user can generate a measurement on demand —
+   so they will generate one when they notice something. The window is chosen for being unusual.
+2. ⚠️ **Practice.** People get measurably faster at tapping over the first weeks regardless of
+   medication. Early "improvement" is learning, not levodopa. ⇒ **The onboarding line for this feature
+   must say so**, and any later effect analysis must model it or be wrong in the flattering direction.
+
+**v2 (not v1): paired trials around a single dose.** The user opts into *one* pairing — a trial now,
+an offer of a second at +90 min — and the two are shown side by side as two facts. One opt-in pairing,
+never a standing schedule; a standing schedule is the streak mechanic through a side door.
+
+### Trend and history
+
+⛔ **Not a glance tile and not a Day-in-Review panel.** A movement check is sparser than gait, which was
+already parked for a daily panel because it has no honest daily shape (`trend-surface-design`).
+
+✅ It lives **inside the feature**: a history list and a trend reachable from the result screen and from
+the `+` entry. One point per trial, timestamped, **split by hand and by test type**. Reuse
+`TrendChart` and the scrolling detail-sheet work from `3530adc` — range is the window width, the
+y-domain fits the whole series, and it already pans through the entire record.
+
+### Storage
+
+New SwiftData `@Model`, CloudKit-synced, additive Production schema deploy. No HealthKit type exists,
+so it lives entirely in Kampa's store — always editable.
+
+> ⚠️ **The new `@Model` joins `CSVBackupExporter`, `cleanupDuplicates` and `SupportDiagnostics` in the
+> SAME commit.** `DyskinesiaReading` missed all three for a month (`73ee63a`).
+
+---
+
+## Closed Aug 4 2026
+
+- ✅ **Trial length = 10 s**, from the PLOS validation protocol. See the protocol table.
+- ✅ **Decrement statistic — moot.** Demoted; the study found no phone-measurable decrement parameter.
+  Store it, show nothing.
+- ✅ **Both hands per session.** The less-affected hand is the control arm.
+- ✅ **Lever-audit matrix — NO, deliberately outside it.** The matrix inventories *levers*: things that
+  plausibly move the symptoms and that a user could change. A movement check changes nothing — it is a
+  **ruler, not a lever**. Adding it makes the matrix mean two things at once and blunts the capture-gap
+  question it exists to answer. (Therapy logging is the opposite case and *does* belong: a therapy is
+  something the user does to feel better.)
+
+## Open
+
+- **Cold-start range.** How many trials per hand before a usual range is honest? Unmeasured, and there
+  is no reason to guess — it is answerable from the first weeks of real trials.
+- **What a re-test right after a bad trial does to the record.** A user who dislikes a result will tap
+  again. That is the selection effect operating within a single minute.
