@@ -310,6 +310,11 @@ private struct TapCaptureView: View {
         // A tick per count, because during the pre-roll your eyes belong on the boxes and your
         // finger on the glass — not on a number at the top of the screen.
         .sensoryFeedback(.selection, trigger: countdown)
+        // Same grammar as rotation: firm impact = GO, success pattern = STOP. Your eyes are on
+        // the targets, not on the countdown, so the trial's start and end are announced by
+        // touch rather than only by a number changing at the top of the screen.
+        .sensoryFeedback(.impact(weight: .heavy), trigger: started)
+        .sensoryFeedback(.success, trigger: justFinished)
         // ⚠️ **The dead-taps bug, device-found.** `+` opens as a `.sheet`, and a sheet's own
         // interactive drag-to-dismiss is a second, SYSTEM-level gesture recognizer sitting
         // on top of everything in it. A tap made with a tremor carries a little unintended

@@ -109,30 +109,44 @@ struct LogRotationScreen: View {
     /// turn it over" is three things to get right at once, and this is the one test where doing
     /// it wrong yields a plausible-looking wrong number rather than an obvious failure.
     ///
-    /// ⛔ **Rotates about z (in the plane of the screen), NOT about y.** The first attempt spun
-    /// an `iphone` glyph about its vertical axis, which reads as a phone turning like a
-    /// revolving door — the wrong movement, with no hand and no context. With the arm pointing
-    /// away from you, the forearm's rotation axis points INTO the screen, so an in-plane
-    /// rotation is the honest depiction: the phone starts above the palm and ends below it.
+    /// ⛔ **Two earlier attempts were rejected on device.** v1 spun
+    /// an `iphone` glyph about its vertical axis — "rotating on a swivel", no hand, no context.
+    /// v2 added a palm but read as a blob. This is v3: a SIDE view — forearm, flat open hand, and
+    /// the phone resting on it — flipped about the forearm axis, so the phone visibly swings from
+    /// above the hand to below it, plus circular arrows at the wrist naming the movement outright.
     /// Drawn here rather than shipped as a video — no asset to host, works offline, follows
     /// light and dark for free, and it keeps the "no video inside the app" decision intact.
     private var demoIllustration: some View {
-        ZStack {
+        HStack(spacing: 0) {
+            // Forearm, so the picture reads as an OUTSTRETCHED arm seen from the side rather
+            // than a floating object. The arm is what makes "arm out in front" legible.
             Capsule()
-                .fill(RotationStyle.tint.opacity(0.22))
-                .frame(width: 96, height: 46)
-            RoundedRectangle(cornerRadius: 6)
-                .fill(RotationStyle.tint)
-                .frame(width: 36, height: 64)
-                .overlay(
+                .fill(RotationStyle.tint.opacity(0.28))
+                .frame(width: 66, height: 20)
+            ZStack {
+                VStack(spacing: 2) {
+                    // The phone, resting ON the flat hand — not gripped.
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(Color(.systemBackground).opacity(0.9))
-                        .frame(width: 26, height: 50)
-                )
-                .offset(y: -16)
+                        .fill(RotationStyle.tint)
+                        .frame(width: 26, height: 44)
+                    // The flat, open hand.
+                    Capsule()
+                        .fill(RotationStyle.tint.opacity(0.55))
+                        .frame(width: 42, height: 15)
+                }
+                .rotation3DEffect(.degrees(demoFlipped ? 180 : 0),
+                                  axis: (x: 1, y: 0, z: 0), perspective: 0.45)
+                .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true),
+                           value: demoFlipped)
+            }
+            .offset(x: -4)
+            // Circular arrows at the wrist name the movement outright, so the picture doesn't
+            // have to carry the whole idea on its own.
+            Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(RotationStyle.tint.opacity(0.8))
+                .offset(x: 4, y: 26)
         }
-        .rotationEffect(.degrees(demoFlipped ? 180 : 0))
-        .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: demoFlipped)
         .frame(height: 110)
         .accessibilityHidden(true)
         .onAppear { demoFlipped = true }
@@ -199,6 +213,8 @@ private struct RotationCaptureView: View {
     @State private var remaining: TimeInterval = RotationStyle.trialDuration
     @State private var startDate: Date = .now
     @State private var captureTask: Task<Void, Never>?
+    /// True for a beat after the 10 s ends, so the finish haptic has something to fire on.
+    @State private var justFinished = false
     /// Holds the live device roll, purely so the screen visibly responds while you rotate.
     /// ⚠️ Feedback is not decoration here: the tapping screen's worst device-test round was
     /// "nothing seems to be happening", and this test gives even less inherent feedback because
@@ -253,6 +269,10 @@ private struct RotationCaptureView: View {
                 .padding(.bottom, 8)
         }
         .sensoryFeedback(.selection, trigger: countdown)
+        // Distinct from the countdown ticks on purpose: a firm impact means GO, a success
+        // pattern means STOP. Two different sensations, so neither has to be counted.
+        .sensoryFeedback(.impact(weight: .heavy), trigger: started)
+        .sensoryFeedback(.success, trigger: justFinished)
         .onDisappear {
             captureTask?.cancel()
             recorder.stop()
@@ -303,6 +323,13 @@ private struct RotationCaptureView: View {
             if elapsed >= RotationStyle.trialDuration { break }
             try? await Task.sleep(for: .milliseconds(50))
         }
+        guard !Task.isCancelled else { return }
+        // ⭐ A beat between the clock ending and the screen changing, so the finish haptic has
+        // something to fire on. On this test you are holding the phone at arm's length with
+        // your palm turning over — you genuinely cannot see the countdown, so touch is the
+        // ONLY channel that can tell you when to stop.
+        withAnimation(.snappy) { justFinished = true }
+        try? await Task.sleep(for: .milliseconds(700))
         guard !Task.isCancelled else { return }
         let elapsed = Date.now.timeIntervalSince(startDate)
         let samples = recorder.finishTrial()
