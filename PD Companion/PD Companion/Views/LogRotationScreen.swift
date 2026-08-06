@@ -136,7 +136,12 @@ struct LogRotationScreen: View {
             // CLASPED, fingers over the far edge, and the artwork is the one that's right:
             // Roche's protocol says hold, a grip is what stops the phone leaving your hand at
             // arm's length, and it's what he actually did on video. Copy follows the art.
-            Text("Hold the phone flat against your palm, arm out in front. Turn it over and back, as fast and as fully as you can - 10 seconds each hand.")
+            // ⚠️ "palm up and palm down", NOT "over and back". One vocabulary across the whole
+            // feature: it is what `MovementCheckChooser` already says, and it is the wording
+            // MDS-UPDRS 3.6 itself uses ("turn the palm up and down alternately"). This screen
+            // is the only place the SHAPE of the movement is described in words — the Ready
+            // screen deliberately no longer restates it.
+            Text("Hold the phone flat against your palm, arm out in front. Turn it palm up and palm down, as fast and as fully as you can - 10 seconds each hand.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 32)
@@ -209,9 +214,22 @@ private struct RotationCaptureView: View {
                     .contentTransition(.numericText())
                     .animation(.snappy, value: remaining)
                     .animation(.snappy, value: countdown)
+                // ⭐ **Deliberately NOT a restatement of the instructions screen.** What repeats
+                // does so because it has to hold at the instant of action: the posture (the
+                // outstretched arm IS the validated posture) and the effort. What was dropped is
+                // the SHAPE of the movement — "palm up and palm down" is owned by the
+                // instructions screen and the animation, and by here it has been both read and
+                // watched.
+                // ⚠️ "and as fully" is not padding. `RotationMetrics.meanSweepDegrees` scores
+                // amplitude SEPARATELY from speed, exactly as MDS-UPDRS does, so a fast shallow
+                // flip is a different measurement from a fast full one. This screen used to ask
+                // only for speed.
+                // ⚠️ "Only your forearm moves" is the one instruction added here and nowhere
+                // else: it belongs next to "as fast as you can", which is the thing that
+                // provokes whole-arm swinging in the first place.
                 Text(started
                      ? "Keep turning."
-                     : "Hold the phone flat on your \(hand.displayName.lowercased()) palm, arm out in front. Turn it palm up and palm down as fast as you can.")
+                     : "Hold the phone flat on your \(hand.displayName.lowercased()) palm, arm out in front. Turn it as fast and as fully as you can - only your forearm moves.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
