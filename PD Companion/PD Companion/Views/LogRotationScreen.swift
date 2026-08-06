@@ -18,6 +18,20 @@ enum RotationStyle {
     /// 100 Hz is CoreMotion's practical ceiling for device motion and ~20x the fastest
     /// plausible rotation rhythm, so reversals are located to within a sample or two.
     static let sampleRate: Double = 100
+
+    // MARK: Illustration palette
+    //
+    // ⭐ Anchored to `tint` on purpose — the whole family is the same teal the rest of the
+    // Rotation surfaces use (glyph, buttons, charts, timeline marker), so the demo belongs to
+    // the feature rather than looking like imported artwork. `accent` IS `tint`; the rest are
+    // its shades. ⛔ Not the comp's Tailwind cyan.
+    static let limb = Color(red: 0.055, green: 0.431, blue: 0.471)
+    static let limbShade = Color(red: 0.039, green: 0.333, blue: 0.369)
+    static let phoneBody = Color(red: 0.906, green: 0.957, blue: 0.965)
+    static let phoneBack = Color(red: 0.776, green: 0.867, blue: 0.886)
+    static let phoneGlass = Color(red: 0.031, green: 0.204, blue: 0.231)
+    static let phoneEdge = Color(red: 0.706, green: 0.808, blue: 0.831)
+    static let phoneEdgeBack = Color(red: 0.616, green: 0.733, blue: 0.761)
 }
 
 struct LogRotationScreen: View {
@@ -35,8 +49,6 @@ struct LogRotationScreen: View {
     @State private var leftTrial: RotationTrial?
     @State private var rightTrial: RotationTrial?
     @State private var showHistory = false
-    /// Drives the looping demo on the instructions screen.
-    @State private var demoFlipped = false
     /// Which hand this session starts with — see `firstHandForThisSession`.
     @State private var firstHand: MovementCheckHand = .left
 
@@ -105,69 +117,21 @@ struct LogRotationScreen: View {
         }
     }
 
-    /// ⭐ The instruction is DEMONSTRATED, not just described.
-    ///
-    /// ⚠️ **Four attempts; three failed on device, and the reason each failed is the useful part.**
-    /// v1 spun an `iphone` SF Symbol about its vertical axis — the outline looks identical front
-    /// and back, so nothing told you the screen had turned over and it read as "rotating on a
-    /// swivel". v2 added a drawn palm, which read as a blob. v3 was a side view with a forearm,
-    /// which was worse still. v4 is his own call: **just the phone**, and the fix v1 was missing —
-    /// the two FACES are drawn differently. A bright screen goes away, a plain back with a camera
-    /// dot arrives, so "screen was facing up, now it's facing down" is legible rather than implied.
-    /// ⛔ If this still doesn't land, stop adding primitives: the answer is two drawn frames
-    /// crossfading, which is artwork, not code.
-    private var demoIllustration: some View {
-        ZStack {
-            // BACK of the phone — plain, with a camera dot. Visible only once it has turned over.
-            RoundedRectangle(cornerRadius: 9)
-                .fill(RotationStyle.tint.opacity(0.45))
-                .overlay(alignment: .topTrailing) {
-                    Circle()
-                        .fill(Color(.systemBackground).opacity(0.55))
-                        .frame(width: 9, height: 9)
-                        .padding(8)
-                }
-                .opacity(demoFlipped ? 1 : 0)
-
-            // FRONT — an unmistakable screen: bright display panel and a speaker slot.
-            RoundedRectangle(cornerRadius: 9)
-                .fill(RotationStyle.tint)
-                .overlay {
-                    VStack(spacing: 4) {
-                        Capsule()
-                            .fill(Color(.systemBackground).opacity(0.5))
-                            .frame(width: 14, height: 3)
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(Color(.systemBackground).opacity(0.92))
-                            .frame(width: 40, height: 74)
-                    }
-                    .padding(.top, 4)
-                }
-                .opacity(demoFlipped ? 0 : 1)
-        }
-        .frame(width: 54, height: 96)
-        // ⭐ Rotates about the phone's LONG axis — the axis your forearm actually turns about
-        // when the phone lies flat on your palm. Perspective makes it read as flipping on its
-        // edge rather than sliding.
-        .rotation3DEffect(.degrees(demoFlipped ? 180 : 0),
-                          axis: (x: 0, y: 1, z: 0), perspective: 0.55)
-        .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: demoFlipped)
-        .frame(height: 120)
-        .accessibilityHidden(true)
-        .onAppear { demoFlipped = true }
-    }
-
     private var instructions: some View {
         VStack(spacing: 20) {
             Spacer()
-            demoIllustration
+            RotationDemoIllustration(width: 300)
             Text("Rotation")
                 .font(.title2.weight(.semibold))
             // ⚠️ Part of the measurement, not UI copy: the outstretched arm IS the validated
             // posture, and a trial taken with the elbow tucked in isn't comparable to one
             // taken properly. Stated every session — but tightened, because the animation
             // above now carries the shape of the movement and the words don't have to.
-            Text("Rest the phone flat on your open palm, arm out in front. Turn it over and back, as fast and as fully as you can - 10 seconds each hand.")
+            // ⚠️ "Hold", not "rest on your open palm" — the illustration shows the phone
+            // CLASPED, fingers over the far edge, and the artwork is the one that's right:
+            // Roche's protocol says hold, a grip is what stops the phone leaving your hand at
+            // arm's length, and it's what he actually did on video. Copy follows the art.
+            Text("Hold the phone flat against your palm, arm out in front. Turn it over and back, as fast and as fully as you can - 10 seconds each hand.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 32)
