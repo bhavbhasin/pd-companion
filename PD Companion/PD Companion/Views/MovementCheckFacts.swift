@@ -26,34 +26,35 @@ struct MovementCheckMatrix: View {
     /// anchored to the same dose, so printing it twice made one fact look like two (and they
     /// could differ by a minute, which made it look like a discrepancy).
     let doseFact: String?
-    /// The result screen defines its terms; the detail sheet doesn't. A definition earns its
-    /// space at first contact, right after you've tapped — on a surface you reach by tapping
-    /// a glyph on a chart weeks later, it's the thing pushing the numbers off screen.
-    var showsDefinitions: Bool = false
+    // ⛔ There is no `showsDefinitions` flag any more. Whether a word needs defining is a
+    // property of the WORD, not of the screen you happen to be reading it on — a per-surface
+    // toggle just meant the same number was explained in one place and cryptic in another.
+    // One line, everywhere, from `MovementCheckCopy` so it cannot drift.
 
-    /// ⛔ **Pause was here and was removed Aug 5 2026 — do not add it back.** It is
-    /// `(last - first) / (n - 1)`: the tap rate inverted, so it restates the Taps row in a
-    /// different unit. The matrix was showing one measurement three times.
+    /// ⛔ **Two rows. Pause and Travel were both here and were both removed — do not add
+    /// either back as a displayed metric.** Both are near-restatements of the tap count:
+    /// pause is `(last - first) / (n - 1)`, the rate inverted; and with the targets at fixed
+    /// positions, travel is close to (crossings x a constant). Three rows meant showing one
+    /// measurement three times, and travel was the row that made a reader ask "my finger moved
+    /// 2.4 metres?" while adding the least. Both are still computed and still exported.
     ///
     /// ⚠️ **Spread is not a grade** — hence the name. "Accuracy" reads as pass/fail, and this
     /// feature never answers that. It is a distance: how far taps landed from the middle of
-    /// the box, on average. It earns its row by being free to vary when the tap count doesn't,
-    /// ⛔ NOT by being validated — the PLOS One study measured count, travel and dwell, not
-    /// this, and it carries its own confound (tap faster, land sloppier).
+    /// the box, on average. It earns its row by being the one recorded quantity free to vary
+    /// when the tap count doesn't, ⛔ NOT by being validated — the PLOS One study measured
+    /// count, travel and dwell, and it carries its own confound (tap faster, land sloppier).
     private enum Metric: CaseIterable {
-        case taps, travel, spread
+        case taps, spread
         var label: String {
             switch self {
             case .taps:   "Taps"
-            case .travel: "Travel"
             case .spread: "Spread"
             }
         }
         var definition: String? {
             switch self {
             case .taps:   nil
-            case .travel: "Travel is how far your finger moved on screen, tap to tap."
-            case .spread: "Spread is how far your taps landed from the middle of the box, on average."
+            case .spread: MovementCheckCopy.spreadDefinition
             }
         }
         /// `nil` where a trial can't answer — a trial captured before the app stored its
@@ -62,7 +63,6 @@ struct MovementCheckMatrix: View {
             let s = MovementCheckMetrics.summary(for: trial)
             switch self {
             case .taps:   return Double(s.tapCount)
-            case .travel: return s.travelMeters
             case .spread: return s.offTargetMM
             }
         }
@@ -70,7 +70,6 @@ struct MovementCheckMatrix: View {
             guard let value else { return "—" }
             switch self {
             case .taps:   return String(format: "%.0f", value)
-            case .travel: return String(format: "%.1f m", value)
             case .spread: return String(format: "%.0f mm", value)
             }
         }
@@ -97,15 +96,13 @@ struct MovementCheckMatrix: View {
                 Text(doseFact).font(.caption).foregroundStyle(.secondary)
             }
 
-            if showsDefinitions {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Metric.allCases.compactMap(\.definition), id: \.self) { line in
-                        Text(line)
-                    }
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Metric.allCases.compactMap(\.definition), id: \.self) { line in
+                    Text(line)
                 }
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
             }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
         }
     }
 
@@ -129,6 +126,15 @@ struct MovementCheckMatrix: View {
             }
         }
     }
+}
+
+/// Wording that has to read identically wherever a movement-check number appears.
+///
+/// ⭐ Defined once because a definition drifting between two screens is how "spread" ends up
+/// meaning slightly different things on the result screen and in history.
+enum MovementCheckCopy {
+    static let spreadDefinition =
+        "Spread is how far your taps landed from the middle of the box, on average."
 }
 
 /// Pure helpers shared by every screen that needs to place a trial in the dose cycle.

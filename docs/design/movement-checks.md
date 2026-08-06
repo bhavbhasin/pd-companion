@@ -180,16 +180,32 @@ for. One dose line for the session, not one per hand.
 
 ```
                     Left      Right
-Taps                  37         31
-Travel              1.6 m      1.4 m
-Spread               11 mm      14 mm
+Taps                  45         37
+Spread              5 mm      11 mm
 
-17h 24m after your 02:40 Sinemet
+Last dose was Sinemet at 2:40 AM, Aug 5
+Spread is how far your taps landed from the middle of the box, on average.
 ```
 
-⛔ **Pause was the third row and was removed Aug 5 2026. Do not put it back.** The matrix was
-showing one measurement three times: pause is the tap rate inverted, so it restated row 1 in a
-different unit. It is still computed, still exported, and displayed nowhere.
+⛔ **Pause and Travel were both rows here and were both removed Aug 5 2026. Do not put either
+back as a displayed metric.** Both restate the tap count: pause is the rate inverted, and with
+fixed targets travel is close to (crossings × a constant). The matrix was showing one measurement
+three times, and "Travel 2.4 m" invited "my finger moved two metres?" while adding the least. Both
+are still computed and still exported.
+
+⭐ **The displayed set is Taps + Spread, on EVERY surface** — matrix, result screen, history charts.
+Consistency here is structural, not a per-screen choice: there is one `Metric` enum per surface and
+both list the same two cases, and the definition sentence lives in `MovementCheckCopy` so it cannot
+drift between them. ⛔ There is no `showsDefinitions` flag any more — whether a word needs defining
+is a property of the word, not of the screen you meet it on.
+
+### Pre-roll: 3-2-1 before the clock starts
+
+⭐ **Protects the measurement, not just the nerves.** Starting the 10 s on the button press means
+the finger is still travelling to the first target while the clock runs, so the opening gap measures
+reaction time rather than tapping speed — and it rewards whoever felt least rushed. `startDate` is
+set when the pre-roll ends, taps are ignored until then (`started` is still false), and each count
+carries a haptic tick because during the pre-roll the eyes belong on the boxes, not on a number.
 ⚠️ **Spread is deliberately not called "accuracy"** — that reads as a grade, and this feature never
 issues one. It is a distance. It earns its row by being the one recorded quantity free to vary when
 the tap count doesn't; ⛔ it is NOT validated (the study measured count, travel and dwell) and it

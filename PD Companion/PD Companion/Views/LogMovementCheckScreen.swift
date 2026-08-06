@@ -194,6 +194,12 @@ private struct TapCaptureView: View {
     /// Which target just registered a tap, for the flash below. Cleared on a short timer —
     /// this is the ONLY per-tap feedback the trial gives, so it has to fire on every tap.
     @State private var flashTarget: Int?
+    /// 3, 2, 1 before the clock starts. ⭐ **Not just comfort — it protects the measurement.**
+    /// Starting the 10 s on the button press means the finger is still travelling to the first
+    /// target while the clock runs, so the opening gap measures reaction time, not tapping
+    /// speed, and it rewards whoever felt least rushed. The countdown gives everyone the same
+    /// standing start. Taps are ignored until it finishes (`started` is still false).
+    @State private var countdown: Int?
     /// The geometry the taps are being captured against, held so `finish()` can store it on
     /// the trial — without it the stored points can't be turned back into distances.
     @State private var capturedLayout: MovementCheckLayout?
@@ -214,11 +220,12 @@ private struct TapCaptureView: View {
                 VStack(spacing: 6) {
                     Text("\(hand.displayName) hand")
                         .font(.headline)
-                    Text(started ? String(format: "%.0f", remaining.rounded(.up)) : "Ready")
+                    Text(headline)
                         .font(.system(size: 34, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .contentTransition(.numericText())
                         .animation(.snappy, value: remaining)
+                        .animation(.snappy, value: countdown)
                     // ⚠️ Fixed after device testing: this used to say "left, then right,
                     // then left", which collided with "Left hand"/"Right hand" meaning a
                     // completely different thing (which physical hand you're using) — the
@@ -270,14 +277,14 @@ private struct TapCaptureView: View {
         // instead of racing it. The earlier bug: Start rendered flush against the bottom
         // edge and taps there were getting eaten by the system swipe-up gesture.
         .safeAreaInset(edge: .bottom) {
-            Button(started ? "Tapping…" : "Start") { begin() }
+            Button(actionLabel) { begin() }
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding()
-                .background(started ? Color.secondary.opacity(0.2) : MovementCheckStyle.tint,
+                .background(isBusy ? Color.secondary.opacity(0.2) : MovementCheckStyle.tint,
                             in: RoundedRectangle(cornerRadius: 14))
-                .foregroundStyle(started ? Color.secondary : Color.white)
-                .disabled(started)
+                .foregroundStyle(isBusy ? Color.secondary : Color.white)
+                .disabled(isBusy)
                 .padding(.horizontal)
                 .padding(.bottom, 8)
                 .background(.thinMaterial)
@@ -285,6 +292,9 @@ private struct TapCaptureView: View {
         // A tap changes `taps.count`, so this fires the SAME instant the target flashes —
         // sight and touch confirm the same event. iOS 17+ native haptic API, no UIKit needed.
         .sensoryFeedback(.impact(weight: .light), trigger: taps.count)
+        // A tick per count, because during the pre-roll your eyes belong on the boxes and your
+        // finger on the glass — not on a number at the top of the screen.
+        .sensoryFeedback(.selection, trigger: countdown)
         // ⚠️ **The dead-taps bug, device-found.** `+` opens as a `.sheet`, and a sheet's own
         // interactive drag-to-dismiss is a second, SYSTEM-level gesture recognizer sitting
         // on top of everything in it. A tap made with a tremor carries a little unintended
@@ -322,11 +332,13 @@ private struct TapCaptureView: View {
     private func targetView(index: Int, layout: MovementCheckLayout) -> some View {
         let flashing = flashTarget == index
         let rect = layout.rect(for: index)
+        // Keyed to `isBusy`, not `started`: the targets brighten as the countdown runs, which
+        // is when the user is looking for somewhere to put their finger.
         return RoundedRectangle(cornerRadius: 16)
-            .fill(MovementCheckStyle.tint.opacity(flashing ? 0.5 : (started ? 0.18 : 0.08)))
+            .fill(MovementCheckStyle.tint.opacity(flashing ? 0.5 : (isBusy ? 0.18 : 0.08)))
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .strokeBorder(MovementCheckStyle.tint.opacity(started ? 1 : 0.4), lineWidth: 2)
+                    .strokeBorder(MovementCheckStyle.tint.opacity(isBusy ? 1 : 0.4), lineWidth: 2)
             )
             .scaleEffect(flashing ? 0.96 : 1)
             .animation(.easeOut(duration: 0.12), value: flashing)
@@ -336,24 +348,52 @@ private struct TapCaptureView: View {
             .accessibilityLabel("Target \(index + 1)")
     }
 
+    /// What the big slot shows: the pre-roll count, then the trial clock, then "Ready" again.
+    private var headline: String {
+        if let countdown { return "\(countdown)" }
+        if started { return String(format: "%.0f", remaining.rounded(.up)) }
+        return "Ready"
+    }
+
+    private var actionLabel: String {
+        if started { return "Tapping…" }
+        if countdown != nil { return "Get ready…" }
+        return "Start"
+    }
+
+    /// Pre-roll counts as busy: pressing Start again mid-countdown would restart it.
+    private var isBusy: Bool { started || countdown != nil }
+
     private func begin() {
-        guard !started else { return }
+        guard !started, countdown == nil else { return }
+        captureTask = Task {
+            for n in stride(from: 3, through: 1, by: -1) {
+                countdown = n
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+            }
+            countdown = nil
+            await runTrial()
+        }
+    }
+
+    /// ⚠️ `startDate` is set HERE, after the pre-roll, not when the button was pressed — the
+    /// 10 s has to start when the user does.
+    private func runTrial() async {
         started = true
         taps = []
         startDate = .now
-        captureTask = Task {
-            while !Task.isCancelled {
-                let elapsed = Date.now.timeIntervalSince(startDate)
-                remaining = max(0, MovementCheckStyle.trialDuration - elapsed)
-                if elapsed >= MovementCheckStyle.trialDuration { break }
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-            guard !Task.isCancelled else { return }
-            withAnimation(.snappy) { justFinished = true }
-            try? await Task.sleep(for: .milliseconds(900))
-            guard !Task.isCancelled else { return }
-            finish()
+        while !Task.isCancelled {
+            let elapsed = Date.now.timeIntervalSince(startDate)
+            remaining = max(0, MovementCheckStyle.trialDuration - elapsed)
+            if elapsed >= MovementCheckStyle.trialDuration { break }
+            try? await Task.sleep(for: .milliseconds(100))
         }
+        guard !Task.isCancelled else { return }
+        withAnimation(.snappy) { justFinished = true }
+        try? await Task.sleep(for: .milliseconds(900))
+        guard !Task.isCancelled else { return }
+        finish()
     }
 
     private func register(at location: CGPoint, layout: MovementCheckLayout) {

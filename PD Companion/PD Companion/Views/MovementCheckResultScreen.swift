@@ -26,8 +26,7 @@ struct MovementCheckResultScreen: View {
                     // Anchored to the session, not to each hand: both trials are seconds
                     // apart and sit after the same dose.
                     doseFact: MovementCheckDoseFact.text(
-                        for: min(left.timestamp, right.timestamp), doses: recentDoses),
-                    showsDefinitions: true
+                        for: min(left.timestamp, right.timestamp), doses: recentDoses)
                 )
             }
 

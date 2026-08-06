@@ -34,19 +34,17 @@ struct MovementCheckHistoryScreen: View {
     @State private var sharedScroll: Date = .distantPast
 
     private enum Metric: String, CaseIterable, Identifiable {
-        case taps, travel, spread
+        case taps, spread
         var id: String { rawValue }
         var label: String {
             switch self {
             case .taps:   "Taps"
-            case .travel: "Travel"
             case .spread: "Spread"
             }
         }
         var unit: String {
             switch self {
             case .taps:   ""
-            case .travel: "m"
             case .spread: "mm"
             }
         }
@@ -54,8 +52,14 @@ struct MovementCheckHistoryScreen: View {
         var headerLabel: String {
             switch self {
             case .taps:   "taps per trial"
-            case .travel: "per trial"
             case .spread: "per trial"
+            }
+        }
+        /// Printed under the panel, matching the matrix word for word.
+        var definition: String? {
+            switch self {
+            case .taps:   nil
+            case .spread: MovementCheckCopy.spreadDefinition
             }
         }
         /// `nil` when the trial can't answer — travel needs the capture geometry, and a trial
@@ -64,14 +68,12 @@ struct MovementCheckHistoryScreen: View {
             let s = MovementCheckMetrics.summary(for: trial)
             switch self {
             case .taps:   return Double(s.tapCount)
-            case .travel: return s.travelMeters
             case .spread: return s.offTargetMM
             }
         }
         func valueText(_ value: Double) -> String {
             switch self {
             case .taps:   String(format: "%.0f", value)
-            case .travel: String(format: "%.1f m", value)
             case .spread: String(format: "%.0f mm", value)
             }
         }
@@ -129,18 +131,10 @@ struct MovementCheckHistoryScreen: View {
             }
 
             chartSection(.taps)
-            // Only once there is something to draw — travel needs the capture geometry, so a
-            // record that predates it has taps to plot and no travel, and an empty panel with
+            // Only once there is something to draw — spread needs the capture geometry, so a
+            // record that predates it has taps to plot and no spread, and an empty panel with
             // a title would read as a bug rather than as history.
-            if points(.travel).count >= 2 { chartSection(.travel) }
-
-            // Spread is a FACT here, not a chart — see the type doc for why it replaced pause
-            // and why it is deliberately not called accuracy.
-            if let latest = handTrials.last {
-                Section("Also recorded, most recent trial") {
-                    secondaryRow(.spread, latest: latest)
-                }
-            }
+            if points(.spread).count >= 2 { chartSection(.spread) }
 
             Section("History") {
                 if handTrials.isEmpty {
@@ -198,25 +192,10 @@ struct MovementCheckHistoryScreen: View {
             }
         } header: {
             Text(metric.label)
-        }
-    }
-
-    private func secondaryRow(_ metric: Metric, latest: MovementCheckTrial) -> some View {
-        let value = metric.value(for: latest)
-        let history = handTrials.dropLast().compactMap { metric.value(for: $0) }
-        let rangeText = MovementCheckMetrics.usualRange(history).map {
-            "\(metric.valueText($0.lo)) - \(metric.valueText($0.hi))"
-        }
-        return HStack {
-            Text(metric.label).foregroundStyle(.secondary)
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(value.map { metric.valueText($0) } ?? "—").font(.body.weight(.medium))
-                if let rangeText {
-                    Text("your usual lately \(rangeText)")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                }
-            }
+        } footer: {
+            // Same sentence the matrix prints, from the same constant — a word explained on
+            // one screen and cryptic on another is the drift this shares copy to avoid.
+            if let definition = metric.definition { Text(definition) }
         }
     }
 
