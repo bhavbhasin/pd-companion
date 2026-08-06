@@ -44,29 +44,33 @@ struct RotationDemoIllustration: View {
     }
 
     private func canvas(angle: Double) -> some View {
+        // ⚠️ **The WHOLE arm rotates, upper arm included.** The comp held the upper arm still
+        // and turned only the forearm, which is anatomically what pronation does — but on a flat
+        // 2D drawing it leaves a visible seam at the elbow where a moving shape meets a static
+        // one, and it reads as a mechanism rather than a limb. Rotating everything costs nothing
+        // visually: the upper arm is a rectangle centred on the rotation axis, so it barely
+        // changes shape — it just stops being a separate piece.
         ZStack(alignment: .topLeading) {
-            // Upper arm — stationary. The rotation happens below the elbow, which is what makes
-            // the movement read as forearm rotation rather than the whole limb swinging.
             UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 0,
                                    bottomTrailingRadius: 13, topTrailingRadius: 13)
                 .fill(RotationStyle.limb)
                 .frame(width: 75, height: 60)
                 .offset(x: 0, y: 80)
 
-            // Forearm + hand + phone: one rigid unit.
-            ZStack(alignment: .topLeading) {
-                frontFace.opacity(showsFront(angle) ? 1 : 0)
-                // Pre-flipped so its artwork lands right way up once the unit reaches 180°.
-                backFace
-                    .rotation3DEffect(.degrees(180), axis: (x: 1, y: 0, z: 0))
-                    .opacity(showsFront(angle) ? 0 : 1)
-            }
-            .rotation3DEffect(.degrees(angle), axis: (x: 1, y: 0, z: 0),
-                              anchor: UnitPoint(x: 0.17, y: 0.5), perspective: 0.35)
+            frontFace.opacity(showsFront(angle) ? 1 : 0)
+            // Pre-flipped so its artwork lands right way up once the arm reaches 180°.
+            backFace
+                .rotation3DEffect(.degrees(180), axis: (x: 1, y: 0, z: 0))
+                .opacity(showsFront(angle) ? 0 : 1)
         }
         .frame(width: Self.design.width, height: Self.design.height, alignment: .topLeading)
-        // A slight tilt, from the comp — it stops the arm reading as a technical diagram.
-        .rotationEffect(.degrees(-9))
+        // Anchored near the elbow rather than the centre: for an x-axis rotation the anchor's x
+        // only shapes the perspective, and putting it there makes the hand swing further than
+        // the upper arm — which is what a real arm does.
+        .rotation3DEffect(.degrees(angle), axis: (x: 1, y: 0, z: 0),
+                          anchor: UnitPoint(x: 0.17, y: 0.5), perspective: 0.35)
+        // ⛔ No tilt. The comp carried a -9° lean; he wants the arm dead horizontal, and it does
+        // read cleaner — the lean made it look like the arm was drifting upward.
         .scaleEffect(scale)
         .frame(width: width, height: Self.design.height * scale)
     }

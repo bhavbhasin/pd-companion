@@ -135,12 +135,15 @@ struct LogRotationScreen: View {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 32)
-            // ⚠️ Safety, and a real risk rather than boilerplate — this is the one test in the
-            // app that has you waving an unsecured phone around at arm's length. ⛔ The
+            // ⚠️ Posture, and it is part of the measurement rather than politeness: a trial
+            // taken standing or braced isn't comparable to one taken seated. ⚠️ This used to
+            // spell out the drop risk ("over your lap or a sofa, in case the phone slips") —
+            // his call to shorten it, so that warning is GONE, not moved. Reinstate it if a
+            // tester ever drops one. ⛔ The
             // practice-effect disclosure that used to sit here has MOVED to the result screen:
             // it exists to stop an improving number reading as a symptom change, so it belongs
             // where the numbers are, and two blocks of grey text before a test is one too many.
-            Text("Sit down first, over your lap or a sofa, in case the phone slips.")
+            Text("Be seated and comfortable.")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.tertiary)
