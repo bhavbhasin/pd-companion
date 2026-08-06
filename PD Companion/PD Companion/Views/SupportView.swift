@@ -36,6 +36,7 @@ struct SupportView: View {
         var food: (count: Int, first: Date?, last: Date?) = (0, nil, nil)
         var therapy: (count: Int, first: Date?, last: Date?) = (0, nil, nil)
         var movementCheck: (count: Int, first: Date?, last: Date?) = (0, nil, nil)
+        var rotation: (count: Int, first: Date?, last: Date?) = (0, nil, nil)
     }
 
     private var diagnostics: String {
@@ -57,7 +58,10 @@ struct SupportView: View {
             therapyLast: s.therapy.last,
             movementCheckCount: s.movementCheck.count,
             movementCheckFirst: s.movementCheck.first,
-            movementCheckLast: s.movementCheck.last
+            movementCheckLast: s.movementCheck.last,
+            rotationCount: s.rotation.count,
+            rotationFirst: s.rotation.first,
+            rotationLast: s.rotation.last
         )
     }
 
@@ -83,6 +87,7 @@ struct SupportView: View {
         s.food = span(FoodEvent.self, key: \.timestamp, sortBy: \.timestamp)
         s.therapy = span(TherapySession.self, key: \.start, sortBy: \.start)
         s.movementCheck = span(MovementCheckTrial.self, key: \.timestamp, sortBy: \.timestamp)
+        s.rotation = span(RotationTrial.self, key: \.timestamp, sortBy: \.timestamp)
         stats = s
     }
 
@@ -173,7 +178,10 @@ enum SupportDiagnostics {
         therapyLast: Date?,
         movementCheckCount: Int,
         movementCheckFirst: Date?,
-        movementCheckLast: Date?
+        movementCheckLast: Date?,
+        rotationCount: Int,
+        rotationFirst: Date?,
+        rotationLast: Date?
     ) -> String {
         var lines = [
             "Kampa \(versionAndBuild)",
@@ -194,7 +202,8 @@ enum SupportDiagnostics {
             "Therapy sessions: \(therapyCount)\(span(therapyFirst, therapyLast))",
             // Its own line for the same reason therapy has one: no HealthKit copy, so this
             // count is the only evidence if the stream goes missing.
-            "Movement checks: \(movementCheckCount)\(span(movementCheckFirst, movementCheckLast))"
+            "Tapping trials: \(movementCheckCount)\(span(movementCheckFirst, movementCheckLast))",
+            "Rotation trials: \(rotationCount)\(span(rotationFirst, rotationLast))"
         ]
         lines.append("Sent \(Self.timestampFormatter.string(from: Date()))")
         return lines.joined(separator: "\n")

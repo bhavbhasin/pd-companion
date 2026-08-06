@@ -23,6 +23,9 @@ struct LogEntrySheet: View {
     /// which is exactly the hand this feature exists to measure honestly. A full-screen cover
     /// has no drag-to-dismiss gesture at all, so there is nothing left to compete with the tap.
     @State private var showMovementCheck = false
+    /// Same full-screen-cover reasoning as tapping: a measurement screen is the root of its own
+    /// stack, not a page inside this sheet.
+    @State private var showRotation = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -55,18 +58,28 @@ struct LogEntrySheet: View {
                     // the examples are a hint at the category, not an inventory of it.
                     title: "Therapy", subtitle: "Acupuncture, PEMF, etc."
                 ) { path.append(.therapy) }
-                // "Movement check", never "Test" — a test implies a grade and invites "did I
-                // pass?", which this surface must never answer. See
-                // docs/design/movement-checks.md.
+            }
+            // ⭐ The category became a real SECTION the moment a second instrument existed.
+            // "Movement check", never "Test" — a test implies a grade and invites "did I
+            // pass?", which these surfaces must never answer. See
+            // docs/design/movement-checks.md.
+            //
+            // ⛔ Deliberately two rows under a header rather than a chooser screen: each test
+            // has to open as the ROOT of its own full-screen cover. That is what removes the
+            // sheet's drag-to-dismiss gesture (which was silently eating taps on the
+            // tremor-affected hand) and what makes each screen's single explicit "Cancel"
+            // correct. Pushing them inside a chooser would hand both back a second exit.
+            Section("Movement check") {
                 menuRow(
                     icon: MovementCheckStyle.timelineSymbol, iconBg: MovementCheckStyle.tint.opacity(0.15),
                     iconColor: MovementCheckStyle.tint,
-                    // ⚠️ The subtitle names the tests that EXIST. "Tapping, Rotation" was
-                    // considered and held back — rotation is parked pending whether the
-                    // between-hands gap carries signal, and listing it here would promise a
-                    // screen that isn't there. Add it to this line on the day it ships.
-                    title: "Movement check", subtitle: "Tapping"
+                    title: "Tapping", subtitle: "Alternating taps, both hands"
                 ) { showMovementCheck = true }
+                menuRow(
+                    icon: RotationStyle.timelineSymbol, iconBg: RotationStyle.tint.opacity(0.15),
+                    iconColor: RotationStyle.tint,
+                    title: "Rotation", subtitle: "Turning your hand over, both hands"
+                ) { showRotation = true }
             }
             .listStyle(.insetGrouped)
             .alert("Logging your medications", isPresented: $showMedInfo) {
@@ -85,6 +98,15 @@ struct LogEntrySheet: View {
                 NavigationStack {
                     LogMovementCheckScreen { date in
                         showMovementCheck = false
+                        onLogged(date)
+                        dismiss()
+                    }
+                }
+            }
+            .fullScreenCover(isPresented: $showRotation) {
+                NavigationStack {
+                    LogRotationScreen { date in
+                        showRotation = false
                         onLogged(date)
                         dismiss()
                     }

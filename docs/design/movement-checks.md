@@ -211,6 +211,48 @@ issues one. It is a distance. It earns its row by being the one recorded quantit
 the tap count doesn't; ⛔ it is NOT validated (the study measured count, travel and dwell) and it
 carries its own confound: tap faster, land sloppier.
 
+## Rotation (pronation-supination) — BUILT Aug 6 2026
+
+⭐ **Better validated than Tapping, which we built first.** CloudUPDRS ran 16 smartphone subtests
+against the same blinded raters: pronation/supination predicted its MDS-UPDRS subitem at **74.6% /
+73.0%**, finger tapping at **53.2% / 62.9%**. Full evidence, citations and the rest of the battery
+are in the research memory `reference_pd_active_test_protocols`.
+
+**Protocol** (Roche PD Mobile Application v2, the version that shipped to 316 patients at ICC
+0.92–0.95): phone **held flat on the palm**, arm outstretched, turn palm up / palm down as fast and
+as fully as possible, **10 s per hand**. ⚠️ A 20 s variant exists in the analytical-validation
+paper; 10 s is what shipped and it matches Tapping so a session stays one length.
+⚠️ Declared deviation: Roche validates the dominant hand only. We do both, matching MDS-UPDRS 3.6,
+which scores each hand separately — and both hands is the only control arm this design has.
+
+**Algorithm:** `CMDeviceMotion` at 100 Hz → **PCA for the true axis of rotation** → project to one
+channel → derived-cutoff zero-phase low pass → count reversals.
+⭐ The PCA step is what makes it survive an arm held at whatever angle is comfortable; assuming roll
+about the device's long edge would silently measure a projection of the real movement, and a test
+pins that this under-reports by ~40% at a realistic arm angle.
+⛔ **The filter cutoff is DERIVED (3x the trial's own dominant frequency), never a constant.** PD
+rest tremor (4–6 Hz) overlaps the voluntary rotation band (~1–5 Hz), so no universal cutoff
+separates them and a wrong fixed one is unrecoverable.
+⛔ Turn counting is **threshold-free**: a half-turn ends where the signal reverses, so there is no
+"how big must a wobble be" constant to get wrong. The filter is what stops noise inventing turns —
+pinned by a test that rides 5 Hz tremor on 1.5 Hz rotation and still counts 30 ± 2.
+
+**Displayed: Turns + Amplitude.** Both earn a row — MDS-UPDRS scores speed and amplitude separately,
+someone can flip fast-and-shallow or slow-and-full, and a test pins that they separate on synthetic
+signals. ⛔ **Turns/second is NOT shown** — with a fixed 10 s it is the turn count scaled, the same
+restatement that removed Pause and Travel from Tapping. Peak velocity and decrement are computed and
+exported, displayed nowhere.
+
+**Stored:** the single-axis angular velocity series **plus the axis it was projected onto**, plus the
+sample rate. One channel, not six. ⚠️ Without the axis and rate the series is unreadable — the same
+rule the tapping geometry fields exist for: *storing a raw measurement means storing the frame it was
+measured in.*
+
+⚠️ **Safety copy is part of the design, not boilerplate:** this is the one test that has the user
+waving an unsecured phone at arm's length. Instruction says sit down, over a lap or sofa.
+🚨 **Needs a SECOND additive CloudKit Production deploy** (`CD_RotationTrial`) before it reaches a
+TestFlight tester.
+
 ### Naming: **Movement check** is the category, **Tapping** is the instrument
 
 His call, Aug 5 2026, prompted by a detail card titled "Left hand" above a matrix showing both

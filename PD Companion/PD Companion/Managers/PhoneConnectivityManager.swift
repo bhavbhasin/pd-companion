@@ -249,7 +249,7 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
     /// — `@Attribute(.unique)` is unsupported — so the collision lands as real duplicate rows.
     /// Runs at launch, so it converges over however many launches the restore takes.
     ///
-    /// ⛔ **`FoodEvent`, `TherapySession` and `MovementCheckTrial` are deliberately NOT deduped
+    /// ⛔ **`FoodEvent`, `TherapySession`, `MovementCheckTrial` and `RotationTrial` are deliberately NOT deduped
     /// here, and that is not an oversight.** This prunes rows sharing a key date because the WATCH
     /// re-ships a rolling window that collides with the same rows arriving from CloudKit — a
     /// machine writing the same sample twice. All three of those models are user-logged and never
@@ -257,7 +257,8 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
     /// destructive rather than corrective: two therapies genuinely logged with the same start time
     /// (a session with two modalities, or two entries made at once) are two real rows, and this
     /// would silently delete the second — same risk for two movement-check trials on the same hand
-    /// taken back to back.
+    /// taken back to back. ⚠️ Rotation is the clearest case of all: left and right land seconds
+    /// apart by design, so a date-collision rule would eat half of every session.
     func cleanupDuplicates() {
         guard let context = makeContext() else { return }
         let tremors = pruneDuplicates(TremorReading.self, in: context, key: \.timestamp)

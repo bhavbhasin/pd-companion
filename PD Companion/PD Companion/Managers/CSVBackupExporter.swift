@@ -133,7 +133,42 @@ enum CSVBackupExporter {
                 )
             )
 
-            print("CSV backup written to \(folder.path) — tremors=\(tremors.count) dyskinesias=\(dyskinesias.count) foods=\(foods.count) therapies=\(therapies.count) movementChecks=\(movementChecks.count)")
+            // Rotation. ⚠️ Exports the SINGLE-AXIS angular velocity series plus the axis it was
+            // projected onto — without the axis the series is unreadable, the same lesson the
+            // tapping geometry columns exist for. Turns/amplitude/peak/decrement are all
+            // re-derivable from this outside the app.
+            let rotations = try context.fetch(
+                FetchDescriptor<RotationTrial>(sortBy: [SortDescriptor(\.timestamp)])
+            )
+            let rotationRange = dateRange(rotations.map(\.timestamp))
+            try writeCSV(
+                header: ["timestamp", "hand", "turns", "meanAmplitudeDegrees",
+                         "peakVelocityDegPerSec", "dominantFrequencyHz", "sampleRateHz",
+                         "axisX", "axisY", "axisZ", "angularVelocityRadPerSec"],
+                rows: rotations.map { trial -> [String] in
+                    let s = RotationMetrics.summary(for: trial)
+                    let series: String = trial.angularVelocity.map { String($0) }
+                        .joined(separator: ";")
+                    return [
+                        iso(trial.timestamp),
+                        trial.hand.rawValue,
+                        s.map { String($0.turns) } ?? "",
+                        s.map { String($0.meanAmplitudeDegrees) } ?? "",
+                        s.map { String($0.peakVelocityDegreesPerSecond) } ?? "",
+                        s.map { String($0.dominantFrequency) } ?? "",
+                        String(trial.sampleRate),
+                        String(trial.axisX),
+                        String(trial.axisY),
+                        String(trial.axisZ),
+                        series
+                    ]
+                },
+                to: folder.appendingPathComponent(
+                    filename("rotation_trials", range: rotationRange)
+                )
+            )
+
+            print("CSV backup written to \(folder.path) — tremors=\(tremors.count) dyskinesias=\(dyskinesias.count) foods=\(foods.count) therapies=\(therapies.count) movementChecks=\(movementChecks.count) rotations=\(rotations.count)")
             return folder
         } catch {
             print("CSV export failed: \(error)")

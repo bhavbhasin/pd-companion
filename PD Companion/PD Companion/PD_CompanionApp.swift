@@ -21,7 +21,7 @@ enum AppContainer {
             let config = ModelConfiguration(cloudKitDatabase: .automatic)
             return try ModelContainer(for: TremorReading.self, DyskinesiaReading.self,
                                       FoodEvent.self, Therapy.self, TherapySession.self,
-                                      MovementCheckTrial.self,
+                                      MovementCheckTrial.self, RotationTrial.self,
                                       configurations: config)
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
