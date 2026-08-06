@@ -58,28 +58,36 @@ struct LogEntrySheet: View {
                     // the examples are a hint at the category, not an inventory of it.
                     title: "Therapy", subtitle: "Acupuncture, PEMF, etc."
                 ) { path.append(.therapy) }
-            }
-            // ⭐ The category became a real SECTION the moment a second instrument existed.
-            // "Movement check", never "Test" — a test implies a grade and invites "did I
-            // pass?", which these surfaces must never answer. See
-            // docs/design/movement-checks.md.
-            //
-            // ⛔ Deliberately two rows under a header rather than a chooser screen: each test
-            // has to open as the ROOT of its own full-screen cover. That is what removes the
-            // sheet's drag-to-dismiss gesture (which was silently eating taps on the
-            // tremor-affected hand) and what makes each screen's single explicit "Cancel"
-            // correct. Pushing them inside a chooser would hand both back a second exit.
-            Section("Movement check") {
-                menuRow(
-                    icon: MovementCheckStyle.timelineSymbol, iconBg: MovementCheckStyle.tint.opacity(0.15),
-                    iconColor: MovementCheckStyle.tint,
-                    title: "Tapping", subtitle: "Alternating taps, both hands"
-                ) { showMovementCheck = true }
-                menuRow(
-                    icon: RotationStyle.timelineSymbol, iconBg: RotationStyle.tint.opacity(0.15),
-                    iconColor: RotationStyle.tint,
-                    title: "Rotation", subtitle: "Turning your hand over, both hands"
-                ) { showRotation = true }
+                // ⭐ The category became a real SECTION the moment a second instrument existed.
+                // "Movement check", never "Test" — a test implies a grade and invites "did I
+                // pass?", which these surfaces must never answer. See
+                // docs/design/movement-checks.md.
+                //
+                // ⚠️ This Section belongs INSIDE the List. Closing the List before it made the
+                // Section a SIBLING of the list inside the NavigationStack, so the sheet rendered
+                // three separate views, each one picking up the navigation title, the Cancel
+                // toolbar item and the voice-button safe-area inset — three Cancels and three
+                // microphones on one screen.
+                //
+                // ⛔ Deliberately two rows under a header rather than a chooser screen: each test
+                // has to open as the ROOT of its own full-screen cover. That is what removes the
+                // sheet's drag-to-dismiss gesture (which was silently eating taps on the
+                // tremor-affected hand) and what makes each screen's single explicit "Cancel"
+                // correct. Pushing them inside a chooser would hand both back a second exit.
+                Section("Movement check") {
+                    menuRow(
+                        icon: MovementCheckStyle.timelineSymbol,
+                        iconBg: MovementCheckStyle.tint.opacity(0.15),
+                        iconColor: MovementCheckStyle.tint,
+                        title: "Tapping", subtitle: "Alternating taps, both hands"
+                    ) { showMovementCheck = true }
+                    menuRow(
+                        icon: RotationStyle.timelineSymbol,
+                        iconBg: RotationStyle.tint.opacity(0.15),
+                        iconColor: RotationStyle.tint,
+                        title: "Rotation", subtitle: "Turning your hand over, both hands"
+                    ) { showRotation = true }
+                }
             }
             .listStyle(.insetGrouped)
             .alert("Logging your medications", isPresented: $showMedInfo) {

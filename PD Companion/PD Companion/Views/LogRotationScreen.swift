@@ -253,8 +253,15 @@ private struct RotationCaptureView: View {
             try? await Task.sleep(for: .milliseconds(50))
         }
         guard !Task.isCancelled else { return }
+        let elapsed = Date.now.timeIntervalSince(startDate)
         let samples = recorder.finishTrial()
         recorder.stop()
+
+        // ⚠️ **MEASURED, never the nominal 100 Hz.** CoreMotion treats the update interval as a
+        // request, not a contract — it can deliver slower under load or thermal pressure. Every
+        // quantity downstream is a rate, so storing a rate the device didn't actually achieve
+        // would scale turns and amplitude wrong while nothing on screen looked broken.
+        let measuredRate = elapsed > 0 ? Double(samples.count) / elapsed : RotationStyle.sampleRate
 
         // PCA finds the axis the user actually rotated about, then everything downstream is
         // one channel. See RotationMetrics for why this is what makes the test survive an
@@ -263,7 +270,7 @@ private struct RotationCaptureView: View {
         let series = RotationMetrics.project(samples, onto: axis)
         onComplete(RotationTrial(timestamp: startDate, hand: hand,
                                  angularVelocity: series,
-                                 sampleRate: RotationStyle.sampleRate,
+                                 sampleRate: measuredRate,
                                  axis: axis))
     }
 }
