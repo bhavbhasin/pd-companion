@@ -248,6 +248,23 @@ sample rate. One channel, not six. ⚠️ Without the axis and rate the series i
 rule the tapping geometry fields exist for: *storing a raw measurement means storing the frame it was
 measured in.*
 
+### ✅ Calibrated against a human count — Aug 6 2026
+
+10 deliberate flips per hand, counted aloud; the app recorded **10 and 10**. That is the check
+internal cross-validation cannot give: three of our own methods agreeing proves consistency, not
+correctness.
+
+⭐⭐ **Amplitude from that same controlled run: left 201°, right 148°.** Both hands did the same
+10 flips at the same deliberate pace, so speed is held constant and the 53° gap is not a
+speed-effort artifact. The more-affected side fails to complete a half-turn. ⚠️ **n=1, a
+hypothesis not a finding:** amplitude may discriminate more stably than turn count for this user —
+his fast-session turn gap swung from 10 to 0 across two sessions while this controlled comparison
+came out clean. MDS-UPDRS 3.6 scores amplitude explicitly, which is at least consistent. Worth
+repeating the counted protocol before believing it.
+⚠️ The instruction was "go slow and count", NOT "sweep as fully as you can", so these are
+natural-at-slow-speed amplitudes rather than maximal ones. Both hands got the same instruction, so
+the comparison between them is fair even though the absolute numbers aren't maximal.
+
 ⚠️ **Safety copy is part of the design, not boilerplate:** this is the one test that has the user
 waving an unsecured phone at arm's length. Instruction says sit down, over a lap or sofa.
 🚨 **Needs a SECOND additive CloudKit Production deploy** (`CD_RotationTrial`) before it reaches a
