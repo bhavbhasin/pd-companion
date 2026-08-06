@@ -120,7 +120,12 @@ struct LogRotationScreen: View {
     private var instructions: some View {
         VStack(spacing: 20) {
             Spacer()
-            RotationDemoIllustration(width: 300)
+            // ⚠️ Full-bleed, no horizontal padding, and that is deliberate: the clip's own
+            // background is true black, so at screen width there is no visible edge and the arm
+            // reads as floating on the screen rather than sitting in a video box. Constraining
+            // it to a fixed width would only shrink the hand — the part that has to be legible.
+            RotationDemoVideo()
+                .frame(maxWidth: .infinity)
             Text("Rotation")
                 .font(.title2.weight(.semibold))
             // ⚠️ Part of the measurement, not UI copy: the outstretched arm IS the validated
