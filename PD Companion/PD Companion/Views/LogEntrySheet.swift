@@ -85,7 +85,11 @@ struct LogEntrySheet: View {
                         icon: RotationStyle.timelineSymbol,
                         iconBg: RotationStyle.tint.opacity(0.15),
                         iconColor: RotationStyle.tint,
-                        title: "Rotation", subtitle: "Turning your hand over, both hands"
+                        // ⚠️ Kept to the same length as Tapping's subtitle above (28 chars) so
+                        // the two rows stay the same height — "Turning your hand over, both
+                        // hands" wrapped to a second line and made the section taller than the
+                        // sheet had room for. If one fits, both fit.
+                        title: "Rotation", subtitle: "Palm up and down, both hands"
                     ) { showRotation = true }
                 }
             }
