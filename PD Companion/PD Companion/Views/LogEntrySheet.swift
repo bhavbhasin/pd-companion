@@ -61,7 +61,11 @@ struct LogEntrySheet: View {
                 menuRow(
                     icon: MovementCheckStyle.timelineSymbol, iconBg: MovementCheckStyle.tint.opacity(0.15),
                     iconColor: MovementCheckStyle.tint,
-                    title: "Movement check", subtitle: "Alternating taps, both hands"
+                    // ⚠️ The subtitle names the tests that EXIST. "Tapping, Rotation" was
+                    // considered and held back — rotation is parked pending whether the
+                    // between-hands gap carries signal, and listing it here would promise a
+                    // screen that isn't there. Add it to this line on the day it ships.
+                    title: "Movement check", subtitle: "Tapping"
                 ) { showMovementCheck = true }
             }
             .listStyle(.insetGrouped)
@@ -161,7 +165,11 @@ struct LogEntrySheet: View {
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 18)
-        .background(.thinMaterial)
+        // ⛔ No `.thinMaterial` behind this. It drew a visible grey slab across the bottom of
+        // the sheet, and there is nothing for it to separate — the list ends well above the
+        // button and never scrolls under it. Removing it is theme-safe in both directions:
+        // the material was the only thing tinting this strip, so light and dark now both show
+        // the sheet's own background.
     }
 
     // Deep-links straight to the Health app's Medications screen. The scheme is

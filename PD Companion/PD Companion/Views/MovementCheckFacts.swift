@@ -133,19 +133,21 @@ struct MovementCheckMatrix: View {
 
 /// Pure helpers shared by every screen that needs to place a trial in the dose cycle.
 enum MovementCheckDoseFact {
-    /// A bare fact, never a comparison: where a trial fell relative to the last dose.
+    /// The last dose before a trial, stated passively.
+    ///
+    /// ⛔ **Was "19h 21m after your 02:40 Sinemet" — do not go back to that shape.** Leading
+    /// with elapsed time next to a measurement reads as attribution: it invites "so this is
+    /// what the Sinemet did", which is exactly the claim this feature never makes (two
+    /// confounds, selection and practice, both worse than therapy logging's). Passive voice
+    /// and no elapsed figure leaves a fact the reader can use without a causal frame attached.
+    ///
+    /// ⭐ The DATE is deliberate, not decoration: on a once-a-day regimen the last dose is
+    /// routinely on a different calendar day, and a bare clock time silently implies today.
     static func text(for timestamp: Date, doses: [Dose]) -> String? {
         guard let last = doses.filter({ $0.timestamp <= timestamp }).max(by: { $0.timestamp < $1.timestamp })
         else { return nil }
-        let minutes = Int(timestamp.timeIntervalSince(last.timestamp) / 60)
-        let h = minutes / 60, m = minutes % 60
-        let elapsed = h > 0 ? "\(h)h \(m)m" : "\(m)m"
-        return "\(elapsed) after your \(timeFormatter.string(from: last.timestamp)) \(last.name)"
+        let when = last.timestamp.formatted(.dateTime.hour().minute())
+        let day = last.timestamp.formatted(.dateTime.month(.abbreviated).day())
+        return "Last dose was \(last.name) at \(when), \(day)"
     }
-
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm"
-        return f
-    }()
 }

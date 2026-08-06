@@ -90,7 +90,11 @@ struct LogMovementCheckScreen: View {
                 }
             }
         }
-        .navigationTitle("Tapping")
+        // ⛔ Blank on the instructions screen, deliberately: that screen already names itself
+        // in the middle at title size, and carrying "Tapping" in the nav bar too said the same
+        // word twice on one screen. The capture and result screens have no such heading, so
+        // they keep it.
+        .navigationTitle(phase == .instructions ? "" : "Tapping")
         .navigationBarTitleDisplayMode(.inline)
         // Not shown on `.results` — that screen already has its own single, clean "Done"
         // exit (`MovementCheckResultScreen`'s confirmationAction), and a second Cancel
@@ -147,7 +151,11 @@ struct LogMovementCheckScreen: View {
             Button {
                 phase = .capturing(.left)
             } label: {
-                Text("Start")
+                // ⛔ NOT "Start". The capture screen has its own Start, and that is the one
+                // that begins the 10 seconds — you press it with your finger already poised.
+                // Two buttons reading "Start" one screen apart made the first one look like it
+                // was already timing something. This one only moves you forward.
+                Text("Continue")
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding()
