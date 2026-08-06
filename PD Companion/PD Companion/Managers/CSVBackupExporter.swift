@@ -87,7 +87,53 @@ enum CSVBackupExporter {
                 )
             )
 
-            print("CSV backup written to \(folder.path) — tremors=\(tremors.count) dyskinesias=\(dyskinesias.count) foods=\(foods.count) therapies=\(therapies.count)")
+            // Movement checks have no HealthKit type either, so — like Therapy — this CSV is
+            // the only copy outside CloudKit. Taps serialize as one semicolon-joined field
+            // (offset,x,y,target per tap) rather than a second file: the backup shouldn't be
+            // lossier than the store it's backing up, and there is no natural per-tap row key
+            // to join a separate taps table back to its trial.
+            let movementChecks = try context.fetch(
+                FetchDescriptor<MovementCheckTrial>(sortBy: [SortDescriptor(\.timestamp)])
+            )
+            let movementRange = dateRange(movementChecks.map(\.timestamp))
+            try writeCSV(
+                // ⚠️ The geometry columns are not optional detail — `taps` are points in the
+                // capture surface's space, so without the layout that produced them an
+                // exported trial can't be turned back into distances by anything outside the
+                // app either. Export what makes the raw stream self-describing.
+                header: ["timestamp", "hand", "tapCount", "totalTravelPt", "totalTravelMeters",
+                         "offTargetMeanPt", "interTapDwellMeanSec",
+                         "containerWidthPt", "containerHeightPt",
+                         "targetWidthPt", "targetHeightPt", "targetGapPt", "taps"],
+                rows: movementChecks.map { trial -> [String] in
+                    let summary = MovementCheckMetrics.summary(for: trial)
+                    let travelMeters: String = summary.travelMeters.map { String($0) } ?? ""
+                    let offTarget: String = summary.offTargetMean.map { String($0) } ?? ""
+                    let stream: String = trial.taps
+                        .map { "\($0.offset),\($0.x),\($0.y),\($0.target)" }
+                        .joined(separator: ";")
+                    return [
+                        iso(trial.timestamp),
+                        trial.hand.rawValue,
+                        String(summary.tapCount),
+                        String(summary.totalTravel),
+                        travelMeters,
+                        offTarget,
+                        String(summary.interTapDwellMean),
+                        String(trial.containerWidthPt),
+                        String(trial.containerHeightPt),
+                        String(trial.targetWidthPt),
+                        String(trial.targetHeightPt),
+                        String(trial.targetGapPt),
+                        stream
+                    ]
+                },
+                to: folder.appendingPathComponent(
+                    filename("movement_checks", range: movementRange)
+                )
+            )
+
+            print("CSV backup written to \(folder.path) — tremors=\(tremors.count) dyskinesias=\(dyskinesias.count) foods=\(foods.count) therapies=\(therapies.count) movementChecks=\(movementChecks.count)")
             return folder
         } catch {
             print("CSV export failed: \(error)")

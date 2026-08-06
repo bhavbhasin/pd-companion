@@ -36,14 +36,24 @@ struct ScrubbableTrendChart: View {
     /// Fires with the window actually on screen, on appear and on every scroll. The caller uses it
     /// to title the chart with the span being looked at instead of "the last 7 days".
     var onVisibleRange: ((ClosedRange<Date>) -> Void)? = nil
+    /// Pass a shared binding to lock two stacked charts to the SAME window, so a reader
+    /// comparing them is always comparing the same dates. `nil` (every existing caller) keeps
+    /// the chart's own private scroll position and behaves exactly as before.
+    var scrollPosition: Binding<Date>? = nil
 
     // Native tap/drag selection (same interaction as the Tremor chart). Snapped to a real night.
     @State private var selectedDate: Date? = nil
     /// Measured callout width, used only to clamp it inside the plot at the series' ends.
     @State private var calloutWidth: CGFloat = 0
-    /// Leading edge of the visible window. Owned here, not by the caller: the only thing the
-    /// caller needs back is which span is showing, and that arrives via `onVisibleRange`.
-    @State private var scrollX: Date = .distantPast
+    /// Leading edge of the visible window. Owned here unless the caller passed its own
+    /// `scrollPosition` to link several charts together; the span showing is reported back
+    /// either way via `onVisibleRange`.
+    @State private var internalScrollX: Date = .distantPast
+    private var scrollXBinding: Binding<Date> { scrollPosition ?? $internalScrollX }
+    private var scrollX: Date {
+        get { scrollXBinding.wrappedValue }
+        nonmutating set { scrollXBinding.wrappedValue = newValue }
+    }
 
     private var selected: TrendPoint? {
         guard let d = selectedDate else { return nil }
@@ -133,7 +143,7 @@ struct ScrubbableTrendChart: View {
                 plot
                     .chartScrollableAxes(.horizontal)
                     .chartXVisibleDomain(length: domain)
-                    .chartScrollPosition(x: $scrollX)
+                    .chartScrollPosition(x: scrollXBinding)
                     .chartXSelection(value: $selectedDate)
                     .chartOverlay { proxy in calloutLane(proxy) }
             } else {

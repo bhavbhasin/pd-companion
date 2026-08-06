@@ -104,6 +104,24 @@ struct EventDetailSheet: View {
     @State private var doseRow: CorrelationEngine.DoseRow?
     @State private var doseRowLoaded = false
 
+    // Trivial row count (dozens at most, never the tremor/dyskinesia scale the
+    // never-@Query-for-counts rule is about) — a plain @Query is fine here.
+    @Query(sort: \MovementCheckTrial.timestamp) private var allMovementChecks: [MovementCheckTrial]
+    @State private var movementCheckDoses: [Dose] = []
+
+    /// ⚠️ **Why this shows BOTH hands regardless of which glyph was tapped.** Left and right
+    /// trials happen seconds apart, so on a full-day chart they sit at the same pixel — the
+    /// nearest-event tap lookup (`DayInReviewView.handleTap`) can only resolve to ONE of the
+    /// two, essentially arbitrarily. Rather than chase pixel-perfect disambiguation that's
+    /// unsolvable at this zoom level, this shows the whole SESSION (every trial within 5
+    /// minutes of whichever one was tapped) — the same "both hands together" unit the result
+    /// screen already uses, so a tap into the timeline reads the same as finishing a fresh one.
+    private func pairedMovementChecks(around time: Date) -> [MovementCheckTrial] {
+        allMovementChecks
+            .filter { abs($0.timestamp.timeIntervalSince(time)) < 5 * 60 }
+            .sorted { $0.hand.rawValue < $1.hand.rawValue }   // "left" < "right"
+    }
+
     /// Food is the one detail with extra content and an edit-screen push, so its actions
     /// pin to the bottom of the sheet; every other event hugs its content.
     private var isFood: Bool { if case .food = event { true } else { false } }
@@ -231,6 +249,31 @@ struct EventDetailSheet: View {
                     .task { await loadDoseRow(at: time) }
                 }
 
+                // Both hands of the session, same "no score, no verdict" grammar as the
+                // result screen — see `pairedMovementChecks` for why it's the whole session
+                // rather than just the one trial that happened to be tapped.
+                if case .movementCheck(_, let time, _, _) = event {
+                    Divider()
+                    // Same matrix the result screen renders, minus the definitions — this is
+                    // a return visit, not first contact, and the whole session has to fit
+                    // without scrolling.
+                    let pair = pairedMovementChecks(around: time)
+                    MovementCheckMatrix(
+                        left: pair.first { $0.hand == .left },
+                        right: pair.first { $0.hand == .right },
+                        history: allMovementChecks,
+                        doseFact: (pair.map(\.timestamp).min()).flatMap {
+                            MovementCheckDoseFact.text(for: $0, doses: movementCheckDoses)
+                        }
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .task {
+                        let since = time.addingTimeInterval(-24 * 3600)
+                        movementCheckDoses = await healthKit.fetchMedicationDoses(since: since)
+                    }
+                }
+
                 // Health app note for workout (read-only)
                 if case .workout = event {
                     healthAppNote
@@ -309,6 +352,21 @@ struct EventDetailSheet: View {
                             .buttonStyle(.bordered)
                             .controlSize(.large)
                         }
+                    } else if case .movementCheck = event {
+                        // No Edit — there's nothing sensible to hand-edit about a raw tap
+                        // stream. No isEditable check, same reasoning as therapy: no
+                        // HealthKit type, Kampa authored every trial, always deletable.
+                        // Deletes the WHOLE session (every trial in `pairedMovementChecks`)
+                        // so "delete this test" doesn't leave an orphaned single-hand row —
+                        // matches the "both hands together" unit shown above.
+                        Button(role: .destructive) {
+                            showDeleteAlert = true
+                        } label: {
+                            Label("Delete this movement check", systemImage: "trash")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
                     }
 
                     Button("Done") { dismiss() }
@@ -351,7 +409,11 @@ struct EventDetailSheet: View {
             Button("Delete", role: .destructive) { performDelete() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This cannot be undone.")
+            if case .movementCheck = event {
+                Text("This deletes both hands' trials from this session. This cannot be undone.")
+            } else {
+                Text("This cannot be undone.")
+            }
         }
         .alert("Delete failed", isPresented: Binding(
             get: { deleteError != nil },
@@ -474,6 +536,15 @@ struct EventDetailSheet: View {
                 }
             }
 
+        case .movementCheck(_, let time, _, _):
+            // Deletes every trial in the SESSION (both hands, ±5 min — same grouping as the
+            // content block above), not just the one trial the tap happened to resolve to.
+            for trial in pairedMovementChecks(around: time) {
+                modelContext.delete(trial)
+            }
+            try? modelContext.save()
+            dismiss()
+
         default:
             dismiss()
         }
@@ -487,6 +558,7 @@ struct EventDetailSheet: View {
         case .food:        return "Food"
         case .giSymptom:   return "Symptom"
         case .therapy:     return "Therapy"
+        case .movementCheck: return "Movement check"
         }
     }
 
@@ -510,6 +582,9 @@ struct EventDetailSheet: View {
             return "Logged at \(time.formatted(.dateTime.hour().minute()))"
         case .therapy(_, let start, let duration, _):
             return "\(Int(duration / 60)) min · \(start.formatted(.dateTime.hour().minute()))"
+        case .movementCheck(_, let time, _, let tapCount):
+            let rate = Double(tapCount) / MovementCheckStyle.trialDuration
+            return String(format: "%.1f taps/sec · ", rate) + time.formatted(.dateTime.hour().minute())
         }
     }
 }

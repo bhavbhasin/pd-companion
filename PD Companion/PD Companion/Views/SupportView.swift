@@ -35,6 +35,7 @@ struct SupportView: View {
         var dyskinesia: (count: Int, first: Date?, last: Date?) = (0, nil, nil)
         var food: (count: Int, first: Date?, last: Date?) = (0, nil, nil)
         var therapy: (count: Int, first: Date?, last: Date?) = (0, nil, nil)
+        var movementCheck: (count: Int, first: Date?, last: Date?) = (0, nil, nil)
     }
 
     private var diagnostics: String {
@@ -53,7 +54,10 @@ struct SupportView: View {
             foodLast: s.food.last,
             therapyCount: s.therapy.count,
             therapyFirst: s.therapy.first,
-            therapyLast: s.therapy.last
+            therapyLast: s.therapy.last,
+            movementCheckCount: s.movementCheck.count,
+            movementCheckFirst: s.movementCheck.first,
+            movementCheckLast: s.movementCheck.last
         )
     }
 
@@ -78,6 +82,7 @@ struct SupportView: View {
         s.dyskinesia = span(DyskinesiaReading.self, key: \.startDate, sortBy: \.startDate)
         s.food = span(FoodEvent.self, key: \.timestamp, sortBy: \.timestamp)
         s.therapy = span(TherapySession.self, key: \.start, sortBy: \.start)
+        s.movementCheck = span(MovementCheckTrial.self, key: \.timestamp, sortBy: \.timestamp)
         stats = s
     }
 
@@ -165,7 +170,10 @@ enum SupportDiagnostics {
         foodLast: Date?,
         therapyCount: Int,
         therapyFirst: Date?,
-        therapyLast: Date?
+        therapyLast: Date?,
+        movementCheckCount: Int,
+        movementCheckFirst: Date?,
+        movementCheckLast: Date?
     ) -> String {
         var lines = [
             "Kampa \(versionAndBuild)",
@@ -183,7 +191,10 @@ enum SupportDiagnostics {
             "Food events: \(foodCount)\(span(foodFirst, foodLast))",
             // Its own line for the same reason dyskinesia has one: therapy is the only stream
             // with no HealthKit copy, so if it goes missing this count is the only evidence.
-            "Therapy sessions: \(therapyCount)\(span(therapyFirst, therapyLast))"
+            "Therapy sessions: \(therapyCount)\(span(therapyFirst, therapyLast))",
+            // Its own line for the same reason therapy has one: no HealthKit copy, so this
+            // count is the only evidence if the stream goes missing.
+            "Movement checks: \(movementCheckCount)\(span(movementCheckFirst, movementCheckLast))"
         ]
         lines.append("Sent \(Self.timestampFormatter.string(from: Date()))")
         return lines.joined(separator: "\n")

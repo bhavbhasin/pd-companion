@@ -113,6 +113,10 @@ enum DayEvent: Identifiable {
     // Kampa authored every one of these and all of them are editable — hence no `isEditable`
     // and no `source`, unlike mindfulness. `name` is the user's own spelling.
     case therapy(id: UUID, start: Date, duration: TimeInterval, name: String)
+    // A completed movement-check trial (one hand). No HealthKit type, Kampa-authored, always
+    // editable — same shape as therapy. `tapCount` is the one number worth naming on a
+    // timeline marker; the rest lives behind the result/history screens.
+    case movementCheck(id: UUID, time: Date, hand: MovementCheckHand, tapCount: Int)
 
     var id: UUID {
         switch self {
@@ -122,6 +126,7 @@ enum DayEvent: Identifiable {
         case .food(let id, _, _, _):        return id
         case .giSymptom(let id, _, _, _, _): return id
         case .therapy(let id, _, _, _):     return id
+        case .movementCheck(let id, _, _, _): return id
         }
     }
 
@@ -133,6 +138,7 @@ enum DayEvent: Identifiable {
         case .food(_, let time, _, _):         return time
         case .giSymptom(_, let time, _, _, _): return time
         case .therapy(_, let start, _, _):     return start
+        case .movementCheck(_, let time, _, _): return time
         }
     }
 
@@ -143,6 +149,7 @@ enum DayEvent: Identifiable {
         case .food:                        return "fork.knife"
         case .giSymptom:                   return GISymptom.timelineSymbol
         case .therapy:                     return TherapyStyle.timelineSymbol
+        case .movementCheck:               return MovementCheckStyle.timelineSymbol
         case .workout(_, _, _, let type):
             switch type {
             case .yoga:                    return "figure.yoga"
@@ -172,6 +179,7 @@ enum DayEvent: Identifiable {
         case .food:        return .brown
         case .giSymptom:   return GISymptom.tint
         case .therapy:     return TherapyStyle.tint
+        case .movementCheck: return MovementCheckStyle.tint
         }
     }
 
@@ -196,6 +204,8 @@ enum DayEvent: Identifiable {
         // distinguishable on a timeline where they share a glyph.
         case .therapy(_, _, _, let name):
             return name.isEmpty ? "Therapy" : String(name.prefix(40))
+        case .movementCheck(_, _, let hand, let tapCount):
+            return "\(hand.displayName) hand · \(tapCount) taps"
         }
     }
 }

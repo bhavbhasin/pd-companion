@@ -1,7 +1,38 @@
 # Movement checks: a standardized measurement the passive record cannot take
 
-**Status:** DESIGNED Aug 4 2026, not built. Originated with tester John S, who asked for bradykinesia
-measurement and pointed at the SteadyHands app and "hand rotation, typical neurologist tests."
+**Status:** v1 BUILT Aug 5 2026, then rebuilt around two measurement defects found in his own export
+(below). Model + capture + result + history/trend + timeline event all in. Joins the CloudKit
+Production schema deploy already owed for therapy logging — **not deployed, and the trial now carries
+five more fields than when that was last scoped.** Originated with tester John S, who asked for
+bradykinesia measurement and pointed at the SteadyHands app and "hand rotation, typical neurologist
+tests."
+
+### ⭐⭐ Two measurement defects, both found in data, both fixed Aug 5 2026
+
+Neither was visible on screen; both were counted out of a CSV export. This is the section to read
+before touching capture again.
+
+1. **The gap between the drawn boxes was dead space.** 15mm of protocol gap renders ~79 pt, and
+   landings hug the facing edges of both boxes — so an undershoot hit nothing and the app recorded
+   nothing. Measured across 6 trials: **26.3% of intended bottom-box taps never registered** (73
+   registered, 26 lost), against **2.9%** for the top box. Neither speed nor landing position
+   predicted a miss — the slowest trial lost the most. ⇒ **The drawn boxes keep the protocol's
+   dimensions; the LIVE area is the whole surface**, every touch assigned to the nearer target.
+   ⚠️ This corrupted the between-hands gap, which is the entire control arm: restoring the lost taps
+   moved one session from left −2 to left **+1**, and another from +6 to **+10**.
+2. **Taps were stored in each target's own local coordinate space**, so the distance between the two
+   boxes was absent from every stored tap and "travel" summed only the scatter inside a box. 37 taps
+   reported 0.4 m where the geometry demands ~1.6 m; one trial implied 5.6 mm per crossing across a
+   15 mm gap, which is impossible. ⇒ one shared coordinate space, **and the capture geometry is now
+   stored on the trial** — raw taps are not self-describing without it, so "re-derivable without a
+   retest" was false for anything positional.
+
+⛔ **The capture surface is UIKit `touchesBegan`, not a SwiftUI gesture — do not convert it back.**
+Every recognizer available can decline a touch: `SpatialTapGesture` needs a press-and-release that
+stays roughly still, so a fast or tremor-affected tap that slides is discarded. This screen lost two
+rounds of device testing to recognizers dropping or losing arbitration over taps (first to the
+sheet's drag-to-dismiss, then to the tap recognizer itself). `touchesBegan` cannot decline. Touch-DOWN
+is also the better timestamp for a speed test than touch-up, which adds a variable dwell.
 
 **One line:** a short, user-initiated movement trial behind the `+` sheet, reporting raw physical
 quantities against the user's own usual range — never a score, never a verdict, never a clinical grade.
@@ -134,18 +165,30 @@ it, and claim nothing for it.**
 | **inter-tap dwelling time** | significant discriminative power; the pause, not the movement |
 | *(decrement, stored only)* | no evidence it works on a phone. Recorded for later, shown nowhere |
 
+⚠️ **Travel is less independent than this table implies.** The targets are at fixed positions, so
+correct total travel is close to (crossings × a constant) and therefore tracks the tap count. The part
+that varies on its own is **accuracy** — how far each tap lands from the target centre — which is
+computed and stored (`offTargetMean`) but not yet displayed. If travel ever needs to earn a surface of
+its own, that is the quantity to put there, not the raw distance. ⚠️ Note the buggy local-coordinate
+version was accidentally measuring roughly this, which is why it looked informative.
+
 Each sits beside **the user's own usual range**, reusing the `p10`/`p90` band shipped in `e0ec548`,
-and every range is **per hand**:
+and every range is **per hand**. ⭐ **Both hands render as a MATRIX, not as two stacked blocks** (his
+call, Aug 5 2026): the between-hands gap is the signal, and stacking put the two numbers far enough
+apart that comparing them required scrolling — the layout was hiding the comparison the feature exists
+for. One dose line for the session, not one per hand.
 
 ```
-LEFT     42 taps          your usual lately 38 - 47
-         travel 1.9 m     your usual lately 1.7 - 2.2 m
-         pause 41 ms      your usual lately 33 - 52 ms
+                    Left      Right
+Taps                  37         31
+Travel              1.6 m      1.4 m
+Pause              246 ms     307 ms
 
-RIGHT    51 taps          your usual lately 47 - 55
-         travel 2.3 m     your usual lately 2.1 - 2.5 m
-         pause 28 ms      your usual lately 24 - 33 ms
+17h 24m after your 02:40 Sinemet
 ```
+
+⛔ **No delta column, and no highlight on the faster side.** Two columns already invite a scoreboard
+reading. The numbers sit next to each other; the reader does the comparing.
 
 ⛔ **No 1-10 score, no cross-person norm, no UPDRS number, no verdict.** Same grammar as every other
 surface in the app. Cold start: withhold the range and say what is still needed, per
@@ -209,9 +252,40 @@ so it lives entirely in Kampa's store — always editable.
   question it exists to answer. (Therapy logging is the opposite case and *does* belong: a therapy is
   something the user does to feel better.)
 
+## Closed Aug 5 2026 (build)
+
+- ✅ **Store raw taps, not just aggregates.** `MovementCheckTrial.taps: [MovementCheckTap]`
+  (Codable struct, not a second `@Model` — no relationship, no cascade-delete risk this codebase
+  has zero precedent for). Taps/travel/pause/decrement are all computed at read time in
+  `MovementCheckMetrics`, so a future change to any of them applies retroactively. Matches the
+  store-rich-reduce-at-read rule already governing `TremorReading`/`DyskinesiaReading`.
+  ⚠️ **Amended Aug 5 2026: raw taps alone were NOT enough.** A tap is a point in the capture
+  surface's space, and that space is sized per device — so without the geometry, a stored distance
+  could not be converted back to millimetres by the app or by anything reading the export. The five
+  geometry fields now on the trial are what make the claim above actually true. **Rule: storing a
+  raw measurement means storing the frame it was measured in.**
+- ✅ **Target layout is a per-device best-effort, not the literal protocol size.** Two 45mm
+  targets + a 15mm gap is taller than an iPhone SE2's entire screen — physically cannot fit any
+  iPhone in portrait at true scale. The layout scales down only as far as the screen forces,
+  consistently per device, **and the scale used is stored on every trial**, so a reading is never
+  orphaned from it. A single patient stays on one physical device, so this doesn't corrupt their own
+  "usual range" comparison, but absolute travel/mm numbers still aren't comparable across models.
+  ⚠️ `pointsPerMM` was a flat `163/25.4` for every iPhone, which drew the targets ~6% oversized on
+  every @3x device (~153 points/inch, not 163). Now display-scale aware at draw time — and read time
+  no longer uses it at all: a trial recovers its own scale from the drawn box, which is 45mm tall by
+  protocol whatever the estimate was.
+- ✅ **Taps and travel plot as two stacked panels on ONE shared x-axis; pause is never plotted.**
+  ⛔ Pause is `(last - first) / (n - 1)` — the tap rate inverted. Measured on the Aug 5 export, every
+  trial returns its own ~9 s span when pause is multiplied back by its gap count, at 19, 21, 31 and
+  37 taps alike. Charting it beside taps draws one signal twice, mirrored. It stays a fact row.
+  Taps and travel are NOT normalized onto a shared y-axis either — that axis reads in no unit anyone
+  can name. Small multiples, locked to the same window.
+
 ## Open
 
 - **Cold-start range.** How many trials per hand before a usual range is honest? Unmeasured, and there
-  is no reason to guess — it is answerable from the first weeks of real trials.
+  is no reason to guess — it is answerable from the first weeks of real trials. The `8`-trial gate
+  shipped in v1 reuses the existing tremor/HRV usual-range convention (`e0ec548`) rather than
+  answering this properly — revisit once real trial data exists.
 - **What a re-test right after a bad trial does to the record.** A user who dislikes a result will tap
   again. That is the selection effect operating within a single minute.

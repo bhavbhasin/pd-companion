@@ -275,6 +275,7 @@ private struct DayReviewContent: View {
     @Query private var dayDyskinesia: [DyskinesiaReading]
     @Query private var dayFoodEvents: [FoodEvent]
     @Query private var dayTherapies: [TherapySession]
+    @Query private var dayMovementChecks: [MovementCheckTrial]
 
     init(selectedDate: Date,
          onEventTap: @escaping (DayEvent) -> Void,
@@ -309,6 +310,10 @@ private struct DayReviewContent: View {
         _dayTherapies = Query(
             filter: #Predicate<TherapySession> { $0.start >= start && $0.start < end },
             sort: \TherapySession.start, order: .forward
+        )
+        _dayMovementChecks = Query(
+            filter: #Predicate<MovementCheckTrial> { $0.timestamp >= start && $0.timestamp < end },
+            sort: \MovementCheckTrial.timestamp, order: .forward
         )
     }
 
@@ -347,7 +352,11 @@ private struct DayReviewContent: View {
             // every session on every past day without touching a stored row.
             DayEvent.therapy(id: $0.id, start: $0.start, duration: $0.duration, name: $0.displayName)
         }
-        return (healthKit.dayEvents + food + therapies).sorted { $0.time < $1.time }
+        let movementChecks = dayMovementChecks.map {
+            DayEvent.movementCheck(id: $0.id, time: $0.timestamp, hand: $0.hand,
+                                    tapCount: MovementCheckMetrics.summary(for: $0.taps).tapCount)
+        }
+        return (healthKit.dayEvents + food + therapies + movementChecks).sorted { $0.time < $1.time }
     }
 
     // Shown when watch data has gone stale (paired watch, has synced before, silent >8h). One
@@ -992,6 +1001,10 @@ private struct TremorTimelinePanel: View {
             Image(systemName: TherapyStyle.timelineSymbol)
                 .foregroundStyle(TherapyStyle.tint)
                 .font(.system(size: 16))
+        case .movementCheck:
+            Image(systemName: MovementCheckStyle.timelineSymbol)
+                .foregroundStyle(MovementCheckStyle.tint)
+                .font(.system(size: 16))
         }
     }
 
@@ -1107,6 +1120,9 @@ private struct TremorTimelinePanel: View {
         // glyph, and every therapy shares it.
         case .therapy:
             return LegendEntry(icon: TherapyStyle.timelineSymbol, label: "Therapy", palette: false, color: TherapyStyle.tint)
+        case .movementCheck:
+            return LegendEntry(icon: MovementCheckStyle.timelineSymbol, label: "Movement check",
+                                palette: false, color: MovementCheckStyle.tint)
         }
     }
 

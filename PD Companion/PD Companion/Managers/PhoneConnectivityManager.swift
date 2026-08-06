@@ -249,13 +249,15 @@ class PhoneConnectivityManager: NSObject, ObservableObject {
     /// — `@Attribute(.unique)` is unsupported — so the collision lands as real duplicate rows.
     /// Runs at launch, so it converges over however many launches the restore takes.
     ///
-    /// ⛔ **`FoodEvent` and `TherapySession` are deliberately NOT deduped here, and that is not an
-    /// oversight.** This prunes rows sharing a key date because the WATCH re-ships a rolling window
-    /// that collides with the same rows arriving from CloudKit — a machine writing the same sample
-    /// twice. Both of those models are user-logged and never touched by the watch, so no such
-    /// collision exists. Applying the same rule to them would be destructive rather than corrective:
-    /// two therapies genuinely logged with the same start time (a session with two modalities, or
-    /// two entries made at once) are two real rows, and this would silently delete the second.
+    /// ⛔ **`FoodEvent`, `TherapySession` and `MovementCheckTrial` are deliberately NOT deduped
+    /// here, and that is not an oversight.** This prunes rows sharing a key date because the WATCH
+    /// re-ships a rolling window that collides with the same rows arriving from CloudKit — a
+    /// machine writing the same sample twice. All three of those models are user-logged and never
+    /// touched by the watch, so no such collision exists. Applying the same rule to them would be
+    /// destructive rather than corrective: two therapies genuinely logged with the same start time
+    /// (a session with two modalities, or two entries made at once) are two real rows, and this
+    /// would silently delete the second — same risk for two movement-check trials on the same hand
+    /// taken back to back.
     func cleanupDuplicates() {
         guard let context = makeContext() else { return }
         let tremors = pruneDuplicates(TremorReading.self, in: context, key: \.timestamp)

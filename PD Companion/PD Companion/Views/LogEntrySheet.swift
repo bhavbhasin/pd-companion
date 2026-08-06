@@ -15,6 +15,14 @@ struct LogEntrySheet: View {
     @State private var path: [Destination] = []
     @State private var showMedInfo = false
     @State private var showVoice = false
+    /// ⚠️ Movement check is a `.fullScreenCover`, not a pushed `Destination` — deliberately,
+    /// after a device-found data-integrity bug. A `.sheet` (which this whole screen is)
+    /// carries a system interactive-dismiss drag gesture, and a tremor-affected fast tap
+    /// includes a little unintended drag; that drag was winning gesture arbitration against
+    /// the tap target often enough to lose real taps — on a tremor-affected hand specifically,
+    /// which is exactly the hand this feature exists to measure honestly. A full-screen cover
+    /// has no drag-to-dismiss gesture at all, so there is nothing left to compete with the tap.
+    @State private var showMovementCheck = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -47,6 +55,14 @@ struct LogEntrySheet: View {
                     // the examples are a hint at the category, not an inventory of it.
                     title: "Therapy", subtitle: "Acupuncture, PEMF, etc."
                 ) { path.append(.therapy) }
+                // "Movement check", never "Test" — a test implies a grade and invites "did I
+                // pass?", which this surface must never answer. See
+                // docs/design/movement-checks.md.
+                menuRow(
+                    icon: MovementCheckStyle.timelineSymbol, iconBg: MovementCheckStyle.tint.opacity(0.15),
+                    iconColor: MovementCheckStyle.tint,
+                    title: "Movement check", subtitle: "Alternating taps, both hands"
+                ) { showMovementCheck = true }
             }
             .listStyle(.insetGrouped)
             .alert("Logging your medications", isPresented: $showMedInfo) {
@@ -59,6 +75,15 @@ struct LogEntrySheet: View {
             .sheet(isPresented: $showVoice) {
                 VoiceLogView(defaultDate: defaultDate) { date in
                     onLogged(date); dismiss()
+                }
+            }
+            .fullScreenCover(isPresented: $showMovementCheck) {
+                NavigationStack {
+                    LogMovementCheckScreen { date in
+                        showMovementCheck = false
+                        onLogged(date)
+                        dismiss()
+                    }
                 }
             }
             .navigationTitle("Log entry")
