@@ -108,6 +108,7 @@ struct EventDetailSheet: View {
     // never-@Query-for-counts rule is about) — a plain @Query is fine here.
     @Query(sort: \MovementCheckTrial.timestamp) private var allMovementChecks: [MovementCheckTrial]
     @State private var movementCheckDoses: [Dose] = []
+    @Query(sort: \RotationTrial.timestamp) private var allRotations: [RotationTrial]
 
     /// ⚠️ **Why this shows BOTH hands regardless of which glyph was tapped.** Left and right
     /// trials happen seconds apart, so on a full-day chart they sit at the same pixel — the
@@ -120,6 +121,14 @@ struct EventDetailSheet: View {
         allMovementChecks
             .filter { abs($0.timestamp.timeIntervalSince(time)) < 5 * 60 }
             .sorted { $0.hand.rawValue < $1.hand.rawValue }   // "left" < "right"
+    }
+
+    /// Same session grouping as tapping, same reason: both hands land seconds apart, so both
+    /// glyphs must open the whole session rather than whichever trial the tap resolved to.
+    private func pairedRotations(around time: Date) -> [RotationTrial] {
+        allRotations
+            .filter { abs($0.timestamp.timeIntervalSince(time)) < 5 * 60 }
+            .sorted { $0.hand.rawValue < $1.hand.rawValue }
     }
 
     /// Food is the one detail with extra content and an edit-screen push, so its actions
@@ -274,6 +283,26 @@ struct EventDetailSheet: View {
                     }
                 }
 
+                // Rotation's own block — same matrix grammar, its own metrics.
+                if case .rotation(_, let time, _) = event {
+                    Divider()
+                    let pair = pairedRotations(around: time)
+                    RotationMatrix(
+                        left: pair.first { $0.hand == .left },
+                        right: pair.first { $0.hand == .right },
+                        history: allRotations,
+                        doseFact: (pair.map(\.timestamp).min()).flatMap {
+                            MovementCheckDoseFact.text(for: $0, doses: movementCheckDoses)
+                        }
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .task {
+                        let since = time.addingTimeInterval(-24 * 3600)
+                        movementCheckDoses = await healthKit.fetchMedicationDoses(since: since)
+                    }
+                }
+
                 // Health app note for workout (read-only)
                 if case .workout = event {
                     healthAppNote
@@ -352,6 +381,16 @@ struct EventDetailSheet: View {
                             .buttonStyle(.bordered)
                             .controlSize(.large)
                         }
+                    } else if case .rotation = event {
+                        Button(role: .destructive) {
+                            showDeleteAlert = true
+                        } label: {
+                            Label("Delete this session", systemImage: "trash")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .tint(.red)
                     } else if case .movementCheck = event {
                         // No Edit — there's nothing sensible to hand-edit about a raw tap
                         // stream. No isEditable check, same reasoning as therapy: no
@@ -410,6 +449,8 @@ struct EventDetailSheet: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             if case .movementCheck = event {
+                Text("This deletes both hands' trials from this session. This cannot be undone.")
+            } else if case .rotation = event {
                 Text("This deletes both hands' trials from this session. This cannot be undone.")
             } else {
                 Text("This cannot be undone.")
@@ -545,6 +586,13 @@ struct EventDetailSheet: View {
             try? modelContext.save()
             dismiss()
 
+        case .rotation(_, let time, _):
+            for trial in pairedRotations(around: time) {
+                modelContext.delete(trial)
+            }
+            try? modelContext.save()
+            dismiss()
+
         default:
             dismiss()
         }
@@ -558,7 +606,7 @@ struct EventDetailSheet: View {
         case .food:        return "Food"
         case .giSymptom:   return "Symptom"
         case .therapy:     return "Therapy"
-        case .movementCheck: return "Movement check"
+        case .movementCheck, .rotation: return "Movement check"
         }
     }
 
@@ -582,7 +630,7 @@ struct EventDetailSheet: View {
             return "Logged at \(time.formatted(.dateTime.hour().minute()))"
         case .therapy(_, let start, let duration, _):
             return "\(Int(duration / 60)) min · \(start.formatted(.dateTime.hour().minute()))"
-        case .movementCheck(_, let time, _, _):
+        case .movementCheck(_, let time, _, _), .rotation(_, let time, _):
             // Same reason as the title: a per-hand rate here described one trial on a card
             // that shows two.
             return "Both hands · " + time.formatted(.dateTime.hour().minute())

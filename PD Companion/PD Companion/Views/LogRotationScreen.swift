@@ -35,6 +35,8 @@ struct LogRotationScreen: View {
     @State private var leftTrial: RotationTrial?
     @State private var rightTrial: RotationTrial?
     @State private var showHistory = false
+    /// Drives the looping demo on the instructions screen.
+    @State private var demoFlipped = false
 
     var body: some View {
         Group {
@@ -88,26 +90,35 @@ struct LogRotationScreen: View {
     private var instructions: some View {
         VStack(spacing: 20) {
             Spacer()
-            Image(systemName: RotationStyle.timelineSymbol)
-                .font(.system(size: 44))
+            // ⭐ The instruction is DEMONSTRATED, not just described. "Hold it flat on your
+            // palm, arm out, turn it over" is three things to get right at once, and this is
+            // the one test where doing it wrong produces a plausible-looking wrong number
+            // rather than an obvious failure. Drawn in SwiftUI rather than shipped as a video:
+            // no asset to host, works offline, and it follows light/dark for free.
+            Image(systemName: "iphone")
+                .font(.system(size: 56))
                 .foregroundStyle(RotationStyle.tint)
+                .rotation3DEffect(.degrees(demoFlipped ? 180 : 0), axis: (x: 0, y: 1, z: 0))
+                .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true),
+                           value: demoFlipped)
+                .accessibilityHidden(true)
+                .onAppear { demoFlipped = true }
             Text("Rotation")
                 .font(.title2.weight(.semibold))
             // ⚠️ Part of the measurement, not UI copy: the outstretched arm IS the validated
             // posture, and a trial taken with the elbow tucked in isn't comparable to one
-            // taken properly. Stated every session.
-            Text("Hold your phone flat in one hand, palm up, with your arm stretched out in front of you. Turn your hand palm up and palm down, as fast and as fully as you can, for 10 seconds each hand.")
+            // taken properly. Stated every session — but tightened, because the animation
+            // above now carries the shape of the movement and the words don't have to.
+            Text("Rest the phone flat on your open palm, arm out in front. Turn it over and back, as fast and as fully as you can - 10 seconds each hand.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 32)
-            // ⚠️ Safety, and it is a real risk rather than boilerplate — this is the one test
-            // in the app that has you waving an unsecured phone around at arm's length.
+            // ⚠️ Safety, and a real risk rather than boilerplate — this is the one test in the
+            // app that has you waving an unsecured phone around at arm's length. ⛔ The
+            // practice-effect disclosure that used to sit here has MOVED to the result screen:
+            // it exists to stop an improving number reading as a symptom change, so it belongs
+            // where the numbers are, and two blocks of grey text before a test is one too many.
             Text("Sit down first, over your lap or a sofa, in case the phone slips.")
-                .font(.footnote)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 32)
-            Text("You'll likely get faster over the first few weeks just from practice - that's expected, not a change in your symptoms.")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.tertiary)

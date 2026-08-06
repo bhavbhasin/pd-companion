@@ -253,6 +253,30 @@ waving an unsecured phone at arm's length. Instruction says sit down, over a lap
 🚨 **Needs a SECOND additive CloudKit Production deploy** (`CD_RotationTrial`) before it reaches a
 TestFlight tester.
 
+### The category is a chooser, not a list of tests
+
+`+` shows ONE **Movement check** row; it opens a full-screen cover whose first screen picks
+**Tapping** or **Rotation**. ⛔ The chooser SWAPS its content rather than pushing, so whichever
+test runs is still the ROOT of that stack. That preserves two things each paid for with a
+device-testing round: no `.sheet` drag-to-dismiss gesture competing with a tap, and exactly one
+explicit Cancel per screen rather than a back button arguing with it.
+⚠️ Two rows in the log sheet was tried first and was wrong for a plain reason: the list grew
+past the voice button, and rows scrolled behind it. This is also where leg agility goes.
+
+⭐ **Practice-effect disclosure MOVED to the result screens** (both instruments, one shared
+constant). It exists to stop an improving number reading as a symptom change, so it belongs
+next to the numbers — not before a test, where there is nothing yet to misread. It also left the
+instructions screens with one block of grey text instead of two.
+
+⭐ **Rotation's instruction is DEMONSTRATED**: a looping 180° flip of an `iphone` glyph, drawn in
+SwiftUI. "Flat on your palm, arm out, turn it over" is three things to get right at once, and
+this is the test where doing it wrong yields a plausible-looking wrong number rather than an
+obvious failure. ⛔ Not a video — no asset to host, works offline, follows light/dark for free,
+and it keeps the standing "no video inside the app" decision intact.
+
+⚠️ **Rotation gets its own timeline glyph, tint and legend row** — not a shared "Movement check"
+marker. Two instruments on one glyph would leave the timeline unable to say which you did.
+
 ### Naming: **Movement check** is the category, **Tapping** is the instrument
 
 His call, Aug 5 2026, prompted by a detail card titled "Left hand" above a matrix showing both

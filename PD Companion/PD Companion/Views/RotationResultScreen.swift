@@ -25,6 +25,9 @@ struct RotationResultScreen: View {
                     doseFact: MovementCheckDoseFact.text(
                         for: min(left.timestamp, right.timestamp), doses: recentDoses)
                 )
+            } footer: {
+                // Same disclosure, same reason, same words as Tapping's — from one constant.
+                Text(MovementCheckCopy.practiceEffect)
             }
 
             Section {

@@ -276,6 +276,7 @@ private struct DayReviewContent: View {
     @Query private var dayFoodEvents: [FoodEvent]
     @Query private var dayTherapies: [TherapySession]
     @Query private var dayMovementChecks: [MovementCheckTrial]
+    @Query private var dayRotations: [RotationTrial]
 
     init(selectedDate: Date,
          onEventTap: @escaping (DayEvent) -> Void,
@@ -314,6 +315,10 @@ private struct DayReviewContent: View {
         _dayMovementChecks = Query(
             filter: #Predicate<MovementCheckTrial> { $0.timestamp >= start && $0.timestamp < end },
             sort: \MovementCheckTrial.timestamp, order: .forward
+        )
+        _dayRotations = Query(
+            filter: #Predicate<RotationTrial> { $0.timestamp >= start && $0.timestamp < end },
+            sort: \RotationTrial.timestamp, order: .forward
         )
     }
 
@@ -356,7 +361,11 @@ private struct DayReviewContent: View {
             DayEvent.movementCheck(id: $0.id, time: $0.timestamp, hand: $0.hand,
                                     tapCount: MovementCheckMetrics.summary(for: $0.taps).tapCount)
         }
-        return (healthKit.dayEvents + food + therapies + movementChecks).sorted { $0.time < $1.time }
+        let rotations = dayRotations.map {
+            DayEvent.rotation(id: $0.id, time: $0.timestamp, hand: $0.hand)
+        }
+        return (healthKit.dayEvents + food + therapies + movementChecks + rotations)
+            .sorted { $0.time < $1.time }
     }
 
     // Shown when watch data has gone stale (paired watch, has synced before, silent >8h). One
@@ -1005,6 +1014,10 @@ private struct TremorTimelinePanel: View {
             Image(systemName: MovementCheckStyle.timelineSymbol)
                 .foregroundStyle(MovementCheckStyle.tint)
                 .font(.system(size: 16))
+        case .rotation:
+            Image(systemName: RotationStyle.timelineSymbol)
+                .foregroundStyle(RotationStyle.tint)
+                .font(.system(size: 16))
         }
     }
 
@@ -1123,6 +1136,12 @@ private struct TremorTimelinePanel: View {
         case .movementCheck:
             return LegendEntry(icon: MovementCheckStyle.timelineSymbol, label: "Tapping",
                                 palette: false, color: MovementCheckStyle.tint)
+        // Its own legend row, its own glyph and its own tint: rotation and tapping are two
+        // different instruments, and a shared "Movement check" glyph would make the timeline
+        // unable to say which one you actually did.
+        case .rotation:
+            return LegendEntry(icon: RotationStyle.timelineSymbol, label: "Rotation",
+                                palette: false, color: RotationStyle.tint)
         }
     }
 

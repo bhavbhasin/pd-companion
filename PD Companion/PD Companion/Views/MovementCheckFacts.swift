@@ -135,6 +135,11 @@ struct MovementCheckMatrix: View {
 enum MovementCheckCopy {
     static let spreadDefinition =
         "Spread is how far your taps landed from the middle of the box, on average."
+    /// ⛔ Required by `docs/design/movement-checks.md` and shown on EVERY result screen, both
+    /// instruments. Practice makes people measurably faster for weeks regardless of
+    /// medication; without this line an improving number reads as a symptom change.
+    static let practiceEffect =
+        "You'll likely get faster over the first few weeks just from practice - that's expected, not a change in your symptoms."
 }
 
 /// Pure helpers shared by every screen that needs to place a trial in the dose cycle.

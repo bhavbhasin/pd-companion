@@ -117,6 +117,10 @@ enum DayEvent: Identifiable {
     // editable — same shape as therapy. `tapCount` is the one number worth naming on a
     // timeline marker; the rest lives behind the result/history screens.
     case movementCheck(id: UUID, time: Date, hand: MovementCheckHand, tapCount: Int)
+    /// ⚠️ Carries no measurement, unlike `.movementCheck`'s tapCount — the detail sheet reads
+    /// both hands from the store anyway, and a per-hand number on a session-level card is the
+    /// exact mistake the tapping card made ("Left hand · 45 taps" above a two-hand matrix).
+    case rotation(id: UUID, time: Date, hand: MovementCheckHand)
 
     var id: UUID {
         switch self {
@@ -127,6 +131,7 @@ enum DayEvent: Identifiable {
         case .giSymptom(let id, _, _, _, _): return id
         case .therapy(let id, _, _, _):     return id
         case .movementCheck(let id, _, _, _): return id
+        case .rotation(let id, _, _): return id
         }
     }
 
@@ -139,6 +144,7 @@ enum DayEvent: Identifiable {
         case .giSymptom(_, let time, _, _, _): return time
         case .therapy(_, let start, _, _):     return start
         case .movementCheck(_, let time, _, _): return time
+        case .rotation(_, let time, _): return time
         }
     }
 
@@ -150,6 +156,7 @@ enum DayEvent: Identifiable {
         case .giSymptom:                   return GISymptom.timelineSymbol
         case .therapy:                     return TherapyStyle.timelineSymbol
         case .movementCheck:               return MovementCheckStyle.timelineSymbol
+        case .rotation:                    return RotationStyle.timelineSymbol
         case .workout(_, _, _, let type):
             switch type {
             case .yoga:                    return "figure.yoga"
@@ -180,6 +187,7 @@ enum DayEvent: Identifiable {
         case .giSymptom:   return GISymptom.tint
         case .therapy:     return TherapyStyle.tint
         case .movementCheck: return MovementCheckStyle.tint
+        case .rotation:      return RotationStyle.tint
         }
     }
 
@@ -204,6 +212,8 @@ enum DayEvent: Identifiable {
         // distinguishable on a timeline where they share a glyph.
         case .therapy(_, _, _, let name):
             return name.isEmpty ? "Therapy" : String(name.prefix(40))
+        case .rotation:
+            return "Rotation"
         case .movementCheck:
             // ⛔ NOT the hand or the tap count of the one glyph that was tapped. Two trials
             // land seconds apart, so both glyphs open the SAME session and the sheet shows

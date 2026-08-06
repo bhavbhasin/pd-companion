@@ -139,14 +139,10 @@ struct LogMovementCheckScreen: View {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 32)
-            // ⚠️ Practice-effect disclosure, required by the design doc — people get
-            // measurably faster over the first weeks regardless of medication, and this
-            // line is what keeps that from reading as a symptom change later.
-            Text("You'll likely get faster over the first few weeks just from practice - that's expected, not a change in your symptoms.")
-                .font(.footnote)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 32)
+            // ⛔ The practice-effect disclosure MOVED to the result screen. It is still
+            // required by the design doc and still non-negotiable — it exists to stop an
+            // improving number reading as a symptom change, so it belongs where the numbers
+            // are, not before a test where there is nothing yet to misread.
             Spacer()
             Button {
                 phase = .capturing(.left)

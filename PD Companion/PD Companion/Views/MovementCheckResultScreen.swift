@@ -28,6 +28,12 @@ struct MovementCheckResultScreen: View {
                     doseFact: MovementCheckDoseFact.text(
                         for: min(left.timestamp, right.timestamp), doses: recentDoses)
                 )
+            } footer: {
+                // ⚠️ Required by the design doc, and placed HERE deliberately: people get
+                // measurably faster over the first weeks regardless of medication, and this
+                // line is what stops that reading as a symptom change. It only does that work
+                // next to the numbers.
+                Text(MovementCheckCopy.practiceEffect)
             }
 
             Section {
