@@ -5,7 +5,8 @@ import UIKit
 // MARK: - Log movement check flow
 //
 // Both hands, every session — the less-affected hand is the only internal control this
-// design has (see docs/design/movement-checks.md). Left runs first, then right, then the
+// design has (see docs/design/movement-checks.md). Which hand goes FIRST alternates between
+// sessions so the warm-up advantage does not always land on the same side; then the
 // result screen shows both. No streak, no schedule, no score: a user who never opens this
 // from "+" never sees it, and nothing here nags them back.
 
@@ -58,6 +59,8 @@ struct LogMovementCheckScreen: View {
     /// fresh test, so a returning user checking past results had to run a whole new trial
     /// first just to get there. Now on the landing screen itself, alongside Start.
     @State private var showHistory = false
+    /// Which hand this session starts with — see `firstHandForThisSession`.
+    @State private var firstHand: MovementCheckHand = .left
 
     var body: some View {
         Group {
@@ -111,14 +114,29 @@ struct LogMovementCheckScreen: View {
         }
     }
 
+    /// ⭐ **Which hand goes first ALTERNATES between sessions, and that is a measurement fix.**
+    /// The second hand always benefits from having just warmed up, so a fixed order biases
+    /// exactly the number this feature exists for — the between-hands gap. Alternating puts
+    /// that advantage on each hand half the time instead of accumulating on one side.
+    ///
+    /// ⚠️ Nothing new is stored to record the order: both trials carry timestamps, so whichever
+    /// is earlier went first. Derived, not duplicated.
+    private func firstHandForThisSession() -> MovementCheckHand {
+        // `fetchCount`, not a `@Query` — a Query for a count hydrates every row and re-runs
+        // on any save.
+        let count = (try? modelContext.fetchCount(FetchDescriptor<MovementCheckTrial>())) ?? 0
+        return (count / 2) % 2 == 0 ? .left : .right
+    }
+
     private func complete(hand: MovementCheckHand, trial: MovementCheckTrial) {
         modelContext.insert(trial)
         switch hand {
-        case .left:
-            leftTrial = trial
-            phase = .capturing(.right)
-        case .right:
-            rightTrial = trial
+        case .left:  leftTrial = trial
+        case .right: rightTrial = trial
+        }
+        if hand == firstHand {
+            phase = .capturing(firstHand == .left ? .right : .left)
+        } else {
             try? modelContext.save()
             phase = .results
         }
@@ -145,7 +163,8 @@ struct LogMovementCheckScreen: View {
             // are, not before a test where there is nothing yet to misread.
             Spacer()
             Button {
-                phase = .capturing(.left)
+                firstHand = firstHandForThisSession()
+                phase = .capturing(firstHand)
             } label: {
                 // ⛔ NOT "Start". The capture screen has its own Start, and that is the one
                 // that begins the 10 seconds — you press it with your finger already poised.

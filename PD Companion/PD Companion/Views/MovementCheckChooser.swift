@@ -43,11 +43,10 @@ struct MovementCheckChooser: View {
                     title: "Rotation", subtitle: "Turning palm up & down") {
                     chosen = .rotation
                 }
-            } footer: {
-                // ⛔ No scores, no streaks, no schedule — stated once, here, where someone is
-                // deciding whether to bother. Each test then repeats nothing about grading.
-                Text("Both hands, about 30 seconds. Nothing here is scored.")
             }
+            // ⛔ No footer. "Both hands, about 30 seconds" restated what each test's own
+            // instruction screen says two taps later, and a "nothing is scored" disclaimer
+            // lands better where results appear than before you've chosen anything.
         }
         .navigationTitle("Movement check")
         .navigationBarTitleDisplayMode(.inline)

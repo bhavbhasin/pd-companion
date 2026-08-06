@@ -103,13 +103,18 @@ struct RotationHistoryScreen: View {
             chartSection(.turns)
             if points(.amplitude).count >= 2 { chartSection(.amplitude) }
 
+            // ⭐ Session-level, showing BOTH hands on one row — not one row per hand. A row
+            // reading "37 turns" under a Left/Right picker couldn't say which hand it meant,
+            // and more importantly the between-hands gap is the signal this feature exists
+            // for; putting the two numbers side by side means the reader never has to toggle
+            // the picker and hold one in their head. The picker still filters the charts.
             Section("History") {
-                if handTrials.isEmpty {
-                    Text("No \(hand.displayName.lowercased())-hand trials yet.")
+                if sessions.isEmpty {
+                    Text("No trials yet.")
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
-                    ForEach(handTrials.reversed(), id: \.id) { trial in
-                        historyRow(trial)
+                    ForEach(sessions, id: \.id) { session in
+                        sessionRow(session)
                     }
                 }
             }
@@ -158,15 +163,54 @@ struct RotationHistoryScreen: View {
         }
     }
 
-    private func historyRow(_ trial: RotationTrial) -> some View {
-        let turns = RotationMetrics.summary(for: trial)?.turns
-        return HStack {
-            Text(trial.timestamp, format: .dateTime.month(.abbreviated).day().hour().minute())
+    /// One completed sitting: the trials within 5 minutes of each other, the same grouping the
+    /// timeline detail sheet uses so "a session" means one thing everywhere.
+    private struct Session: Identifiable {
+        let id: UUID
+        let time: Date
+        let left: RotationTrial?
+        let right: RotationTrial?
+    }
+
+    private var sessions: [Session] {
+        var out: [Session] = []
+        var pending: [RotationTrial] = []
+
+        func flush() {
+            guard let first = pending.first else { return }
+            out.append(Session(id: first.id, time: first.timestamp,
+                               left: pending.first { $0.hand == .left },
+                               right: pending.first { $0.hand == .right }))
+            pending = []
+        }
+        for trial in allTrials {
+            if let last = pending.last,
+               trial.timestamp.timeIntervalSince(last.timestamp) > 5 * 60 { flush() }
+            pending.append(trial)
+        }
+        flush()
+        return out.reversed()
+    }
+
+    private func sessionRow(_ session: Session) -> some View {
+        HStack {
+            Text(session.time, format: .dateTime.month(.abbreviated).day().hour().minute())
                 .foregroundStyle(.secondary)
             Spacer()
-            Text(turns.map { "\($0) turns" } ?? "—")
-                .font(.subheadline.weight(.medium))
+            handTurns("L", session.left)
+            handTurns("R", session.right)
         }
         .font(.subheadline)
+    }
+
+    private func handTurns(_ label: String, _ trial: RotationTrial?) -> some View {
+        let turns = trial.flatMap { RotationMetrics.summary(for: $0)?.turns }
+        return HStack(spacing: 3) {
+            Text(label).foregroundStyle(.tertiary)
+            Text(turns.map(String.init) ?? "—")
+                .font(.subheadline.weight(.medium))
+                .monospacedDigit()
+        }
+        .frame(minWidth: 46, alignment: .trailing)
     }
 }

@@ -37,6 +37,8 @@ struct LogRotationScreen: View {
     @State private var showHistory = false
     /// Drives the looping demo on the instructions screen.
     @State private var demoFlipped = false
+    /// Which hand this session starts with — see `firstHandForThisSession`.
+    @State private var firstHand: MovementCheckHand = .left
 
     var body: some View {
         Group {
@@ -74,35 +76,72 @@ struct LogRotationScreen: View {
         }
     }
 
+    /// ⭐ **Which hand goes first ALTERNATES between sessions, and that is a measurement fix.**
+    /// The second hand always has the advantage of having just warmed up, so a fixed order
+    /// biases exactly the number this feature exists for — the between-hands gap. With the
+    /// order alternating, that advantage lands on each hand half the time and averages out
+    /// instead of accumulating on one side.
+    ///
+    /// ⚠️ Nothing new is stored to record the order: both trials carry timestamps, so whichever
+    /// is earlier went first. Derived, not duplicated.
+    private func firstHandForThisSession() -> MovementCheckHand {
+        // `fetchCount` rather than a `@Query` — see reference note: a Query for a count
+        // hydrates every row and re-runs on any save.
+        let count = (try? modelContext.fetchCount(FetchDescriptor<RotationTrial>())) ?? 0
+        return (count / 2) % 2 == 0 ? .left : .right
+    }
+
     private func complete(hand: MovementCheckHand, trial: RotationTrial) {
         modelContext.insert(trial)
         switch hand {
-        case .left:
-            leftTrial = trial
-            phase = .capturing(.right)
-        case .right:
-            rightTrial = trial
+        case .left:  leftTrial = trial
+        case .right: rightTrial = trial
+        }
+        if hand == firstHand {
+            phase = .capturing(firstHand == .left ? .right : .left)
+        } else {
             try? modelContext.save()
             phase = .results
         }
     }
 
+    /// ⭐ The instruction is DEMONSTRATED, not just described. "Flat on your palm, arm out,
+    /// turn it over" is three things to get right at once, and this is the one test where doing
+    /// it wrong yields a plausible-looking wrong number rather than an obvious failure.
+    ///
+    /// ⛔ **Rotates about z (in the plane of the screen), NOT about y.** The first attempt spun
+    /// an `iphone` glyph about its vertical axis, which reads as a phone turning like a
+    /// revolving door — the wrong movement, with no hand and no context. With the arm pointing
+    /// away from you, the forearm's rotation axis points INTO the screen, so an in-plane
+    /// rotation is the honest depiction: the phone starts above the palm and ends below it.
+    /// Drawn here rather than shipped as a video — no asset to host, works offline, follows
+    /// light and dark for free, and it keeps the "no video inside the app" decision intact.
+    private var demoIllustration: some View {
+        ZStack {
+            Capsule()
+                .fill(RotationStyle.tint.opacity(0.22))
+                .frame(width: 96, height: 46)
+            RoundedRectangle(cornerRadius: 6)
+                .fill(RotationStyle.tint)
+                .frame(width: 36, height: 64)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color(.systemBackground).opacity(0.9))
+                        .frame(width: 26, height: 50)
+                )
+                .offset(y: -16)
+        }
+        .rotationEffect(.degrees(demoFlipped ? 180 : 0))
+        .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: demoFlipped)
+        .frame(height: 110)
+        .accessibilityHidden(true)
+        .onAppear { demoFlipped = true }
+    }
+
     private var instructions: some View {
         VStack(spacing: 20) {
             Spacer()
-            // ⭐ The instruction is DEMONSTRATED, not just described. "Hold it flat on your
-            // palm, arm out, turn it over" is three things to get right at once, and this is
-            // the one test where doing it wrong produces a plausible-looking wrong number
-            // rather than an obvious failure. Drawn in SwiftUI rather than shipped as a video:
-            // no asset to host, works offline, and it follows light/dark for free.
-            Image(systemName: "iphone")
-                .font(.system(size: 56))
-                .foregroundStyle(RotationStyle.tint)
-                .rotation3DEffect(.degrees(demoFlipped ? 180 : 0), axis: (x: 0, y: 1, z: 0))
-                .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true),
-                           value: demoFlipped)
-                .accessibilityHidden(true)
-                .onAppear { demoFlipped = true }
+            demoIllustration
             Text("Rotation")
                 .font(.title2.weight(.semibold))
             // ⚠️ Part of the measurement, not UI copy: the outstretched arm IS the validated
@@ -125,7 +164,8 @@ struct LogRotationScreen: View {
                 .padding(.horizontal, 32)
             Spacer()
             Button {
-                phase = .capturing(.left)
+                firstHand = firstHandForThisSession()
+                phase = .capturing(firstHand)
             } label: {
                 Text("Continue")
                     .font(.headline)
