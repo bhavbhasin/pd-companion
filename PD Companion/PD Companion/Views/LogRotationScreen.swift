@@ -105,49 +105,54 @@ struct LogRotationScreen: View {
         }
     }
 
-    /// ⭐ The instruction is DEMONSTRATED, not just described. "Flat on your palm, arm out,
-    /// turn it over" is three things to get right at once, and this is the one test where doing
-    /// it wrong yields a plausible-looking wrong number rather than an obvious failure.
+    /// ⭐ The instruction is DEMONSTRATED, not just described.
     ///
-    /// ⛔ **Two earlier attempts were rejected on device.** v1 spun
-    /// an `iphone` glyph about its vertical axis — "rotating on a swivel", no hand, no context.
-    /// v2 added a palm but read as a blob. This is v3: a SIDE view — forearm, flat open hand, and
-    /// the phone resting on it — flipped about the forearm axis, so the phone visibly swings from
-    /// above the hand to below it, plus circular arrows at the wrist naming the movement outright.
-    /// Drawn here rather than shipped as a video — no asset to host, works offline, follows
-    /// light and dark for free, and it keeps the "no video inside the app" decision intact.
+    /// ⚠️ **Four attempts; three failed on device, and the reason each failed is the useful part.**
+    /// v1 spun an `iphone` SF Symbol about its vertical axis — the outline looks identical front
+    /// and back, so nothing told you the screen had turned over and it read as "rotating on a
+    /// swivel". v2 added a drawn palm, which read as a blob. v3 was a side view with a forearm,
+    /// which was worse still. v4 is his own call: **just the phone**, and the fix v1 was missing —
+    /// the two FACES are drawn differently. A bright screen goes away, a plain back with a camera
+    /// dot arrives, so "screen was facing up, now it's facing down" is legible rather than implied.
+    /// ⛔ If this still doesn't land, stop adding primitives: the answer is two drawn frames
+    /// crossfading, which is artwork, not code.
     private var demoIllustration: some View {
-        HStack(spacing: 0) {
-            // Forearm, so the picture reads as an OUTSTRETCHED arm seen from the side rather
-            // than a floating object. The arm is what makes "arm out in front" legible.
-            Capsule()
-                .fill(RotationStyle.tint.opacity(0.28))
-                .frame(width: 66, height: 20)
-            ZStack {
-                VStack(spacing: 2) {
-                    // The phone, resting ON the flat hand — not gripped.
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(RotationStyle.tint)
-                        .frame(width: 26, height: 44)
-                    // The flat, open hand.
-                    Capsule()
-                        .fill(RotationStyle.tint.opacity(0.55))
-                        .frame(width: 42, height: 15)
+        ZStack {
+            // BACK of the phone — plain, with a camera dot. Visible only once it has turned over.
+            RoundedRectangle(cornerRadius: 9)
+                .fill(RotationStyle.tint.opacity(0.45))
+                .overlay(alignment: .topTrailing) {
+                    Circle()
+                        .fill(Color(.systemBackground).opacity(0.55))
+                        .frame(width: 9, height: 9)
+                        .padding(8)
                 }
-                .rotation3DEffect(.degrees(demoFlipped ? 180 : 0),
-                                  axis: (x: 1, y: 0, z: 0), perspective: 0.45)
-                .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true),
-                           value: demoFlipped)
-            }
-            .offset(x: -4)
-            // Circular arrows at the wrist name the movement outright, so the picture doesn't
-            // have to carry the whole idea on its own.
-            Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(RotationStyle.tint.opacity(0.8))
-                .offset(x: 4, y: 26)
+                .opacity(demoFlipped ? 1 : 0)
+
+            // FRONT — an unmistakable screen: bright display panel and a speaker slot.
+            RoundedRectangle(cornerRadius: 9)
+                .fill(RotationStyle.tint)
+                .overlay {
+                    VStack(spacing: 4) {
+                        Capsule()
+                            .fill(Color(.systemBackground).opacity(0.5))
+                            .frame(width: 14, height: 3)
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color(.systemBackground).opacity(0.92))
+                            .frame(width: 40, height: 74)
+                    }
+                    .padding(.top, 4)
+                }
+                .opacity(demoFlipped ? 0 : 1)
         }
-        .frame(height: 110)
+        .frame(width: 54, height: 96)
+        // ⭐ Rotates about the phone's LONG axis — the axis your forearm actually turns about
+        // when the phone lies flat on your palm. Perspective makes it read as flipping on its
+        // edge rather than sliding.
+        .rotation3DEffect(.degrees(demoFlipped ? 180 : 0),
+                          axis: (x: 0, y: 1, z: 0), perspective: 0.55)
+        .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: demoFlipped)
+        .frame(height: 120)
         .accessibilityHidden(true)
         .onAppear { demoFlipped = true }
     }
