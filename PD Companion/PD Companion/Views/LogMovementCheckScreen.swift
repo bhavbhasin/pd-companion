@@ -90,7 +90,7 @@ struct LogMovementCheckScreen: View {
                 }
             }
         }
-        .navigationTitle("Movement check")
+        .navigationTitle("Tapping")
         .navigationBarTitleDisplayMode(.inline)
         // Not shown on `.results` — that screen already has its own single, clean "Done"
         // exit (`MovementCheckResultScreen`'s confirmationAction), and a second Cancel
@@ -126,7 +126,7 @@ struct LogMovementCheckScreen: View {
             Image(systemName: MovementCheckStyle.timelineSymbol)
                 .font(.system(size: 44))
                 .foregroundStyle(MovementCheckStyle.tint)
-            Text("Movement check")
+            Text("Tapping")
                 .font(.title2.weight(.semibold))
             // ⚠️ The instruction line is part of the measurement, not UI copy — a trial
             // taken off-table isn't comparable to one taken on it, and the app can't tell

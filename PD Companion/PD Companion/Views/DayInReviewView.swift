@@ -1121,7 +1121,7 @@ private struct TremorTimelinePanel: View {
         case .therapy:
             return LegendEntry(icon: TherapyStyle.timelineSymbol, label: "Therapy", palette: false, color: TherapyStyle.tint)
         case .movementCheck:
-            return LegendEntry(icon: MovementCheckStyle.timelineSymbol, label: "Movement check",
+            return LegendEntry(icon: MovementCheckStyle.timelineSymbol, label: "Tapping",
                                 palette: false, color: MovementCheckStyle.tint)
         }
     }

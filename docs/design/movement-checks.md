@@ -182,10 +182,30 @@ for. One dose line for the session, not one per hand.
                     Left      Right
 Taps                  37         31
 Travel              1.6 m      1.4 m
-Pause              246 ms     307 ms
+Spread               11 mm      14 mm
 
 17h 24m after your 02:40 Sinemet
 ```
+
+⛔ **Pause was the third row and was removed Aug 5 2026. Do not put it back.** The matrix was
+showing one measurement three times: pause is the tap rate inverted, so it restated row 1 in a
+different unit. It is still computed, still exported, and displayed nowhere.
+⚠️ **Spread is deliberately not called "accuracy"** — that reads as a grade, and this feature never
+issues one. It is a distance. It earns its row by being the one recorded quantity free to vary when
+the tap count doesn't; ⛔ it is NOT validated (the study measured count, travel and dwell) and it
+carries its own confound: tap faster, land sloppier.
+
+### Naming: **Movement check** is the category, **Tapping** is the instrument
+
+His call, Aug 5 2026, prompted by a detail card titled "Left hand" above a matrix showing both
+hands. Screens (landing, capture, result, history) and the timeline legend say **Tapping**; the `+`
+row and the detail-card eyebrow stay **Movement check**, which is the door a future rotation or
+balance test comes through. ⛔ **"Tapping", not "Tap test"** — the `LogEntrySheet` guard still holds:
+a *test* implies a grade and invites "did I pass?", which this surface must never answer. An action
+name scales to "Rotation" and "Balance" without that.
+⚠️ **The `@Model` stays `MovementCheckTrial`.** Renaming it changes the CloudKit record type
+(`CD_MovementCheckTrial`) and orphans every synced record. This is display copy only — and the class
+name is right for the hierarchy anyway, since the container is the category.
 
 ⛔ **No delta column, and no highlight on the faster side.** Two columns already invite a scoreboard
 reading. The numbers sit next to each other; the reader does the comparing.

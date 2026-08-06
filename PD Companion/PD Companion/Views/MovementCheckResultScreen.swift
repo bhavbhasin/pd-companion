@@ -39,7 +39,7 @@ struct MovementCheckResultScreen: View {
                 }
             }
         }
-        .navigationTitle("Movement check")
+        .navigationTitle("Tapping")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar {

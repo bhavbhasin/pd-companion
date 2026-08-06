@@ -9,12 +9,16 @@ import Charts
 ///
 /// ⭐ **Two panels, one shared x-axis — taps and travel. Pause is NOT plotted.**
 ///
-/// ⛔ Pause is not a second measurement: `MovementCheckMetrics` defines it as the mean gap
-/// between consecutive taps, which is algebraically `(last - first) / (n - 1)` — the reciprocal
-/// of the tap rate. Measured on the Aug 5 2026 export, every trial returns the same ~9 s when
-/// you multiply pause by its gap count, at 19, 21, 31 and 37 taps alike. Charting it beside
-/// taps would draw one signal twice, mirrored. It stays as a fact row, where a number the
-/// reader can look up is useful and a trend line would be a duplicate.
+/// ⛔ **Pause is not displayed anywhere any more, and should not come back.**
+/// `MovementCheckMetrics` defines it as the mean gap between consecutive taps, which is
+/// algebraically `(last - first) / (n - 1)` — the reciprocal of the tap rate. Measured on the
+/// Aug 5 2026 export, every trial returns the same ~9 s when you multiply pause by its gap
+/// count, at 19, 21, 31 and 37 taps alike. It restates the tap count in a different unit,
+/// whether as a chart or as a row. It is still computed and still exported.
+///
+/// Its fact row went to **Spread** — mean distance from a tap to the middle of its box — which
+/// is the one recorded quantity free to vary when the tap count doesn't. ⛔ Not called
+/// "accuracy": that reads as a grade, and this feature never issues one.
 ///
 /// The two charts that remain don't share a y-axis (taps ~15-40, travel ~1-3 m) and are NOT
 /// normalized onto one — a normalized axis reads in no unit anybody can name. They're stacked
@@ -30,20 +34,20 @@ struct MovementCheckHistoryScreen: View {
     @State private var sharedScroll: Date = .distantPast
 
     private enum Metric: String, CaseIterable, Identifiable {
-        case taps, travel, pause
+        case taps, travel, spread
         var id: String { rawValue }
         var label: String {
             switch self {
             case .taps:   "Taps"
             case .travel: "Travel"
-            case .pause:  "Pause"
+            case .spread: "Spread"
             }
         }
         var unit: String {
             switch self {
             case .taps:   ""
             case .travel: "m"
-            case .pause:  "ms"
+            case .spread: "mm"
             }
         }
         /// Names what one point IS, since the chart's own title is just the metric name.
@@ -51,7 +55,7 @@ struct MovementCheckHistoryScreen: View {
             switch self {
             case .taps:   "taps per trial"
             case .travel: "per trial"
-            case .pause:  "per trial"
+            case .spread: "per trial"
             }
         }
         /// `nil` when the trial can't answer — travel needs the capture geometry, and a trial
@@ -61,14 +65,14 @@ struct MovementCheckHistoryScreen: View {
             switch self {
             case .taps:   return Double(s.tapCount)
             case .travel: return s.travelMeters
-            case .pause:  return s.interTapDwellMean * 1000
+            case .spread: return s.offTargetMM
             }
         }
         func valueText(_ value: Double) -> String {
             switch self {
             case .taps:   String(format: "%.0f", value)
             case .travel: String(format: "%.1f m", value)
-            case .pause:  String(format: "%.0f ms", value)
+            case .spread: String(format: "%.0f mm", value)
             }
         }
     }
@@ -130,11 +134,11 @@ struct MovementCheckHistoryScreen: View {
             // a title would read as a bug rather than as history.
             if points(.travel).count >= 2 { chartSection(.travel) }
 
-            // Pause is a FACT here and never a chart — it is the tap count inverted, and a
-            // second line of the same signal is not evidence. See the type doc.
+            // Spread is a FACT here, not a chart — see the type doc for why it replaced pause
+            // and why it is deliberately not called accuracy.
             if let latest = handTrials.last {
                 Section("Also recorded, most recent trial") {
-                    secondaryRow(.pause, latest: latest)
+                    secondaryRow(.spread, latest: latest)
                 }
             }
 
@@ -149,7 +153,7 @@ struct MovementCheckHistoryScreen: View {
                 }
             }
         }
-        .navigationTitle("Movement check history")
+        .navigationTitle("Tapping history")
         .navigationBarTitleDisplayMode(.inline)
     }
 

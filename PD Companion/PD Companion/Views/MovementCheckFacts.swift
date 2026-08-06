@@ -31,20 +31,29 @@ struct MovementCheckMatrix: View {
     /// a glyph on a chart weeks later, it's the thing pushing the numbers off screen.
     var showsDefinitions: Bool = false
 
+    /// ⛔ **Pause was here and was removed Aug 5 2026 — do not add it back.** It is
+    /// `(last - first) / (n - 1)`: the tap rate inverted, so it restates the Taps row in a
+    /// different unit. The matrix was showing one measurement three times.
+    ///
+    /// ⚠️ **Spread is not a grade** — hence the name. "Accuracy" reads as pass/fail, and this
+    /// feature never answers that. It is a distance: how far taps landed from the middle of
+    /// the box, on average. It earns its row by being free to vary when the tap count doesn't,
+    /// ⛔ NOT by being validated — the PLOS One study measured count, travel and dwell, not
+    /// this, and it carries its own confound (tap faster, land sloppier).
     private enum Metric: CaseIterable {
-        case taps, travel, pause
+        case taps, travel, spread
         var label: String {
             switch self {
             case .taps:   "Taps"
             case .travel: "Travel"
-            case .pause:  "Pause"
+            case .spread: "Spread"
             }
         }
         var definition: String? {
             switch self {
             case .taps:   nil
             case .travel: "Travel is how far your finger moved on screen, tap to tap."
-            case .pause:  "Pause is the gap between one tap ending and the next starting."
+            case .spread: "Spread is how far your taps landed from the middle of the box, on average."
             }
         }
         /// `nil` where a trial can't answer — a trial captured before the app stored its
@@ -54,7 +63,7 @@ struct MovementCheckMatrix: View {
             switch self {
             case .taps:   return Double(s.tapCount)
             case .travel: return s.travelMeters
-            case .pause:  return s.interTapDwellMean * 1000
+            case .spread: return s.offTargetMM
             }
         }
         func text(_ value: Double?) -> String {
@@ -62,7 +71,7 @@ struct MovementCheckMatrix: View {
             switch self {
             case .taps:   return String(format: "%.0f", value)
             case .travel: return String(format: "%.1f m", value)
-            case .pause:  return String(format: "%.0f ms", value)
+            case .spread: return String(format: "%.0f mm", value)
             }
         }
     }

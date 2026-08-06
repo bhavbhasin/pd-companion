@@ -204,8 +204,12 @@ enum DayEvent: Identifiable {
         // distinguishable on a timeline where they share a glyph.
         case .therapy(_, _, _, let name):
             return name.isEmpty ? "Therapy" : String(name.prefix(40))
-        case .movementCheck(_, _, let hand, let tapCount):
-            return "\(hand.displayName) hand · \(tapCount) taps"
+        case .movementCheck:
+            // ⛔ NOT the hand or the tap count of the one glyph that was tapped. Two trials
+            // land seconds apart, so both glyphs open the SAME session and the sheet shows
+            // both hands — a title naming one of them made a session-level card look like it
+            // belonged to a single trial. The matrix underneath carries every number.
+            return "Tapping"
         }
     }
 }

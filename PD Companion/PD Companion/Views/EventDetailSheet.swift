@@ -362,7 +362,7 @@ struct EventDetailSheet: View {
                         Button(role: .destructive) {
                             showDeleteAlert = true
                         } label: {
-                            Label("Delete this movement check", systemImage: "trash")
+                            Label("Delete this session", systemImage: "trash")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
@@ -582,9 +582,10 @@ struct EventDetailSheet: View {
             return "Logged at \(time.formatted(.dateTime.hour().minute()))"
         case .therapy(_, let start, let duration, _):
             return "\(Int(duration / 60)) min · \(start.formatted(.dateTime.hour().minute()))"
-        case .movementCheck(_, let time, _, let tapCount):
-            let rate = Double(tapCount) / MovementCheckStyle.trialDuration
-            return String(format: "%.1f taps/sec · ", rate) + time.formatted(.dateTime.hour().minute())
+        case .movementCheck(_, let time, _, _):
+            // Same reason as the title: a per-hand rate here described one trial on a card
+            // that shows two.
+            return "Both hands · " + time.formatted(.dateTime.hour().minute())
         }
     }
 }
