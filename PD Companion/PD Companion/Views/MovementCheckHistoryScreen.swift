@@ -42,12 +42,16 @@ struct MovementCheckHistoryScreen: View {
             case .spread: "Spread"
             }
         }
-        var unit: String {
-            switch self {
-            case .taps:   ""
-            case .spread: "mm"
-            }
-        }
+        /// ⛔ Deliberately empty for BOTH metrics. `chartYAxisLabel` renders at the top of a
+        /// trailing y-axis and overflows the plot: "mm" showed up as a clipped stub beside the
+        /// top gridline. There is nothing to recover — the window header already prints the
+        /// unit on every value ("5 mm - 6 mm per trial"), so the axis label was a redundant
+        /// glyph that only had room to be wrong. Matches `SeverityTrendSheet` and
+        /// `SleepDetailSheet`, which both pass "".
+        /// ⛔ `HRVDetailSheet` passes "ms" through the same path and does NOT clip — checked on
+        /// device Aug 5 2026. Whatever the cause, it is specific to this screen, so don't
+        /// "fix" the shared chart on the strength of this one.
+        var unit: String { "" }
         /// Names what one point IS, since the chart's own title is just the metric name.
         var headerLabel: String {
             switch self {
