@@ -833,14 +833,32 @@ class HealthKitManager: ObservableObject {
     /// layered a night ~2x → a naive sum reported 10h16m for a 7h38m night). A no-op on
     /// clean, single-source data (union == sum). `primarySources` empty → all samples are
     /// the same tier (plain union), the right fallback when no stager is present.
+    /// One source's claim over one span. `tier` 1 = a staging source (emits Deep/REM), 0 = coarse.
+    nonisolated struct StagedSpan {
+        let start: Date
+        let end: Date
+        let stage: SleepStage
+        /// 1 = staging source, 0 = coarse. Compared BEFORE `stagePriority`, which is what keeps a
+        /// coarse source's `awake` from carving a hole in a stager's real sleep.
+        let tier: Int
+    }
+
     private nonisolated static func flattenSleepStages(
         _ samples: [HKCategorySample], primarySources: Set<String>
     ) -> [SleepStageSegment] {
-        let staged: [(start: Date, end: Date, stage: SleepStage, tier: Int)] = samples.compactMap {
+        let staged: [StagedSpan] = samples.compactMap {
             guard let stage = sleepStage(for: $0.value), $0.endDate > $0.startDate else { return nil }
             let tier = primarySources.contains($0.sourceRevision.source.bundleIdentifier) ? 1 : 0
-            return ($0.startDate, $0.endDate, stage, tier)
+            return StagedSpan(start: $0.startDate, end: $0.endDate, stage: stage, tier: tier)
         }
+        return resolveStages(staged)
+    }
+
+    /// One stage per moment, from overlapping claims. ⭐ Split out of `flattenSleepStages`
+    /// Aug 7 2026 so Rule 2 is testable: `tier` is derived from `sourceRevision`, which HealthKit
+    /// owns and a locally-built `HKCategorySample` cannot fake, so two sources could not be
+    /// simulated through the HK-typed entry point. This half is pure and takes plain values.
+    nonisolated static func resolveStages(_ staged: [StagedSpan]) -> [SleepStageSegment] {
         guard !staged.isEmpty else { return [] }
 
         let bounds = Set(staged.flatMap { [$0.start, $0.end] }).sorted()
@@ -849,7 +867,9 @@ class HealthKitManager: ObservableObject {
             let a = bounds[i], b = bounds[i + 1]
             let mid = a.addingTimeInterval(b.timeIntervalSince(a) / 2)
             // Tier first (a stager wins wherever it tracked → coarse sources only gap-fill),
-            // then stage priority within the winning tier.
+            // then stage priority within the winning tier. ⭐ Tier being compared FIRST is what
+            // lets `awake` outrank asleep in `stagePriority` (Rule 2) without a coarse source's
+            // awake ever carving a hole in a stager's real sleep.
             let winner = staged
                 .filter { $0.start <= mid && mid < $0.end }
                 .max { ($0.tier, stagePriority($0.stage)) < ($1.tier, stagePriority($1.stage)) }
@@ -874,14 +894,29 @@ class HealthKitManager: ObservableObject {
         }
     }
 
-    /// Higher wins when stages overlap. Any asleep stage outranks awake so a stray
-    /// awake layer never carves a hole in real sleep.
+    /// Higher wins when stages overlap **within the winning tier**.
+    ///
+    /// ⭐ **AMENDED Aug 7 2026 — chain A Rule 2. `awake` was 0, the weakest claim of all**, so one
+    /// instrument's sleep painted over another's detected wakefulness. Measured on the 07-30
+    /// export: Watch says awake while Oura says asleep **490 min**; Oura says awake while Watch
+    /// says asleep **527 min**. ~17 h, every minute of it scored as sleep.
+    ///
+    /// Detected wakefulness is a POSITIVE observation — movement and heart rate the instrument
+    /// actually saw. "Asleep" is frequently the absence of that. Between two sources of equal
+    /// capability, the one reporting something it measured is not the one to discard, so `awake`
+    /// now outranks every asleep stage.
+    ///
+    /// ⛔ This did NOT weaken the original rule it replaces ("a stray awake layer must never carve
+    /// a hole in real sleep"). That protection lives in `tier`, which is compared FIRST at `:855`:
+    /// a coarse source cannot outrank a stager whatever it claims. Only two sources of the SAME
+    /// tier now resolve on the stage itself. ⚠️ Unlike Rule 1 this moves the sleep SCORE —
+    /// `reduceSleepNight` counts these segments — which is intended here and was not there.
     private nonisolated static func stagePriority(_ stage: SleepStage) -> Int {
         switch stage {
+        case .awake: return 5
         case .deep:  return 4
         case .rem:   return 3
         case .core:  return 2
-        case .awake: return 0
         }
     }
 
