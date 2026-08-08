@@ -145,9 +145,15 @@ struct LogMovementCheckScreen: View {
     private var instructions: some View {
         VStack(spacing: 20) {
             Spacer()
-            Image(systemName: MovementCheckStyle.timelineSymbol)
-                .font(.system(size: 44))
-                .foregroundStyle(MovementCheckStyle.tint)
+            // ⭐ Replaced the static `hand.tap.fill` glyph. A symbol named the category; it did
+            // not show that there are TWO targets, that they are stacked, or that the movement is
+            // an alternation between them — which is the whole shape of this test. Rotation's
+            // instructions screen earns its picture the same way.
+            // ⚠️ Full-bleed, no horizontal padding, matching Rotation: the clip carries its own
+            // background in both appearances, so at screen width there is no visible video edge.
+            // Constraining it would only shrink the targets — the part that has to be legible.
+            TapDemoVideo()
+                .frame(maxWidth: .infinity)
             Text("Tapping")
                 .font(.title2.weight(.semibold))
             // ⚠️ The instruction line is part of the measurement, not UI copy — a trial

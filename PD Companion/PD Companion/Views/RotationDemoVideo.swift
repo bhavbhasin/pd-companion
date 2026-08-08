@@ -73,7 +73,10 @@ struct RotationDemoVideo: View {
 
 /// `AVPlayerLayer` behind a SwiftUI view. Deliberately not `VideoPlayer`, which brings transport
 /// controls and a tap target with it — this is a picture, not a player.
-private struct LoopingVideoLayer: UIViewRepresentable {
+///
+/// ⚠️ Not `private`: `TapDemoVideo` plays its clip through this same layer. Both Movement check
+/// demos must loop identically, so there is one player, not two.
+struct LoopingVideoLayer: UIViewRepresentable {
     let url: URL
     let isPlaying: Bool
 
