@@ -484,7 +484,10 @@ struct MedicationCardTests {
         }
         let samples = try Self.loadTremor(tremorPath)
         let doses = try Self.loadTakenDoses(medsPath)
-        let sleep = try Self.loadAsleepIntervals(sleepPath)
+        // ⚠️ RECONCILED Aug 7 2026 — this loaded the raw union, so it pinned ~48 min while the
+        // shipping app showed 93 on the same record. See SleepFixtureLoader.swift.
+        let sleep = try SleepFixture.asleepIntervals(
+            sleepPath, sensing: CorrelationEngine.wearSpans(samples))
         #expect(doses.count == 273, "taken dose count on the 07-24 export")
 
         let card = try #require(CorrelationEngine.medicationInsight(

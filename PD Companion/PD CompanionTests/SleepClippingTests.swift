@@ -4,11 +4,15 @@
 //
 //  Two jobs.
 //
-//  1. ORACLE TEST — the Swift engine must reproduce the number an independent Python
-//     replication produced on the SAME backup before any of this was written
-//     (501.7 min/day, 07-16-2026 export). Two implementations, one number. That
-//     replication is what caught three wrong claims in the design note, so it has
-//     earned the right to be the oracle. docs/design/wearing-off-margin.md.
+//  1. REAL-BACKUP TESTS — the Swift engine against an independent Python replication on the
+//     SAME backup (07-16-2026). Two implementations, one number. That replication is what
+//     caught three wrong claims in the design note, so it earned the right to be the oracle.
+//     docs/design/wearing-off-margin.md.
+//     ⚠️ Aug 7 2026: these fixtures now RECONCILE sleep (Rule 1, `bb0b580`); until then they
+//     were green against the union the engine no longer uses. The KM oracle was re-derived
+//     properly (177.5 → 182.5, lab first). The min/day oracle was NOT — 502 is pre-Rule-1 and
+//     Swift now says 531, so that assertion is reduced to bounds and the re-derivation is
+//     tracked in BACKLOG. ⛔ Do not "fix" it by pinning 531; that is Swift checking itself.
 //
 //  2. SCENARIO TESTS — synthetic, no backup needed, pinning the cases we reasoned
 //     through by hand: nap inside a gap, night interruption + rescue dose, a
@@ -59,12 +63,12 @@ struct SleepClippingTests {
         return digits.first
     }
 
-    // MARK: - 1. Oracle test (real backup)
+    // MARK: - 1. Real-backup invariants (oracle re-derivation OWED — see below)
 
     static let backupDir =
         "/Users/bhav/Documents/ParkinsonsProject/PD Companion/PD Companion Backups/07-16-2026"
 
-    @Test func matchesPythonOracleOnRealBackup() throws {
+    @Test func dailyUncoveredStaysFarAboveTheSleepBlindFigure() throws {
         pinCalendar()
         // Physical devices can't see the Mac path; fail loudly rather than skip silently.
         let tremorPath = try #require(Self.findCSV(prefix: "tremor_readings"),
@@ -74,7 +78,10 @@ struct SleepClippingTests {
 
         let samples = try Self.loadTremor(tremorPath)
         let doses = try Self.loadTakenDoses(medsPath)
-        let recorded = try Self.loadAsleepIntervals(sleepPath)
+        // ⚠️ RECONCILED Aug 7 2026. This read the raw union until then, so it was green against a
+        // world Rule 1 (`bb0b580`) replaced — see SleepFixtureLoader.swift.
+        let recorded = try SleepFixture.asleepIntervals(
+            sleepPath, sensing: CorrelationEngine.wearSpans(samples))
 
         #expect(doses.count == 246, "taken dose count")
 
@@ -87,12 +94,22 @@ struct SleepClippingTests {
             "card should fire on the real backup")
         let n = try #require(Self.uncovered(from: insight))
 
-        // Python oracle: 501.7 min/day. Allow a few minutes for float/binning drift
-        // between the two implementations — but NOT enough to hide a real divergence.
-        #expect(abs(n - 502) <= 5, "Swift says \(n) min/day, Python oracle says 502")
-
-        // And the pre-change number must be gone: 234 was the sleep-blind figure.
-        #expect(n > 400, "sleep clipping should roughly double the old 234 min/day")
+        // ⚠️ THE ORACLE IS STALE AND ITS RE-DERIVATION IS OWED. Aug 7 2026: this fixture now
+        // reconciles sleep (Rule 1, `bb0b580`), which moved Swift from 502 to 531 min/day —
+        // fewer phantom sleep minutes subtracted from each gap, so more waking uncovered time.
+        // That is the expected direction, but 502 was the PRE-Rule-1 Python figure and there is
+        // no re-derived oracle to check 531 against.
+        //
+        // ⛔ Deliberately NOT re-pinned to 531. This suite's whole value is agreeing with an
+        // INDEPENDENT implementation; pinning Swift to Swift and keeping the name
+        // "matchesPythonOracle" is precisely the false assurance that the ~48-vs-93 Mucuna
+        // surprise exposed on this same day. Re-deriving it needs `censoringSleep` and
+        // `effectiveSleep` ported to `analysis/`, which is tracked in BACKLOG.
+        //
+        // What still holds without an oracle, and is asserted: the sleep-blind figure was 234,
+        // and clipping must roughly double it. A regression to sleep-blindness fails here.
+        #expect(n > 400, "sleep clipping should roughly double the old 234 min/day; got \(n)")
+        #expect(n < 700, "an implausible daily OFF total — the gap subtraction has broken")
 
         // The precision-based tier must be a NO-OP on the real record. Replacing an arbitrary
         // gate is not licence to move anyone's badge: the claim is ~500 min/day against a
@@ -113,7 +130,9 @@ struct SleepClippingTests {
         let sleepPath = try #require(Self.findCSV(prefix: "sleep_stages"))
         let samples = try Self.loadTremor(tremorPath)
         let doses = try Self.loadTakenDoses(medsPath)
-        let recorded = try Self.loadAsleepIntervals(sleepPath)
+        // ⚠️ RECONCILED Aug 7 2026 — see the note above and SleepFixtureLoader.swift.
+        let recorded = try SleepFixture.asleepIntervals(
+            sleepPath, sensing: CorrelationEngine.wearSpans(samples))
         let sig = samples.map { (time: $0.timestamp, value: $0.tremorScore) }
         let lo = samples.map(\.timestamp).min()!, hi = samples.map(\.timestamp).max()!
         let sleep = CorrelationEngine.effectiveSleep(recorded: recorded, covering: lo...hi)
@@ -135,8 +154,18 @@ struct SleepClippingTests {
         // reproduces both exactly, on the same 246 doses. Nothing automatically re-checks
         // that, so if the lab and these constants ever disagree, re-run the two lines above
         // before assuming the app is the one that drifted.
+        // ⚠️ RE-PINNED Aug 7 2026, 177.5 → 182.5, in the safe order: the LAB was re-run first and
+        // its numbers recorded, then Swift required to reproduce them independently. On this same
+        // 07-16-2026 backup and the same 246 doses, `loaders.load_sleep_intervals(reconcile=…)`:
+        //     sleep-blind (sleep=[])     192.5   n=245   ← unchanged, and still reproduced
+        //     UNreconciled (pre-Rule 1)  177.5   n=237   ← the old pin, still reproducible
+        //     RECONCILED  (Rule 1)       182.5   n=244   ← this
+        // The rise is Rule 1 working: phantom sleep no longer cuts observation short, so doses
+        // are watched longer and fewer are censored early (n 237 → 244).
+        // ⭐ 182.5 is also what `CorrelationEngineParityTests` pins independently — two real-data
+        // suites, two fixtures, same figure.
         #expect(abs(blind.kmMedian - 192.5) < 2.5, "sleep-blind KM")
-        #expect(abs(clipped.kmMedian - 177.5) < 2.5, "sleep-censored KM")
+        #expect(abs(clipped.kmMedian - 182.5) < 2.5, "sleep-censored KM")
         #expect(clipped.kmMedian < blind.kmMedian, "censoring must not inflate duration")
     }
 

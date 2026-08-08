@@ -100,6 +100,61 @@ struct SleepStageResolutionTests {
         #expect(Self.minutes(segs, .awake) == 0)
     }
 
+    // MARK: - Real record
+
+    static let backupDir =
+        "/Users/bhav/Documents/ParkinsonsProject/PD Companion/PD Companion Backups/07-24-2026"
+
+    private static func findCSV(prefix: String) -> String? {
+        (try? FileManager.default.contentsOfDirectory(atPath: backupDir))?
+            .first { $0.hasPrefix(prefix) && $0.hasSuffix(".csv") }
+            .map { backupDir + "/" + $0 }
+    }
+
+    /// ⭐ Rule 2 on Bhav's actual record, as a PROPERTY rather than a pinned total: wherever two
+    /// staging sources overlap and one of them says `awake`, the resolved timeline must say awake.
+    /// A pinned minute count would only be true of one export.
+    ///
+    /// ⚠️ **Stated limit — this test cannot check DIRECTION.** Rule 1 was validated against the
+    /// tremor stream, an instrument that took no part in the rule. That is impossible here: every
+    /// stager-vs-stager conflict on this record is Oura vs Apple Watch, Oura's data ends
+    /// 2026-01-03, and the tremor record begins 2026-05-08. So this pins that the rule DOES what
+    /// it says, never that the minutes it flips were truly awake. ⛔ Do not describe Rule 2 as
+    /// validated on real data.
+    @Test func onTheRealRecordAConflictAlwaysResolvesToAwake() throws {
+        let path = try #require(Self.findCSV(prefix: "sleep_stages"),
+            "Backup not found at \(Self.backupDir). Run on an iOS Simulator, not a device.")
+        let spans = try SleepFixture.stagedSpans(path)
+        let stagerSpans = spans.filter { $0.tier == 1 }
+        #expect(stagerSpans.contains { $0.stage == .awake },
+                "fixture has no staged awake at all — this test would prove nothing")
+
+        // Conflicts: a tier-1 awake span overlapped in time by a tier-1 asleep span.
+        let awake = stagerSpans.filter { $0.stage == .awake }
+        let asleep = stagerSpans.filter { $0.stage != .awake }
+        var conflicts: [(Date, Date)] = []
+        for a in awake {
+            for s in asleep where s.start < a.end && s.end > a.start {
+                let lo = max(a.start, s.start), hi = min(a.end, s.end)
+                if hi > lo { conflicts.append((lo, hi)) }
+            }
+        }
+        #expect(!conflicts.isEmpty,
+                "no stager-vs-stager conflict in the fixture — nothing for Rule 2 to act on")
+
+        let resolved = HealthKitManager.resolveStages(spans)
+        // Sample the midpoint of each conflict; the resolved timeline must call it awake.
+        var checked = 0
+        for (lo, hi) in conflicts {
+            let mid = lo.addingTimeInterval(hi.timeIntervalSince(lo) / 2)
+            guard let seg = resolved.first(where: { $0.start <= mid && mid < $0.end }) else { continue }
+            checked += 1
+            #expect(seg.stage == .awake,
+                    "a measured awake at \(mid) was overwritten as \(seg.stage)")
+        }
+        #expect(checked > 0, "no conflict midpoint landed inside a resolved segment")
+    }
+
     /// One source overlapping ITSELF across syncs must still dedupe rather than double-count.
     @Test func aSourceOverlappingItselfIsNotDoubleCounted() {
         let segs = HealthKitManager.resolveStages([
