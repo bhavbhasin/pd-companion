@@ -9,10 +9,9 @@
 //     caught three wrong claims in the design note, so it earned the right to be the oracle.
 //     docs/design/wearing-off-margin.md.
 //     ⚠️ Aug 7 2026: these fixtures now RECONCILE sleep (Rule 1, `bb0b580`); until then they
-//     were green against the union the engine no longer uses. The KM oracle was re-derived
-//     properly (177.5 → 182.5, lab first). The min/day oracle was NOT — 502 is pre-Rule-1 and
-//     Swift now says 531, so that assertion is reduced to bounds and the re-derivation is
-//     tracked in BACKLOG. ⛔ Do not "fix" it by pinning 531; that is Swift checking itself.
+//     were green against the union the engine no longer uses. BOTH oracles were re-derived in
+//     the lab first, then Swift required to reproduce them: KM 177.5 → 182.5, and daily
+//     uncovered 502 → 531 (`analysis/run_daily_uncovered_oracle.py`).
 //
 //  2. SCENARIO TESTS — synthetic, no backup needed, pinning the cases we reasoned
 //     through by hand: nap inside a gap, night interruption + rescue dose, a
@@ -63,12 +62,12 @@ struct SleepClippingTests {
         return digits.first
     }
 
-    // MARK: - 1. Real-backup invariants (oracle re-derivation OWED — see below)
+    // MARK: - 1. Oracle test (real backup)
 
     static let backupDir =
         "/Users/bhav/Documents/ParkinsonsProject/PD Companion/PD Companion Backups/07-16-2026"
 
-    @Test func dailyUncoveredStaysFarAboveTheSleepBlindFigure() throws {
+    @Test func matchesPythonOracleOnRealBackup() throws {
         pinCalendar()
         // Physical devices can't see the Mac path; fail loudly rather than skip silently.
         let tremorPath = try #require(Self.findCSV(prefix: "tremor_readings"),
@@ -94,22 +93,25 @@ struct SleepClippingTests {
             "card should fire on the real backup")
         let n = try #require(Self.uncovered(from: insight))
 
-        // ⚠️ THE ORACLE IS STALE AND ITS RE-DERIVATION IS OWED. Aug 7 2026: this fixture now
-        // reconciles sleep (Rule 1, `bb0b580`), which moved Swift from 502 to 531 min/day —
-        // fewer phantom sleep minutes subtracted from each gap, so more waking uncovered time.
-        // That is the expected direction, but 502 was the PRE-Rule-1 Python figure and there is
-        // no re-derived oracle to check 531 against.
+        // ORACLE, re-derived Aug 7 2026: **531.1 min/day**, from
+        // `analysis/run_daily_uncovered_oracle.py` on this same 07-16-2026 backup —
+        // 246 taken doses, 244 analysed, 68 dosed days, pooled KM 182.5. Swift lands on 531.
         //
-        // ⛔ Deliberately NOT re-pinned to 531. This suite's whole value is agreeing with an
-        // INDEPENDENT implementation; pinning Swift to Swift and keeping the name
-        // "matchesPythonOracle" is precisely the false assurance that the ~48-vs-93 Mucuna
-        // surprise exposed on this same day. Re-deriving it needs `censoringSleep` and
-        // `effectiveSleep` ported to `analysis/`, which is tracked in BACKLOG.
+        // Why it moved from the old 502: this fixture now RECONCILES sleep (Rule 1, `bb0b580`),
+        // so phantom sleep no longer gets subtracted out of each gap and more genuinely waking
+        // uncovered time is counted. 502 was the pre-Rule-1 figure.
         //
-        // What still holds without an oracle, and is asserted: the sleep-blind figure was 234,
-        // and clipping must roughly double it. A regression to sleep-blindness fails here.
+        // ⚠️ **This oracle is weaker than the one it replaces, and the difference matters.** The
+        // original was written BEFORE the Swift and could therefore catch a conceptual error —
+        // it found three wrong claims in the design note. This one was ported FROM
+        // `CorrelationEngine` (`effectiveSleep` :1354, `censoringSleep` :1397, `uncoveredPerDay`
+        // :2480), so it catches transcription, data-handling and arithmetic divergence between
+        // two stacks, but NOT a mistake both share. Do not describe it as fully independent.
+        #expect(abs(n - 531) <= 5, "Swift says \(n) min/day, Python oracle says 531")
+
+        // Kept as a floor independent of the oracle: 234 was the sleep-blind figure, and a
+        // regression to sleep-blindness must fail here even if both implementations drift.
         #expect(n > 400, "sleep clipping should roughly double the old 234 min/day; got \(n)")
-        #expect(n < 700, "an implausible daily OFF total — the gap subtraction has broken")
 
         // The precision-based tier must be a NO-OP on the real record. Replacing an arbitrary
         // gate is not licence to move anyone's badge: the claim is ~500 min/day against a
