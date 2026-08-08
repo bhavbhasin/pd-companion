@@ -172,14 +172,23 @@ struct DosePanelRowTests {
         #expect(m > 0)
     }
 
-    /// The ONE genuine blank: tremor was already quiet AND sleep ended the watching within a
-    /// bin. Neither fact alone is disqualifying.
-    @Test func alreadyQuietThenAsleepIsTheOnlyBlank() {
+    /// The blank, now that it means what it says. Tremor already quiet AND sleep ended the
+    /// watching AND there was **no measurable window at all** — a single bin. Neither of the
+    /// first two facts is disqualifying, and nor are they together.
+    ///
+    /// ⚠️ **AMENDED Aug 7 2026 — a design decision, not a test fitted to the code.** This
+    /// previously pinned a TEN-minute window as the blank. Bhav's call, on seeing Jul 12 read
+    /// "we never saw what it did" after a two-hour watch: a real number is more useful than a
+    /// blanket statement, so a ten-minute window should say it watched ten minutes. The blank
+    /// now survives only where there is genuinely nothing to state.
+    /// ⛔ No per-drug threshold was introduced to do this — the line is `sustainBins` bins of
+    /// `binMin`, the engine's own resolution, so a new medication needs no new number.
+    @Test func aSingleBinIsTheOnlyBlank() {
         pinCalendar()
         let t0 = Self.at(11, 1, 30)
         let sleep = [SleepInterval(start: Self.at(10, 23, 0), end: Self.at(11, 1, 25)),
-                     SleepInterval(start: Self.at(11, 1, 40), end: Self.at(11, 7, 0))]
-        // Quiet around the dose, and asleep again ten minutes later.
+                     SleepInterval(start: Self.at(11, 1, 33), end: Self.at(11, 7, 0))]
+        // Quiet around the dose, and asleep again before a second bin can exist.
         let samples = Self.series(days: 10..<13,
                                   on: [(Self.at(11, 0, 0), 100)], sleep: sleep)
         let doses = [Dose(timestamp: t0, name: "Mucuna")]
@@ -188,6 +197,52 @@ struct DosePanelRowTests {
         #expect(r.count == 1)
         #expect(r[0].coverage == .learnedNothing)
         #expect(r[0].onset == .tremorAlreadyLow)
+    }
+
+    /// The same shape, ten minutes instead of three: this used to be the blank and is now a
+    /// stated number. ⭐ The point of the amendment — specificity beats a blanket statement.
+    @Test func aTenMinuteWatchStatesItsTenMinutes() {
+        pinCalendar()
+        let t0 = Self.at(11, 1, 30)
+        let sleep = [SleepInterval(start: Self.at(10, 23, 0), end: Self.at(11, 1, 25)),
+                     SleepInterval(start: Self.at(11, 1, 40), end: Self.at(11, 7, 0))]
+        let samples = Self.series(days: 10..<13,
+                                  on: [(Self.at(11, 0, 0), 100)], sleep: sleep)
+        let doses = [Dose(timestamp: t0, name: "Mucuna")]
+        let r = Self.rows(day: 11, samples: samples, doses: doses, sleep: sleep)
+
+        #expect(r.count == 1)
+        #expect(r[0].coverage != .learnedNothing)
+        guard case .endedBySleep(let m) = r[0].coverage else {
+            Issue.record("expected a stated watched span, got \(r[0].coverage)"); return
+        }
+        #expect(m > 0, "a stated span must carry a real number, got \(m)")
+    }
+
+    /// ⭐ The same two facts, but we watched for TWO HOURS first. `learnedNothing` used to fire on
+    /// any dose censored at sleep however long the window was, so this read "we never saw what it
+    /// did" after 2h 3m of real watching. Pinned to the shape of Jul 12 22:45 (07-30 export):
+    /// quiet baseline, no wear-off seen, sleep closing the window at ~122 min.
+    /// The window held far more than `sustainBins` bins, so a wear-off COULD have been called and
+    /// was not — that is an at-least floor, not a blank.
+    @Test func aLongWatchEndingInSleepIsAFloorNotABlank() {
+        pinCalendar()
+        let t0 = Self.at(11, 1, 30)
+        let sleep = [SleepInterval(start: Self.at(10, 23, 0), end: Self.at(11, 1, 25)),
+                     SleepInterval(start: Self.at(11, 3, 35), end: Self.at(11, 9, 0))]
+        // Quiet at the dose and still quiet when sleep arrives 125 min later.
+        let samples = Self.series(days: 10..<13,
+                                  on: [(Self.at(11, 0, 0), 215)], sleep: sleep)
+        let doses = [Dose(timestamp: t0, name: "Sinemet")]
+        let r = Self.rows(day: 11, samples: samples, doses: doses, sleep: sleep)
+
+        #expect(r.count == 1)
+        #expect(r[0].coverage != .learnedNothing,
+                "2 h of watching reported as nothing learned: \(r[0].coverage)")
+        guard case .endedBySleep(let m) = r[0].coverage else {
+            Issue.record("expected the window to be censored at sleep, got \(r[0].coverage)"); return
+        }
+        #expect(m > 100, "reported \(m) min watched; sleep arrives 125 min after the dose")
     }
 
     // MARK: - Day scoping and completeness

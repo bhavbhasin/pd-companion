@@ -1861,6 +1861,36 @@ nonisolated extension CorrelationEngine {
         return abs(onset.timeIntervalSince(r.t0) / 60 - r.durationMin) <= binMin
     }
 
+    /// The PANEL's version of the same question, and it is deliberately a different question.
+    ///
+    /// ⭐ **`learnedNothing` is a statistical gate; this is a description of one dose.**
+    /// `kmMedian` assumes censoring is independent of outcome, and falling asleep is not — those
+    /// doses were heading for a wear-off when the watching stopped, so admitting them removes
+    /// early failures from the fit. Measured Aug 7 2026: dropping the distinction moved Mucuna's
+    /// card from 48 min to **93**, which is the inflated figure the Jul 29 observability rule was
+    /// built to remove. ⛔ The card must keep the strict rule.
+    ///
+    /// The panel is not an estimator — `docs/design/dose-onset-coverage-surfaces.md` and the note
+    /// above: *a measurement of one dose is not a statistical claim needing n*. So here the extra
+    /// fact applies: we only say we saw nothing when the window was too short to HOLD anything.
+    /// `offReturn` needs `sustainBins` consecutive bins above threshold, and these doses start
+    /// below it, so a window holding fewer bins than that could not have produced a wear-off
+    /// whatever the drug did. Longer, and we watched and saw it hold — a fact about that dose.
+    /// Measured on the 07-30 export after Rule 1: 31 doses were being described as unwatched,
+    /// median 32.5 min, max 162.5. Jul 12 22:45 was watched 2h 3m and read *"we never saw what
+    /// it did"*.
+    ///
+    /// ⛔ These two must never be re-merged. They agree on every dose the card excludes for
+    /// being genuinely unobservable, and differ only where the panel has something true to say
+    /// that the estimator cannot safely use. ⚠️ Still open, separately: `Jul 12`'s baseline is
+    /// **0.99** against an `onThreshold` of 1.0 — a hard cutoff deciding a marginal case.
+    static func panelLearnedNothing(_ r: DoseDuration, onThreshold: Double,
+                                    sleep: [SleepInterval]) -> Bool {
+        let binsWatched = (r.durationMin + binMin / 2) / binMin
+        guard binsWatched < Double(sustainBins) else { return false }
+        return learnedNothing(r, onThreshold: onThreshold, sleep: sleep)
+    }
+
     /// How a dose's onset read. ⭐ Gated by `fellFrom` — a dose taken while tremor was already
     /// low has nowhere to fall from, so it has no onset. That is INFORMATION, not a blank: it
     /// is the most common reason onset is missing (82 of 279 measured doses).
@@ -1997,7 +2027,10 @@ nonisolated extension CorrelationEngine {
                 continue
             }
 
-            if learnedNothing(r, onThreshold: onThreshold, sleep: censorSleep) {
+            // ⭐ `panelLearnedNothing`, NOT `learnedNothing` — see the note on both. The card's
+            // rule is a censoring-bias gate for the KM fit; this row is a statement about one
+            // dose, and a two-hour watch is a fact whatever the estimator can safely use.
+            if panelLearnedNothing(r, onThreshold: onThreshold, sleep: censorSleep) {
                 rows.append(DoseRow(t0: dose.timestamp, name: label,
                                     onset: .tremorAlreadyLow, coverage: .learnedNothing,
                                     endedBy: nil))
@@ -2115,10 +2148,14 @@ nonisolated extension CorrelationEngine {
         // and doses at 04:45, so his pre-dose window is awake and the night doses sailed through,
         // putting the duration back to 93 min. What disqualifies them is sleep arriving AFTER,
         // ending the watching within minutes.
-        // ⭐ `learnedNothing` was a local closure here until Aug 5 2026. It is now a shared static
-        // so the Day-in-Review Doses panel classifies its rows with the SAME rule rather than
-        // re-deriving it — the panel and this card must never disagree about which doses taught
-        // us nothing. Behaviour unchanged; this is a move, not an edit.
+        // ⭐ `learnedNothing` was a local closure here until Aug 5 2026, then a shared static so
+        // the Doses panel would not re-derive it. ⚠️ AMENDED Aug 7 2026: the panel now calls
+        // `panelLearnedNothing`, which adds a minimum-window term. That is deliberate and the
+        // two must NOT be re-merged. This line is a censoring-bias gate — `kmMedian` needs
+        // censoring independent of outcome, and sleep is not independent. Measured: giving this
+        // filter the panel's window term moved Mucuna from 48 min to 93, the exact figure the
+        // Jul 29 observability rule removed. The panel is not an estimator (see `:1848`) and may
+        // truthfully report a long watch this fit cannot use.
         // Duration + floors: everything we learned anything from.
         let readable = mine.filter { !learnedNothing($0, onThreshold: onThreshold, sleep: censorSleep) }
         // How far tremor falls, and how fast: only doses with somewhere to fall FROM.
