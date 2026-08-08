@@ -271,6 +271,7 @@ private struct RotationCaptureView: View {
         .onDisappear {
             captureTask?.cancel()
             recorder.stop()
+            MovementCue.shared.release()
         }
     }
 
@@ -295,6 +296,8 @@ private struct RotationCaptureView: View {
         // Recording begins now so the dial is live during the count and the user can see it
         // working before anything is being measured.
         recorder.start()
+        // Primed during the pre-roll so the GO beep isn't waiting on the audio hardware.
+        MovementCue.shared.prepare()
         captureTask = Task {
             for n in stride(from: 3, through: 1, by: -1) {
                 countdown = n
@@ -309,6 +312,7 @@ private struct RotationCaptureView: View {
     private func runTrial() async {
         started = true
         startDate = .now
+        MovementCue.shared.playStart()
         // ⚠️ Samples collected BEFORE this point (during the pre-roll) are discarded — the
         // trial is the 10 s, not the fumbling beforehand.
         recorder.beginTrial()
@@ -322,8 +326,11 @@ private struct RotationCaptureView: View {
         // ⭐ A beat between the clock ending and the screen changing, so the finish haptic has
         // something to fire on. On this test you are holding the phone at arm's length with
         // your palm turning over — you genuinely cannot see the countdown, so touch is the
-        // ONLY channel that can tell you when to stop.
+        // ONLY channel that can tell you when to stop. ⭐ And touch turned out not to be enough:
+        // a haptic reaching an outstretched arm through a palm that is itself turning is easy to
+        // miss, which is what the audible cue is here to fix.
         withAnimation(.snappy) { justFinished = true }
+        MovementCue.shared.playStop()
         try? await Task.sleep(for: .milliseconds(700))
         guard !Task.isCancelled else { return }
         let elapsed = Date.now.timeIntervalSince(startDate)

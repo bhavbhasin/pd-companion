@@ -35,6 +35,21 @@ enum MovementCheckStyle {
     static let targetWidthMM: Double = 30
     static let targetHeightMM: Double = 45
     static let targetGapMM: Double = 15
+
+    // MARK: Illustration palette
+    //
+    // ⭐ Anchored to `tint` exactly as `RotationStyle`'s teal family is — the demo belongs to the
+    // feature rather than looking like imported artwork. These are indigo's shades; `tint` itself
+    // draws the targets, so the one thing the user is about to touch is the one thing in the
+    // picture at full brand colour.
+    static let limb = Color(red: 0.259, green: 0.247, blue: 0.549)
+    static let limbShade = Color(red: 0.196, green: 0.188, blue: 0.435)
+    static let phoneBody = Color(red: 0.847, green: 0.847, blue: 0.914)
+    /// ⛔ Near-white, NOT the near-black `RotationStyle.phoneGlass`. That phone is off and generic;
+    /// this one is showing the screen the user is about to be looking at, so the glass matches
+    /// `systemBackground` and the targets sit on it at the same opacities the real capture screen
+    /// uses. The picture is a preview of the test, not a picture of a phone.
+    static let phoneGlass = Color(red: 0.976, green: 0.976, blue: 0.992)
 }
 
 struct LogMovementCheckScreen: View {
@@ -330,7 +345,10 @@ private struct TapCaptureView: View {
         // Locked only while a trial is actually running (`started`): the instructions and
         // results screens keep the normal swipe-to-dismiss a "+" entry is expected to have.
         .interactiveDismissDisabled(started)
-        .onDisappear { captureTask?.cancel() }
+        .onDisappear {
+            captureTask?.cancel()
+            MovementCue.shared.release()
+        }
     }
 
     /// Shown for ~0.9s between the countdown hitting 0 and `onComplete` actually firing —
@@ -392,6 +410,8 @@ private struct TapCaptureView: View {
 
     private func begin() {
         guard !started, countdown == nil else { return }
+        // Primed during the pre-roll so the GO beep isn't waiting on the audio hardware.
+        MovementCue.shared.prepare()
         captureTask = Task {
             for n in stride(from: 3, through: 1, by: -1) {
                 countdown = n
@@ -409,6 +429,7 @@ private struct TapCaptureView: View {
         started = true
         taps = []
         startDate = .now
+        MovementCue.shared.playStart()
         while !Task.isCancelled {
             let elapsed = Date.now.timeIntervalSince(startDate)
             remaining = max(0, MovementCheckStyle.trialDuration - elapsed)
@@ -417,6 +438,7 @@ private struct TapCaptureView: View {
         }
         guard !Task.isCancelled else { return }
         withAnimation(.snappy) { justFinished = true }
+        MovementCue.shared.playStop()
         try? await Task.sleep(for: .milliseconds(900))
         guard !Task.isCancelled else { return }
         finish()
