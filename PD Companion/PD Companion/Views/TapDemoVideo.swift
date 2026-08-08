@@ -3,9 +3,15 @@ import SwiftUI
 /// The looping "how to do it" demo on the Tapping instructions screen: an index finger alternating
 /// between two stacked targets, the touched one deepening on contact.
 ///
-/// ⭐ **A rendered clip, not the hand-drawn glyph** (`TapDemoIllustration`, which stays in the repo
-/// and is still the fallback below). Sibling of `RotationDemoVideo` and plays through the same
-/// `LoopingVideoLayer`, so the two Movement check screens loop identically.
+/// Sibling of `RotationDemoVideo`, playing through the same `LoopingVideoLayer` so the two Movement
+/// check screens loop identically.
+///
+/// ⛔ **Unlike Rotation, there is no vector fallback and that is deliberate.** `TapDemoIllustration`
+/// (a SwiftUI-drawn index finger crossing two boxes) was built before the clip existed and deleted
+/// once it shipped — two pieces of art for one picture only drift. Rotation keeps
+/// `RotationDemoIllustration` because it solved a real problem the clip inherited (a flat glyph has
+/// no back); nothing here needed solving twice. A bundle miss falls back to the plain category
+/// glyph, which is what the screen showed before either existed.
 ///
 /// ⭐ **The targets are composited, not generated.** The generator was asked for the two boxes and
 /// could not hold them still; the shipped clip draws them in post, warped onto the screen plane
@@ -57,8 +63,11 @@ struct TapDemoVideo: View {
                     .aspectRatio(Self.aspect, contentMode: .fit)
             } else {
                 // Bundle miss shouldn't happen, but a missing decoration must never cost the
-                // instructions screen its picture.
-                TapDemoIllustration()
+                // instructions screen its picture. Same glyph Tapping wears on the timeline, the
+                // legend and the `+` sheet, so a fallback still reads as this feature.
+                Image(systemName: MovementCheckStyle.timelineSymbol)
+                    .font(.system(size: 44))
+                    .foregroundStyle(MovementCheckStyle.tint)
             }
         }
         .accessibilityHidden(true)
