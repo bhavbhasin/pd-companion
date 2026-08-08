@@ -140,7 +140,10 @@ class HealthKitManager: ObservableObject {
             HKObjectType.workoutType()
         ]
         // GI symptoms are logged from Kampa (+ sheet / mic / Siri) as HKCategorySamples.
-        types.formUnion(GISymptom.sampleTypes)
+        // ⛔ `writableSampleTypes`, NOT `sampleTypes` — the latter is the full historical set
+        // kept for DECODING reads. Sharing it listed Bloating/Nausea/Diarrhea/Cramps/Heartburn
+        // on the Health permission sheet as things Kampa writes, which it no longer can.
+        types.formUnion(GISymptom.writableSampleTypes)
         return types
     }()
 

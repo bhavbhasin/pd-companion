@@ -159,8 +159,14 @@ nonisolated enum GISymptom: String, CaseIterable, Identifiable, Sendable {
     static let timelineSymbol = "cross.case.fill"
     static let tint = Color.purple
 
-    /// All HealthKit category types this feature reads + writes.
+    /// Every category type this feature can READ — the full historical set, so samples logged
+    /// before a symptom was retired still decode. ⛔ Not the write set: asking to share a type
+    /// no picker can produce puts a dead row in the Health permission sheet.
     static var sampleTypes: Set<HKSampleType> { Set(allCases.map(\.categoryType)) }
+
+    /// The types this feature can actually WRITE — exactly what `loggable` offers. Derived from
+    /// `loggable` rather than listed again, so retiring a chip removes its permission row too.
+    static var writableSampleTypes: Set<HKSampleType> { Set(loggable.map(\.categoryType)) }
 }
 
 /// The value a symptom is logged at. Graded symptoms use mild/moderate/severe; presence-only
