@@ -158,7 +158,10 @@ struct EventDetailSheet: View {
 
         let doses = await healthKit.fetchMedicationDoses(since: lo).filter { $0.timestamp < hi }
         guard !doses.isEmpty else { return }
-        let sleep = await healthKit.fetchSleepIntervals(from: lo, to: hi)
+        // Wear evidence from the tremor stream — see CorrelationEngine.reconcileSleep. `samples`
+        // already spans [lo, hi), which is exactly the window the sleep fetch covers.
+        let sleep = await healthKit.fetchSleepIntervals(
+            from: lo, to: hi, sensing: CorrelationEngine.wearSpans(samples))
 
         let rows = await Task.detached(priority: .userInitiated) {
             CorrelationEngine.dosePanelRows(dayStart: ds, dayEnd: de,

@@ -463,9 +463,13 @@ private struct DayReviewContent: View {
         // rather than on one card.
         // min/max, not first/last: `history` comes from an unsorted fetch, so first/last
         // would silently truncate the sleep window to an arbitrary sub-range.
+        // `sensing` comes from the tremor stream itself — the only signal that distinguishes
+        // "the watch was worn and this was not sleep" from "the watch was not recording", which
+        // a sleep source reports identically by being silent in both.
         let sleep: [SleepInterval]
         if let lo = history.map(\.timestamp).min(), let hi = history.map(\.timestamp).max() {
-            sleep = await healthKit.fetchSleepIntervals(from: lo, to: hi)
+            sleep = await healthKit.fetchSleepIntervals(
+                from: lo, to: hi, sensing: CorrelationEngine.wearSpans(history))
         } else {
             sleep = []
         }

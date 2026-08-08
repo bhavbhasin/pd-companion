@@ -324,7 +324,23 @@ class HealthKitManager: ObservableObject {
     /// Bhav's 3pm nap, where he lay down ~3:00 but Apple detected sleep only from 4:08, and
     /// that first hour carried genuine tremor. An `awake` interruption inside a night is
     /// likewise absent from the result, so it correctly counts as waking time.
-    func fetchSleepIntervals(from start: Date, to end: Date) async -> [SleepInterval] {
+    /// Merged asleep-only intervals — the shape the engine censors observation against.
+    ///
+    /// ⭐ **`sensing` has no default, deliberately.** It carries when a measuring instrument was
+    /// on the wrist (`CorrelationEngine.wearSpans` over the caller's tremor readings), and it is
+    /// what lets `reconcileSleep` tell "the watch was there and said you were awake" apart from
+    /// "the watch was not recording" — two situations a sleep source reports identically, by
+    /// being silent in both. Passing `[]` means "nothing was sensing", which makes every
+    /// inferred interval authoritative; that is a real contract, not a shrug, so callers state
+    /// it. Same reasoning as `wearing_off.analyze(sleep:)` in the Python lab: a default that
+    /// silently means *wrong* rather than *unset* is the footgun that shipped months of bad
+    /// numbers.
+    ///
+    /// ⛔ Before Aug 2026 this discarded the source on the `.map` below and merged everything,
+    /// so the loosest source always won. That was never a decision — the union simply happened
+    /// at the fetch boundary, before any policy could be applied. See `reconcileSleep`.
+    func fetchSleepIntervals(from start: Date, to end: Date,
+                             sensing: [SleepInterval]) async -> [SleepInterval] {
         let sleepType = HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
 
@@ -344,10 +360,24 @@ class HealthKitManager: ObservableObject {
                     HKCategoryValueSleepAnalysis.asleepREM.rawValue,
                     HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
                 ]
-                let intervals = samples
-                    .filter { asleepValues.contains($0.value) }
-                    .map { SleepInterval(start: $0.startDate, end: $0.endDate) }
-                continuation.resume(returning: CorrelationEngine.mergeSleep(intervals))
+                // Capability learned across the whole record, unioned with this window's own
+                // evidence so a source staging for the first time counts immediately — the same
+                // rule `reduceSleepNight` applies, and the reason it exists (see SleepStagerPrefs:
+                // deriving capability from one night silently demotes the watch on a fragmented
+                // night with no Deep/REM).
+                let stagers = SleepStagerPrefs.learn(SleepStagerPrefs.observed(in: samples))
+                var measured: [SleepInterval] = []
+                var inferred: [SleepInterval] = []
+                for s in samples where asleepValues.contains(s.value) && s.endDate > s.startDate {
+                    let iv = SleepInterval(start: s.startDate, end: s.endDate)
+                    if stagers.contains(s.sourceRevision.source.bundleIdentifier) {
+                        measured.append(iv)
+                    } else {
+                        inferred.append(iv)
+                    }
+                }
+                continuation.resume(returning: CorrelationEngine.reconcileSleep(
+                    measured: measured, inferred: inferred, sensing: sensing))
             }
             store.execute(query)
         }

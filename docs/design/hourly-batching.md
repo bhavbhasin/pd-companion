@@ -1,7 +1,10 @@
 # CloudKit Hourly Batching — New Data Only, No Migration
 
-**Status:** Designed Aug 3 2026. **Not built. Not a 1.0 change** — schedule it as the first
-post-1.0 piece of work, on its own, never folded into a feature.
+**Status:** Designed Aug 3 2026. Encoding decided + build plan added Aug 7 2026. **Not built.**
+⛔ **Sequenced AFTER the AutoSleep source-merge fix (chain A)**, decided Aug 7 — A is wrong on real
+screens today and is the observability layer everything downstream is measured against; this is the
+riskiest change in the codebase (tremor is unrefetchable past ~7 rolling days) and has no victim
+yet. See [Splitting the urgency](#splitting-the-urgency).
 
 **The decision that defines this design: existing per-minute rows are never touched.** No rewrite,
 no delete, no migration. Batching applies to data arriving after the update; everything already
@@ -44,8 +47,65 @@ verified with a real before/after storage read**, not trusted from this table.
 | Hourly, JSON blob | 48 | ~0.53 MB | ~190 MB (~16×) |
 | Hourly, packed binary | 48 | ~0.19 MB | ~70 MB (~45×) |
 
-Encoding choice is worth ~3×, which it never was before. It is a design decision, not an
-implementation detail.
+## Encoding — ✅ DECIDED Aug 7 2026: packed binary, Float32, LOSSLESS
+
+Packed over JSON (Bhav's call). ⭐ **But do NOT quantize inside the packed format.** Re-costed
+against the real models: CloudKit's 3.3 KB per-record overhead still dominates at 48 records/day, so
+shrinking the payload past packed has almost no effect.
+
+| per tremor sample | bytes/sample | record total | est./year |
+|---|---|---|---|
+| JSON | ~250 | ~18.3 KB | ~190 MB |
+| Packed, UInt16-quantized | 20 | ~4.5 KB | ~79 MB |
+| **Packed, Float32 (chosen)** | **36** | **~5.4 KB** | **~95 MB** |
+
+Quantizing the six distribution percentages buys ~16 MB/year and costs real precision against
+Apple's Float source — the wrong trade under [[feedback_preserve_raw_sensor_data]] on a 3.2 GB
+problem. Still ~34× better than today.
+
+**Layout.** Header: `schemaVersion` + sample count. Per tremor sample: offset-from-`hourStart`
+`UInt16` · duration `UInt16` · `tremorScore` `Float32` · `dyskinesiaScore` `Float32` · six
+percentages `Float32` = 36 B. Per dyskinesia sample: offset · duration · `percentLikely` = 8 B.
+(An hour is 3600 s, so `UInt16` offsets have ample headroom.)
+
+⚠️ **`tremorScore` must be STORED, never recomputed from the percentages.** `TremorSample`'s
+decode-tolerant init (`SymptomData.swift:41`) defaults all six percentages to 0 when an older watch
+build sends JSON without them, so a staggered TestFlight update yields samples with a real score and
+empty percentages. Recomputing would zero them.
+
+## Splitting the urgency
+
+⭐ **This entry's severity is SILENCE, not size.** The rate is survivable — 3.2 GB/yr against
+<1 GB spare is ~3-4 months before a free-tier user fills up, and an update ships inside that window.
+What is not survivable is that sync then stops with nobody told, on the only restore path.
+
+⇒ **The quota probe is separable and ~1/10 the work.** A probe write catching
+`CKError.quotaExceeded`, surfaced through the iCloud banner already shipped in `7bd0851`. It reduces
+the rate by nothing and removes the silence, which is the part that cannot be recovered from.
+**Do the probe before pressing Release; do batching properly afterwards, off the release clock.**
+See [[project_kampa_icloud_backup_warning]].
+
+## Build plan — six commits, each independently verifiable
+
+0. **Amend this doc.** Encoding + layout + plan. No code. *(done Aug 7)*
+1. **The codec alone.** Encode/decode both streams, round-trip fuzzed against the real 158k-row
+   corpus asserting field-by-field equality. Ships by itself because a silent encode defect is the
+   top risk in the register below. ⚠️ Verify the test FAILS against a deliberately broken codec
+   first, filtered at SUITE level — [[reference_xcode_only_testing_silent_pass]].
+2. **The two models.** `TremorHour` / `DyskinesiaHour`. Same commit: `CSVBackupExporter`,
+   `SupportDiagnostics`, and the dedup path — [[reference_swiftdata_new_model_checklist]].
+   ⛔ Deploy `CD_TremorHour` + `CD_DyskinesiaHour` to Production before any build ships.
+3. **Projection layer + dual read.** One `SampleStore` returning flat `[TremorSample]` for a range.
+   Nothing writes buckets yet ⇒ **a provable no-op on device.** That is why it is its own commit.
+4. **Switch the read sites (8).** `DayReviewContent`'s two `@Query`s · `InsightsView.allReadings`
+   (`:270`, the full-table live query) · `SeverityTrendSheet:533` · `EventDetailSheet:154` ·
+   `recomputeForecast` · the three watermarks. Still a no-op; device-verify the day chart is
+   unchanged.
+5. **Start writing buckets.** `persistSamples` routes above the cutover; merge-by-union on
+   collision; open hour rewritten live; watermarks read `lastSampleAt`. First commit where the shape
+   changes — verify a day straddling the cutover renders both halves.
+6. **Measure.** Real before/after iCloud storage read. The table above is arithmetic, not a
+   measurement.
 
 ## Why new-data-only, not a migration
 
@@ -146,6 +206,7 @@ Since nothing is deleted or rewritten, the classic migration risks do not apply.
 | Dual-read boundary bug hides data on one side of the cutover | Cutover is a stored instant, not inferred; verify a day spanning it renders both halves |
 | Buckets and per-minute rows double-count across the boundary | Projection layer is the single merge point; test a day that straddles the cutover |
 | No remote kill switch (no servers, by design) | TestFlight on the largest real record first, then App Store phased release |
+| 🆕 **Reinstall race, at the record level.** During a restore the watch re-sends its 7-day window while CloudKit pushes buckets down — both writing the same `hourStart`. Merge-by-union fixes the *content* rule, but a local merge computed against a **stale** bucket can drop samples that arrived remotely between the read and the write. The delete/reinstall test passed under the per-minute shape, which this changes | Merge against a freshly-fetched bucket inside the same save; re-run the delete/reinstall test on the largest real store — [[project_kampa_deletion_restore_test]] |
 
 Rehearse on a **copy** of the largest real store — 158k rows is the field's worst case and it is
 already on the developer's machine.

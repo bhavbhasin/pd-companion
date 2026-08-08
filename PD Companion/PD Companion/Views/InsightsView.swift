@@ -331,9 +331,13 @@ struct InsightsView: View {
             // dose gaps (OFF is a waking quantity) and censors dose durations at sleep onset
             // (tremor flattens in sleep whatever the drug is doing). Empty is safe — the
             // engine synthesises a conservative clock night for any uncovered day.
+            // `sensing` = when the watch was demonstrably on the wrist, from the tremor stream
+            // itself. It is what lets a guessing sleep source be overruled where a measuring one
+            // was present and disagreed — see CorrelationEngine.reconcileSleep.
             let sleep: [SleepInterval]
             if let lo = samples.map(\.timestamp).min(), let hi = samples.map(\.timestamp).max() {
-                sleep = await healthKit.fetchSleepIntervals(from: lo, to: hi)
+                sleep = await healthKit.fetchSleepIntervals(
+                    from: lo, to: hi, sensing: CorrelationEngine.wearSpans(samples))
             } else {
                 sleep = []
             }

@@ -1238,6 +1238,115 @@ nonisolated extension CorrelationEngine {
         return out
     }
 
+    /// Apple's Movement Disorder API emits one tremor bucket per minute whenever the watch is
+    /// worn. Ledger: structural — it is the API's cadence, not a tuning knob. Verified on the
+    /// 07-30 export: 111,627 of 111,975 consecutive gaps are exactly 60 s.
+    static let tremorSampleSeconds: TimeInterval = 60
+
+    /// `spans` minus `cutters`. Both must be merged + sorted (i.e. `mergeSleep` output).
+    static func subtractSpans(_ spans: [SleepInterval],
+                              minus cutters: [SleepInterval]) -> [SleepInterval] {
+        guard !cutters.isEmpty else { return spans }
+        var out: [SleepInterval] = []
+        for span in spans {
+            var pieces = [span]
+            for cut in cutters {
+                if cut.end <= span.start || cut.start >= span.end { continue }
+                var next: [SleepInterval] = []
+                for p in pieces {
+                    if cut.end <= p.start || cut.start >= p.end { next.append(p); continue }
+                    if p.start < cut.start {
+                        next.append(SleepInterval(start: p.start, end: min(cut.start, p.end)))
+                    }
+                    if cut.end < p.end {
+                        next.append(SleepInterval(start: max(cut.end, p.start), end: p.end))
+                    }
+                }
+                pieces = next
+            }
+            out.append(contentsOf: pieces.filter { $0.end > $0.start })
+        }
+        return out
+    }
+
+    /// When a measuring instrument was demonstrably on the wrist.
+    ///
+    /// ⭐ Derived from the EXISTENCE of tremor readings, never their values — so it introduces
+    /// no threshold and stays independent of the quantity being measured. It is needed because
+    /// a sleep source is silent in two situations that mean opposite things: the wearer was
+    /// awake, and the device was not recording. Only the tremor stream separates them, and that
+    /// distinction is the whole of `reconcileSleep` below.
+    /// Coalesces in ONE pass rather than materialising an interval per sample and merging: this
+    /// runs on the Insights load path over the whole tremor record (~112k samples on the
+    /// developer's), where `mergeSleep` would mean a 112k-element allocation plus a sort to
+    /// produce a few hundred spans. Same `isTimeAscending`-then-sort shape as `survivalDuration`
+    /// (`b6e6f69`), for the same reason and with the same defensive fallback.
+    static func wearSpans(_ samples: [TremorPoint]) -> [SleepInterval] {
+        guard !samples.isEmpty else { return [] }
+        var ascending = true
+        var i = 1
+        while i < samples.count {
+            if samples[i].timestamp < samples[i - 1].timestamp { ascending = false; break }
+            i += 1
+        }
+        let ordered = ascending ? samples : samples.sorted { $0.timestamp < $1.timestamp }
+
+        var out: [SleepInterval] = []
+        var start = ordered[0].timestamp
+        var end = start.addingTimeInterval(tremorSampleSeconds)
+        for s in ordered.dropFirst() {
+            let e = s.timestamp.addingTimeInterval(tremorSampleSeconds)
+            if s.timestamp <= end {                 // contiguous or overlapping — extend
+                end = max(end, e)
+            } else {                                // a real gap: the watch was off
+                out.append(SleepInterval(start: start, end: end))
+                start = s.timestamp
+                end = e
+            }
+        }
+        out.append(SleepInterval(start: start, end: end))
+        return out
+    }
+
+    /// Resolve sleep reported by sources of differing capability into one timeline.
+    ///
+    /// **Rule 1.** A moment claimed asleep only by an *inferring* source (one that has never
+    /// emitted Deep/REM, so it is guessing from stillness) is dropped where a *staging* source
+    /// was demonstrably sensing and did not call it sleep. Where nothing was sensing, the
+    /// inferred claim STANDS as gap-fill.
+    ///
+    /// ⛔ **That gap-fill branch is load-bearing — do not "simplify" it away.** Without any
+    /// fallback, an unrecorded night lets overnight zeros (tremor abates in sleep whatever the
+    /// drug is doing) read as the drug still working: measured, a 3 h dose reported as 9 h.
+    /// That is the failure `16e6d07` exists to prevent. On the developer's own record the branch
+    /// carries only 0.7 h of 336.6 h, because he essentially always wears the watch to bed — it
+    /// is kept for the user who does not, not because it pays for itself here.
+    ///
+    /// ⛔ **Capability, never a name.** `measured` vs `inferred` is decided by `SleepStagerPrefs`
+    /// (has this source ever emitted Deep or REM?), so Oura and Whoop qualify on merit, AutoSleep
+    /// does not, and a source nobody has heard of classifies itself. Nothing here knows a brand.
+    ///
+    /// Measured on the 07-30 export: engine sleep 564.6 h → 481.4 h, 79 of 282 doses recover
+    /// observation (median 41 min), zero-length dose windows 13 → 2, and every Kaplan-Meier
+    /// duration is unchanged (pooled and Sinemet 182.5, Mucuna 97.5) — the estimator was already
+    /// robust; what was wrong is how many doses it could speak about at all.
+    ///
+    /// ⬜ Rule 2, deliberately NOT here: between two *staging* sources, `awake` should stop being
+    /// the weakest claim. Measured target on the same export — 490 min of Watch-awake under
+    /// Oura-asleep and 527 min the other way, all currently scored as sleep. It lives in
+    /// `flattenSleepStages`' stage priority, which the sleep SCORE also depends on, so it moves a
+    /// second shipped surface and gets its own pass.
+    static func reconcileSleep(measured: [SleepInterval],
+                               inferred: [SleepInterval],
+                               sensing: [SleepInterval]) -> [SleepInterval] {
+        let measured = mergeSleep(measured)
+        guard !inferred.isEmpty else { return measured }
+        // Sensing, and not called sleep by the instrument that was sensing.
+        let contradicted = subtractSpans(mergeSleep(sensing), minus: measured)
+        let survivors = subtractSpans(mergeSleep(inferred), minus: contradicted)
+        return mergeSleep(measured + survivors)
+    }
+
     /// Recorded sleep, plus a synthetic clock night for any day with NO recorded sleep.
     /// Making the fallback a data-prep step (rather than a branch inside the math) means
     /// every consumer downstream sees one uniform list and can't forget the no-data case.

@@ -87,16 +87,21 @@ struct CorrelationEngineParityTests {
         // watching straight through the night, where tremor is zero because he is asleep.
         // Pinning that path would pin artifacts.
         //
-        // Python reference (18-06 fixture, measured sleep, uncapped): n=144, observed=101,
-        // censored=43, isolated=103, KM=182.5, longest duration 519 min.
+        // Python reference (18-06 fixture, uncapped, sources RECONCILED — Aug 7 2026):
+        // n=147, observed=102, censored=45, isolated=106, KM=182.5, baseline=1.385752.
+        // Pre-reconciliation these read 144/101/43/103 and baseline 1.382908; the only thing
+        // that moved them is Rule 1 (a guessing source no longer overrides a measuring one),
+        // confirmed by re-running the lab both ways. KM is unchanged, which is the point:
+        // the estimator was already robust, it just could not speak about as many doses.
         let sleepPath = try #require(Self.findCSV(prefix: "sleep_stages"), "fixture sleep CSV")
-        let sleep = try Self.loadAsleepIntervals(sleepPath)
+        let sleep = try Self.loadAsleepIntervals(
+            sleepPath, sensing: CorrelationEngine.wearSpans(samples))
         let durations = CorrelationEngine.analyzeWearingOff(samples: samples, doses: doses, sleep: sleep)
-        #expect(durations.count == 144, "dose-duration count (3 dosed while already asleep are dropped)")
+        #expect(durations.count == 147, "dose-duration count (dosed while already asleep are dropped)")
         let observed = durations.filter { $0.observed }.count
-        #expect(observed == 101, "observed OFF-returns")
-        #expect(durations.count - observed == 43, "censored")
-        #expect(durations.filter { $0.isolated }.count == 103, "isolated doses")
+        #expect(observed == 102, "observed OFF-returns")
+        #expect(durations.count - observed == 45, "censored")
+        #expect(durations.filter { $0.isolated }.count == 106, "isolated doses")
 
         let km = CorrelationEngine.kmMedian(
             durations: durations.map(\.durationMin), observed: durations.map(\.observed))
@@ -135,7 +140,7 @@ struct CorrelationEngineParityTests {
         guard case .wearingOff(let wo)? = wInsight?.chart else {
             Issue.record("wearing-off insight should carry a wearing-off chart"); return
         }
-        #expect(wo.curve.doseCount == 103, "pooled over isolated doses")
+        #expect(wo.curve.doseCount == 106, "pooled over isolated doses")
         #expect(wo.bestOnMinute > 60 && wo.bestOnMinute < 200, "deepest ON in plausible window")
         #expect(wo.baseline > wo.threshold, "pre-dose baseline is in the OFF range")
         #expect(abs(wo.medianDurationMin - 182.5) < 0.6, "KM marker matches the headline")
@@ -161,13 +166,13 @@ struct CorrelationEngineParityTests {
         #expect(abs(value(afternoonCurve, at: 92.5)  - 0.873869) < tol, "afternoon @ 92.5")
         #expect(abs(value(afternoonCurve, at: 142.5) - 0.480668) < tol, "afternoon @ 142.5")
 
-        #expect(abs(value(wo.curve, at: -2.5)  - 1.666187) < tol, "wearing-off @ -2.5")
-        #expect(abs(value(wo.curve, at: 2.5)   - 1.662388) < tol, "wearing-off @ 2.5")
-        #expect(abs(value(wo.curve, at: 62.5)  - 0.549626) < tol, "wearing-off @ 62.5")
-        #expect(abs(value(wo.curve, at: 122.5) - 0.214953) < tol, "wearing-off @ 122.5")
-        #expect(abs(value(wo.curve, at: 182.5) - 0.597886) < tol, "wearing-off @ 182.5")
-        #expect(abs(value(wo.curve, at: 242.5) - 0.993323) < tol, "wearing-off @ 242.5")
-        #expect(abs(wo.baseline - 1.382908) < tol, "wearing-off baseline")
+        #expect(abs(value(wo.curve, at: -2.5)  - 1.652807) < tol, "wearing-off @ -2.5")
+        #expect(abs(value(wo.curve, at: 2.5)   - 1.644887) < tol, "wearing-off @ 2.5")
+        #expect(abs(value(wo.curve, at: 62.5)  - 0.533881) < tol, "wearing-off @ 62.5")
+        #expect(abs(value(wo.curve, at: 122.5) - 0.208692) < tol, "wearing-off @ 122.5")
+        #expect(abs(value(wo.curve, at: 182.5) - 0.580301) < tol, "wearing-off @ 182.5")
+        #expect(abs(value(wo.curve, at: 242.5) - 0.965670) < tol, "wearing-off @ 242.5")
+        #expect(abs(wo.baseline - 1.385752) < tol, "wearing-off baseline")
         #expect(abs(wo.bestOnMinute - 122.5) < 0.01, "wearing-off deepest-ON minute")
 
         // --- Gait progression parity (analysis/src/gait.py on the same backup) ---
@@ -332,21 +337,49 @@ struct CorrelationEngineParityTests {
     }
 
     /// Merged asleep-only intervals, mirroring `HealthKitManager.fetchSleepIntervals`
-    /// + `mergeSleep` and the Python lab's `loaders.load_sleep_intervals`.
-    private static func loadAsleepIntervals(_ path: String) throws -> [SleepInterval] {
+    /// + `reconcileSleep`, and the Python lab's `loaders.load_sleep_intervals`.
+    ///
+    /// ⚠️ The reconciliation is not optional here. Skipping it would pin the pre-Aug-2026
+    /// union, in which a source that guesses sleep from stillness overrides one that measures
+    /// it — so the anchors would encode the defect rather than the engine. The fixture is a
+    /// genuinely multi-source record (Apple Watch, Oura, AutoSleep), which is the only reason
+    /// it can exercise this at all.
+    ///
+    /// The CSV carries a display name where the app has a bundle identifier, so capability is
+    /// keyed on `source` here and on `SleepStagerPrefs` in the app. Same rule, same result on
+    /// this fixture; a name is never compared against a known brand in either.
+    private static func loadAsleepIntervals(_ path: String,
+                                            sensing: [SleepInterval]) throws -> [SleepInterval] {
         let (idx, data) = try rows(path)
-        guard let si = idx["startDate"], let ei = idx["endDate"], let sti = idx["stage"]
+        guard let si = idx["startDate"], let ei = idx["endDate"], let sti = idx["stage"],
+              let srci = idx["source"]
         else { return [] }
         let asleep: Set<String> = ["asleepcore", "asleepdeep", "asleeprem", "asleepunspecified"]
-        let ivs: [SleepInterval] = data.compactMap { r in
-            guard r.count > max(si, ei, sti),
-                  asleep.contains(r[sti].trimmingCharacters(in: .whitespaces).lowercased()),
+        let staging: Set<String> = ["asleepdeep", "asleeprem"]
+
+        func field(_ r: [String], _ i: Int) -> String {
+            r.count > i ? r[i].trimmingCharacters(in: .whitespaces) : ""
+        }
+        // A source qualifies by having emitted Deep or REM anywhere in the record.
+        let stagers = Set(data.compactMap { r -> String? in
+            guard r.count > max(sti, srci),
+                  staging.contains(field(r, sti).lowercased()) else { return nil }
+            return field(r, srci)
+        })
+
+        var measured: [SleepInterval] = []
+        var inferred: [SleepInterval] = []
+        for r in data {
+            guard r.count > max(max(si, ei), max(sti, srci)),
+                  asleep.contains(field(r, sti).lowercased()),
                   let a = iso.date(from: r[si]) ?? isoPlain.date(from: r[si]),
                   let b = iso.date(from: r[ei]) ?? isoPlain.date(from: r[ei]),
-                  b > a else { return nil }
-            return SleepInterval(start: a, end: b)
+                  b > a else { continue }
+            let iv = SleepInterval(start: a, end: b)
+            if stagers.contains(field(r, srci)) { measured.append(iv) } else { inferred.append(iv) }
         }
-        return CorrelationEngine.mergeSleep(ivs)
+        return CorrelationEngine.reconcileSleep(
+            measured: measured, inferred: inferred, sensing: sensing)
     }
 
     // Gait CSVs may lack fractional seconds; try both ISO forms.
